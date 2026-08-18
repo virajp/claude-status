@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#MISE description="Set up mise: reshim, doctor, install & upgrade tools"
+#MISE hide=true
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+print_header "Reshimming mise ..."
+mise reshim
+
+print_header "Running mise doctor ..."
+mise doctor --quiet --silent > /dev/null
+
+print_header "Installing mise tools ..."
+mise install
+
+print_header "Upgrading mise tools ..."
+mise upgrade --local || true

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Security scan (grype + gitleaks)"
+
+#USAGE flag "--debug" help="emit debug logs"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+[[ "${usage_debug:-false}" == "true" ]] && GRYPE_FLAGS="-vv" || GRYPE_FLAGS=""
+[[ "${usage_debug:-false}" == "true" ]] && LEAK_FLAGS="--verbose" || LEAK_FLAGS=""
+
+# Use repo configs when present, else tool defaults
+GRYPE_CFG=""; [[ -f "${MISE_PROJECT_ROOT}/.config/grype.yaml" ]]   && GRYPE_CFG="--config ${MISE_PROJECT_ROOT}/.config/grype.yaml"
+LEAK_CFG="";  [[ -f "${MISE_PROJECT_ROOT}/.config/gitleaks.toml" ]] && LEAK_CFG="--config ${MISE_PROJECT_ROOT}/.config/gitleaks.toml"
+
+print_header "Scanning dependencies with grype ..."
+grype . --name "$(basename "${MISE_PROJECT_ROOT}")" ${GRYPE_CFG} ${GRYPE_FLAGS}
+
+print_header "Scanning for secrets with gitleaks ..."
+gitleaks dir "${PWD}" ${LEAK_CFG} --redact 50 ${LEAK_FLAGS}
+
+print_header "Scanning done"

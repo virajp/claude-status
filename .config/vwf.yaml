@@ -1,0 +1,13 @@
+config_format: 15 # this file's own schema version — setup migrates it
+blueprint_format: 22 # the docs/blueprint format stamp
+
+product:
+  name: claude-status
+
+memory:
+  wing: claude-status
+
+# Onboarded from a blank repo, so this config is in the STRUCTURE-PENDING state:
+# no `topology`, `linkage`, `members`, `harness`, `ui`, `enforcement` or
+# `projects` block is written, because none of them describes anything that
+# exists yet. /vwf:product and /vwf:architecture fill them in.

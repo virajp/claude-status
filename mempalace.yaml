@@ -1,0 +1,47 @@
+wing: claude-status
+exclude_patterns: # secrets first, then trees not worth mining
+  - .env*
+  - "*.pem"
+  - "*.key"
+  - "*.p12"
+  - "*credentials*"
+  - "*secret*"
+  - .doppler/
+  - .git/
+  - node_modules/
+  - dist/
+rooms:
+  # The seven protocol rooms — the closed set. Never add an eighth.
+  - name: decisions
+    description: Design and architecture decisions, with the why
+    keywords: [ decision, decisions, rationale, architecture, tradeoff ]
+  - name: problems
+    description: Review and security findings, and how they were resolved
+    keywords: [ problem, problems, finding, findings, bug, regression ]
+  - name: planning
+    description: Plan rationale and deferred options
+    keywords: [ planning, rationale, deferred, cycle ]
+  - name: gaps
+    description: Blueprint and plan holes surfaced during execution, and parked points
+    keywords: [ gap, gaps, hole, missing, parked ]
+  - name: runs
+    description: The execute run journal — dependency order and per-step progress
+    keywords: [ run, runs, journal, execute, resume ]
+  - name: doctor
+    description: /vwf:doctor findings per run
+    keywords: [ doctor, diagnostic, drift, toolchain ]
+  - name: handoff
+    description: Session handoffs from docs/memory/handoff/
+    keywords: [ handoff, handoffs, session ]
+  # Path-derived rooms. Keyed on the specific directories, never on the bare
+  # `docs` parent — that would shadow docs/memory/handoff/ before the handoff
+  # room is ever tested.
+  - name: documentation
+    description: Blueprint, plans and prompts under docs/
+    keywords: [ documentation, blueprint, plans, prompts ]
+  - name: configuration
+    description: Tooling and workflow config under .config/
+    keywords: [ configuration, config, mise, tasks ]
+  - name: general
+    description: Files that don't fit other rooms
+    keywords: []

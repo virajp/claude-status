@@ -1,0 +1,5 @@
+# vwf-standard excludes — committed, but not code intelligence
+docs/memory/
+docs/plans/archived/
+docs/prompts/
+archived/
