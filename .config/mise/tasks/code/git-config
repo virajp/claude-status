@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#MISE description="Validate local git-config has no forbidden keys"
+
+#USAGE flag "--fix" help="Remove forbidden keys from the local git-config"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+print_header_wait "Validating git-config ... "
+
+FIXIT=${usage_fix:-false}
+
+# Identity & signing keys must live in GLOBAL git-config, never per-repo local
+FORBIDDEN="user\.name|user\.email|user\.signingkey|commit\.gpgsign|tag\.gpgsign|gpg\.format|gpg\.program|gpg\.ssh\.program"
+LOCAL_CONFIG=$(git config --local --list | grep -E "^($FORBIDDEN)=" || true)
+
+if [ ! -z "$LOCAL_CONFIG" ]; then
+  if [ "$FIXIT" = "true" ]; then
+    print_header "Fixing"
+    while IFS= read -r line; do
+      key=${line%=*}
+      print_wait "- removing $key ... "
+      git config --local --unset "$key"
+      print_header "OK"
+    done <<< "$LOCAL_CONFIG"
+    exit 0
+  else
+    print_error "ERROR"
+    while IFS= read -r line; do
+      print_warn "- $line"
+    done <<< "$LOCAL_CONFIG"
+    print_error "Please run \`mise run ${MISE_TASK_NAME} --fix\` to remove them"
+    exit 1
+  fi
+fi
+
+print_header "OK"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Update and install pre-commit hooks"
+#MISE hide=true
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+print_header "Updating pre-commit hooks ..."
+pre-commit autoupdate --config .config/pre-commit-config.yaml
+
+print_header "Installing pre-commit hooks ..."
+git config --local --unset-all core.hooksPath || true
+pre-commit install --config .config/pre-commit-config.yaml --install-hooks --overwrite

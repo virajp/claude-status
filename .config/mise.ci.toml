@@ -1,0 +1,10 @@
+[settings]
+# CI-only settings go here. The Node release-key gpg workaround
+# (node.gpg_verify = false) is not needed until a Node runtime is pinned.
+
+[tools]
+# Usually empty — CI reuses the runtime from mise.toml. Add a tool here only if
+# the pipeline genuinely needs it and dev does not.
+
+[env]
+# Production VALUES for the same keys mise.dev.toml sets locally. None yet.

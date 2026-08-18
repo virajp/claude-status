@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Format, lint and security-scan all code"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--debug" help="emit debug logs"
+#USAGE flag "--fix" help="apply fixes"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+[[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG="--debug" || DEBUG_FLAG=""
+[[ "${usage_fix:-false}" == "true" ]] && FIX_FLAG="--fix" || FIX_FLAG=""
+
+# Compiled stacks (e.g. a TS monorepo) prepend a typecheck here:
+#   line_sep "-"; mise run code:check
+
+line_sep "-"
+mise run code:format ${DEBUG_FLAG} ${FIX_FLAG}
+
+# No language runtime is pinned yet, so there is no code:lint task. Restore this
+# line when a stack overlay (node/flutter/python) is scaffolded in:
+#   line_sep "-"; mise run code:lint ${DEBUG_FLAG} ${FIX_FLAG}
+
+line_sep "-"
+mise run code:sec ${DEBUG_FLAG}

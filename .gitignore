@@ -1,0 +1,10 @@
+# vwf scratch — mockup renders for visual review, never part of the contract
+docs/scratchpad/
+
+# vwf memory — the rooms that hold one developer's session state, not the team's
+docs/memory/handoff/
+docs/memory/doctor/
+docs/memory/runs/
+
+# code-intelligence graph — rebuilt locally, never committed
+graphify-out/

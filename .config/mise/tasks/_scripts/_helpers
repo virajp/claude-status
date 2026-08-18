@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+#MISE description="Helper functions for mise tasks"
+#MISE hide=true
+
+# Style
+readonly BOLD='\033[1m'
+readonly NORMAL='\033[0m'
+# Colors
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[0;33m'
+readonly RED='\033[0;31m'
+readonly BLUE='\033[0;34m'
+
+print_header()      { echo -e "${GREEN}${BOLD}$1${NORMAL}"; }
+print_header_wait() { echo -en "${GREEN}${BOLD}$1${NORMAL}"; }
+print_wait()        { echo -en "${YELLOW}${BOLD}$1${NORMAL}"; }
+print_ok()          { echo -e "${GREEN}${BOLD}OK${NORMAL}"; }
+print_newline()     { echo ""; }
+print_warn()        { echo -e "${YELLOW}${BOLD}$1${NORMAL}"; }
+print_error()       { echo -e "${RED}${BOLD}$1${NORMAL}"; }
+print_yellow()      { echo -e "${YELLOW}$1${NORMAL}"; }
+
+# Print a full-width separator line built from the given character
+line_sep() {
+  local COL
+  COL=$(stty size 2>/dev/null | awk '{print $2}')
+  local line
+  printf -v line '%*s' "${COL:-80}" ''
+  printf '%s\n' "${line// /$1}"
+}

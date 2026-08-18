@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="Run pre-commit hooks"
+#MISE hide=true
+
+#USAGE flag "--all" help="Run on all files (default: only changed files)"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+if [[ "${usage_all:-false}" == "true" ]]; then
+  print_header "Running pre-commit on all files ..."
+  pre-commit run --config .config/pre-commit-config.yaml --all-files || true
+else
+  print_header "Running pre-commit on changed files ..."
+  mapfile -t changed_files < <(git diff --name-only --diff-filter=d HEAD)
+  if [[ ${#changed_files[@]} -eq 0 ]]; then
+    print_header "No changed files to scan."
+  else
+    pre-commit run --config .config/pre-commit-config.yaml --files "${changed_files[@]}" || true
+  fi
+fi

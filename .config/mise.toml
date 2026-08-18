@@ -1,0 +1,20 @@
+[settings]
+activate_aggressive  = true     # let mise shims win on PATH
+env_shell_expand     = true     # expand $VARS in [env]
+gpg_verify           = true     # verify tool signatures
+raw                  = true     # streams output
+status.missing_tools = "always"
+
+[env]
+DISABLE_TELEMETRY = 1
+
+[tools]
+# No language runtime is pinned yet. Add it here — and scaffold the matching
+# task overlay (code:format, code:lint, setup:all) — once the stack is chosen.
+
+[tasks.init]
+# Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.
+# Lives in the BASE (not dev) so tasks are runnable in every env, CI included.
+description = "Initialize mise tasks"
+hide        = true
+run         = "find .config/mise/tasks/ -name '*' -type f -not -path '*/*.env' -exec chmod 755 {} \\;"

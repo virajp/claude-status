@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Check or format files"
+
+#USAGE flag "--debug" help="emit debug logs"
+#USAGE flag "--fix" help="apply fixes"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+[[ "${usage_debug:-false}" == "true" ]] && LOG_LEVEL="debug" || LOG_LEVEL="warn"
+[[ "${usage_fix:-false}" == "true" ]] && CMD="fmt"          || CMD="check"
+
+print_header "Formatting files (dprint) ..."
+dprint ${CMD} --config "${MISE_PROJECT_ROOT}/dprint.json" --allow-no-files --log-level ${LOG_LEVEL}
+
+print_header "Formatting done"
