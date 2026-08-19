@@ -7,7 +7,6 @@ raw                  = true     # streams output
 status.missing_tools = "always"
 
 [env]
-DISABLE_TELEMETRY = 1
 
 [tools]
 "core:rust" = { profile = "minimal", version = "latest" }
