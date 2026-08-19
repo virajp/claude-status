@@ -11,7 +11,11 @@ pre-commit  = { version = "latest" }
 taplo       = { version = "latest" }
 
 [shell_alias]
-setup = "mise run setup:all"
+cc        = "claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
+ccf       = "claude --model 'fable[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
+cco       = "claude --model 'opus[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
+precommit = "mise run code:precommit"
+setup     = "mise run setup:all"
 
 [env]
 PRE_COMMIT_HOME = "$HOME/.cache/pre-commit"
