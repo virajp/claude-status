@@ -71,7 +71,7 @@ Two traps the contract calls out and one it gets wrong:
 
 ## Delta — ordered steps
 
-1. **`src/render/subagent.rs` — status matching.** `task_mark(status)`
+1. **`src/modules/render/subagent.rs` — status matching.** `task_mark(status)`
    lowercases `status` (so patterns only ever see lowercase), then walks
    `subagent.statuses` **in config insertion order** — which is why plan 1 took
    `preserve_order`; a `BTreeMap` or `HashMap` would silently reorder a

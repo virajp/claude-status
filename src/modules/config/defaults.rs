@@ -13,4 +13,4 @@
 //! or through `tests/defaults_integrity.rs`, never by reading a diff.
 
 /// The shipped defaults as raw JSON text.
-pub const DEFAULTS_JSON: &str = include_str!("../../assets/claude-status.defaults.json");
+pub const DEFAULTS_JSON: &str = include_str!("../../../assets/claude-status.defaults.json");
