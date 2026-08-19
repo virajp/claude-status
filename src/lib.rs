@@ -6,3 +6,5 @@
 //! 2. **A render never blocks.** No network call on the render path; git is
 //!    hard-bounded.
 //! 3. **A render never fails visibly.** A panic still produces a usable line.
+
+pub mod config;
