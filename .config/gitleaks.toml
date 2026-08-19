@@ -1,0 +1,14 @@
+[[rules]]
+description = "RevenueCat public API key"
+id          = "revenuecat-api-key"
+regex       = '''(apple_|google_)[A-Za-z0-9]{20,}'''
+tags        = [ "api-key", "revenuecat" ]
+
+[[rules]]
+description = "Grafana Cloud API key"
+id          = "grafana-cloud-api-key"
+regex       = '''glc_[A-Za-z0-9+/]{40,}'''
+tags        = [ "api-key", "grafana" ]
+
+[allowlist]
+paths = [ '''node_modules/*''' ]
