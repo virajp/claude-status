@@ -7,12 +7,17 @@
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
 
+line_sep "="
 mise run setup:mise
 
 # print_header "Linter setup ..."
 # pnpm dlx @askviraj/linter@latest --init
 
+line_sep "="
 mise run setup:precommit
+
+line_sep "="
 mise run setup:ai
 
+line_sep "="
 print_header "Setup complete!"
