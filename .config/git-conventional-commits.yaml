@@ -1,19 +1,35 @@
 ---
 convention:
   commitTypes:
-    - spec
-    - ops
+    - feat
+    - fix
+    - perf
+    - refactor
+    - test
     - docs
+    - ops
+    - blueprint
     - merge
+    - wip
   commitScopes:
-    - product # for commits changing ./docs/product
-    - engineering # for commits changing ./docs/engineering
-    - spec # for commits changing ./docs/superpowers
+    # the binary's modules, mirroring src/
+    - cli # argument surface, stdin routing, the stdout boundary
+    - config # the three config layers, deep merge, colour resolution
+    - render # powerline seams, segments, the main bar
+    - subagent # the NDJSON subagent panel
+    - spend # cache, lock, refresh child, credentials, the four gates
+    - git # filesystem-first root/branch, bounded dirty and ahead markers
+    - usage # the session usage mirror consumed by ai-plugins
+    # everything else
+    - installer # npm platform packages, install/uninstall, receipts
+    - plans # ./docs/plans
+    - spec # ./docs/spec
 
 changelog:
   commitTypes:
     - feat
     - fix
+    - perf
     - refactor
   includeInvalidCommits: false
   commitIgnoreRegexPattern: '^[wW][iI][pP]\b'
@@ -21,13 +37,14 @@ changelog:
     feat: Features
     fix: Bug Fixes
     perf: Performance Improvements
+    refactor: Refactors
     merge: Merges
     breakingChange: BREAKING CHANGES
 
   # GitHub
-  commitUrl: https://github.com/95octane/95octane/commit/%commit%
-  commitRangeUrl: https://github.com/95octane/95octane/compare/%from%...%to%?diff=split
+  commitUrl: https://github.com/virajp/claude-status/commit/%commit%
+  commitRangeUrl: https://github.com/virajp/claude-status/compare/%from%...%to%?diff=split
 
   # GitHub Issues
   issueRegexPattern: "#[0-9]+"
-  issueUrl: https://github.com/95octane/95octane/issues/%issue%
+  issueUrl: https://github.com/virajp/claude-status/issues/%issue%
