@@ -1,6 +1,42 @@
 [package]
 edition = "2024"
 name    = "claude-status"
-version = "0.1.0"
+version = "6.0.0"         # continues from the JS implementation's 5.1.0
+
+# An integration test in tests/ cannot link a bin target, so the golden and
+# defaults tests need the library.
+[lib]
+name = "claude_status"
+path = "src/lib.rs"
+
+[[bin]]
+name = "claude-status"
+path = "src/main.rs"
 
 [dependencies]
+# `worktreePattern` and (plan 2) `subagent.statuses[].match`. The full `regex`
+# crate is ~1.5 MB and builds a DFA on a per-render path.
+regex-lite = "0.1.9"
+
+# Untyped `Value` parsing, the deep merge, and cache/mirror serialisation. No
+# `serde` derive: every field of every payload is optional, so derives buy
+# nothing and cost the proc-macro. `preserve_order` (via indexmap) is what keeps
+# "statuses are tried in config order" true. `std` must stay listed explicitly —
+# `preserve_order` does not imply it once default features are off.
+serde_json = { default-features = false, features = [
+"std",
+"preserve_order",
+], version = "1.0.151" }
+
+[dev-dependencies]
+tempfile = "3" # throwaway $HOME for the e2e tests
+
+[profile.release]
+codegen-units = 1
+lto           = "fat"
+opt-level     = "s"
+# Load-bearing: under `abort`, `catch_unwind` cannot catch, the fallback line is
+# never printed and the bar renders blank — which breaks the contract's third
+# invariant ("a render never fails visibly").
+panic = "unwind"
+strip = "symbols"
