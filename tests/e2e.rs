@@ -266,6 +266,44 @@ fn a_hostile_config_still_puts_a_usable_line_on_stdout() {
 }
 
 #[test]
+fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
+    // The whole git budget is 250 ms *shared*. Run against a `git` that never
+    // returns: sequentially at 250 ms each, the four subprocesses the dirty and
+    // ahead pipelines can issue would cost about a second. This asserts the
+    // shared deadline, and that the render still completes.
+    let home = Home::new(&safe_config());
+
+    // A `git` shim that hangs, ahead of the real one on PATH.
+    let shim_dir = TempDir::new().unwrap();
+    let shim = shim_dir.path().join("git");
+    std::fs::write(&shim, "#!/bin/sh\nsleep 30\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    // A repo the filesystem walk will resolve a branch from, so the markers run.
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+    let payload = format!(r#"{{"workspace":{{"current_dir":"{}"}}}}"#, repo.path().display());
+    let path = format!("{}:{}", shim_dir.path().display(), std::env::var("PATH").unwrap_or_default());
+
+    let started = std::time::Instant::now();
+    let out = run(&home, &["--statusline"], &payload, &[("PATH", &path)]);
+    let elapsed = started.elapsed();
+
+    assert!(out.status.success());
+    assert!(!stdout(&out).is_empty(), "the bar renders even when git hangs");
+    assert!(
+        elapsed < std::time::Duration::from_millis(900),
+        "took {elapsed:?}; a shared 250 ms budget should not approach the ~1 s a per-subprocess timeout would cost",
+    );
+}
+
+#[test]
 fn stdout_never_carries_a_diagnostic_whatever_the_input() {
     let home = Home::new(r#"{ "lines": [["bogus1", "bogus2", "model"]] }"#);
     let out = run(&home, &["--statusline", "--debug"], "{\"garbage\":", &[]);
