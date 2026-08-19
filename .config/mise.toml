@@ -1,5 +1,6 @@
 [settings]
 activate_aggressive  = true     # let mise shims win on PATH
+all_compile          = false
 env_shell_expand     = true     # expand $VARS in [env]
 gpg_verify           = true     # verify tool signatures
 raw                  = true     # streams output
@@ -9,8 +10,7 @@ status.missing_tools = "always"
 DISABLE_TELEMETRY = 1
 
 [tools]
-# No language runtime is pinned yet. Add it here — and scaffold the matching
-# task overlay (code:format, code:lint, setup:all) — once the stack is chosen.
+"core:rust" = { version = "latest" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.

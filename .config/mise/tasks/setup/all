@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+#MISE description="Setup the project: install precommit hooks, upgrade dependencies, clean up cache, etc."
+#MISE hide=true
+#MISE depends=["init"]
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+mise run setup:mise
+
+# print_header "Linter setup ..."
+# pnpm dlx @askviraj/linter@latest --init
+
+mise run setup:precommit
+mise run setup:ai
+
+print_header "Setup complete!"

@@ -10,12 +10,7 @@ pre-commit = { version = "latest" }
 taplo      = { version = "latest" }
 
 [shell_alias]
-# `setup:all` is the stack overlay's bootstrap entrypoint, so it does not exist
-# until a runtime is pinned. Restore this alias with that overlay:
-#   setup = "mise run setup:all"
+setup = "mise run setup:all"
 
 [env]
 PRE_COMMIT_HOME = "$HOME/.cache/pre-commit"
-
-# Local/dev values for anything the app reads at runtime go here, mirroring the
-# keys mise.ci.toml overrides. None are declared yet.
