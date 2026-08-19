@@ -8,4 +8,6 @@
 //! 3. **A render never fails visibly.** A panic still produces a usable line.
 
 pub mod config;
+pub mod fmt;
 pub mod json;
+pub mod time;
