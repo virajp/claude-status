@@ -18,9 +18,10 @@ tags: [ rust, statusline, phase-2 ]
 
 ## Slice
 
-The subagent panel — the second rendering surface, selected by a `tasks` array
-on stdin. Contract §2 (subagent payload) and §3 (subagent styling and status
-matching), plus the §10 Phase-2 verification clause of
+The subagent panel — the second rendering surface, selected by the
+**`--subagent` flag**, not by the payload's shape. Contract §2 (subagent
+payload) and §3 (subagent styling and status matching), plus the §10 Phase-2
+verification clause of
 [the behaviour contract](../spec/statusline-behaviour.md).
 
 Plan 2 of 4 — requires [`main-bar`](./2026-08-19-1400-main-bar.md); required by
@@ -38,8 +39,7 @@ After [`main-bar`](./2026-08-19-1400-main-bar.md):
 - `render/powerline.rs`, `config/`, `fmt.rs`, `time.rs`, `git.rs` and `json.rs`
   all exist and are tested. This cycle adds one module and reuses the rest
   unchanged.
-- The stdin router in `render/mod.rs` already detects a `tasks` array, but
-  returns empty output for it.
+- `cli.rs` already recognises `--subagent`, but returns empty output for it.
 - `assets/claude-status.defaults.json` already carries the full `subagent` block
   — `descBudgetFraction`, the six `segments`, and the four `statuses` with their
   match regexes — and `typeSymbols` with its nine glyphs plus `_default`.
@@ -50,9 +50,14 @@ After [`main-bar`](./2026-08-19-1400-main-bar.md):
 
 ## Target state (per blueprint)
 
-Piping a payload with a `tasks` array emits **NDJSON** — one
+`--subagent` with a payload carrying a `tasks` array emits **NDJSON** — one
 `{"id": …, "content": …}` object per line, `content` being a fully rendered ANSI
 row. Not a single blob, and no trailing newline.
+
+The flag decides the surface; the payload no longer does. A `--subagent`
+invocation whose payload carries **no** `tasks` array renders empty output and
+exits 0 — it does not fall back to the main bar, because a silent surface swap
+is exactly the failure the flags exist to prevent.
 
 Two traps the contract calls out and one it gets wrong:
 
@@ -139,9 +144,13 @@ Two traps the contract calls out and one it gets wrong:
 Derived from [the behaviour contract](../spec/statusline-behaviour.md) §§2–3 and
 its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 
-- [ ] Given a payload with a `tasks` array, when the binary renders, then stdout
-      is NDJSON — one JSON object per line, each with `id` and `content` — and
-      not a single blob — from [contract §2](../spec/statusline-behaviour.md)
+- [ ] Given `--subagent` and a payload with **no** `tasks` array, when the
+      binary runs, then stdout is empty and the exit code is 0 — it never falls
+      back to the main bar — this plan's decision
+- [ ] Given `--subagent` and a payload with a `tasks` array, when the binary
+      renders, then stdout is NDJSON — one JSON object per line, each with `id`
+      and `content` — and not a single blob — from
+      [contract §2](../spec/statusline-behaviour.md)
 - [ ] Given the §12 subagent fixture, when the output is piped through
       `jq -r .content`, then a sane single powerline row is printed — from
       [contract §10, Phase 2](../spec/statusline-behaviour.md)
