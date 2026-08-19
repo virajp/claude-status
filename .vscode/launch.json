@@ -1,0 +1,19 @@
+{
+  "configurations": [
+    {
+      "command": "pnpm run dev",
+      "cwd": "${workspaceFolder}/projects/service",
+      "name": "service:dev",
+      "request": "launch",
+      "type": "node-terminal"
+    },
+    {
+      "command": "./node_modules/.bin/astro dev",
+      "cwd": "${workspaceFolder}/projects/web",
+      "name": "web:dev",
+      "request": "launch",
+      "type": "node-terminal"
+    }
+  ],
+  "version": "0.2.0"
+}

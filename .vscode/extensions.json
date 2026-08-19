@@ -1,0 +1,23 @@
+{
+  "recommendations": [
+    "astro-build.astro-vscode",
+    "bmalehorn.vscode-fish",
+    "bradlc.vscode-tailwindcss",
+    "christian-kohler.npm-intellisense",
+    "dart-code.dart-code",
+    "dart-code.flutter",
+    "dbaeumer.vscode-eslint",
+    "doppler.doppler-vscode",
+    "dprint.dprint",
+    "effectful-tech.effect-vscode",
+    "foxundermoon.shell-format",
+    "gruntfuggly.todo-tree",
+    "hverlin.mise-vscode",
+    "meganrogge.template-string-converter",
+    "oderwat.indent-rainbow",
+    "pkief.material-icon-theme",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "usernamehw.errorlens"
+  ]
+}
