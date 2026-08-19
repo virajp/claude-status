@@ -40,8 +40,8 @@ After [`main-bar`](./2026-08-19-1400-main-bar.md):
   unchanged.
 - The stdin router in `render/mod.rs` already detects a `tasks` array, but
   returns empty output for it.
-- `assets/statusline.defaults.json` already carries the full `subagent` block —
-  `descBudgetFraction`, the six `segments`, and the four `statuses` with their
+- `assets/claude-status.defaults.json` already carries the full `subagent` block
+  — `descBudgetFraction`, the six `segments`, and the four `statuses` with their
   match regexes — and `typeSymbols` with its nine glyphs plus `_default`.
 - `config/matcher.rs` already compiles literal-alternation patterns to
   `contains`; every shipped status regex is one.
