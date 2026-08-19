@@ -16,9 +16,19 @@
   "exec": {
     "commands": [
       {
-        "command": "taplo fmt --config .config/taplo.toml -",
+        "command": "mise x -- taplo fmt --config .config/taplo.toml -",
         "exts": [
           "toml"
+        ]
+      },
+      {
+        "cacheKeyFiles": [
+          ".config/rustfmt.toml",
+          ".config/rust-toolchain.toml"
+        ],
+        "command": "mise x -- rustfmt --edition 2024 --config-path .config -",
+        "exts": [
+          "rs"
         ]
       }
     ]

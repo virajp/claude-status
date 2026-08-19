@@ -22,10 +22,12 @@ rooms:
     description: Plan rationale and deferred options
     keywords: [ planning, rationale, deferred, cycle ]
   - name: gaps
-    description: Blueprint and plan holes surfaced during execution, and parked points
+    description: Blueprint and plan holes surfaced during execution, and parked
+      points
     keywords: [ gap, gaps, hole, missing, parked ]
   - name: runs
-    description: The execute run journal — dependency order and per-step progress
+    description: The execute run journal — dependency order and per-step
+      progress
     keywords: [ run, runs, journal, execute, resume ]
   - name: doctor
     description: /vwf:doctor findings per run

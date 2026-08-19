@@ -17,11 +17,12 @@ gitignored `docs/scratchpad/` tree for visual review in your browser before the
 pass is approved — mockups are realizations for review, never part of the
 contract, and are never pushed to the design tool. Design-first instead:
 `/vwf:screens prompt <flow>` writes a brief you paste into the canvas chat (one
-interactive page per platform, named `<flow>--<platform>`), `/vwf:screens
-import` folds the designs back through blueprint passes. `/vwf:mockups [flow]`
-batch re-renders (e.g. after a design-system change); `/vwf:feedback canvas`
-harvests the canvas review conversation back into the contracts (as routed
-intent, never as files).
+interactive page per platform, named `<flow>--<platform>`),
+`/vwf:screens
+import` folds the designs back through blueprint passes.
+`/vwf:mockups [flow]` batch re-renders (e.g. after a design-system change);
+`/vwf:feedback canvas` harvests the canvas review conversation back into the
+contracts (as routed intent, never as files).
 
 **The blueprint is a code-independent contract.** It records only decisions that
 have more than one reasonable answer *and* are true regardless of how the code
