@@ -1,0 +1,33 @@
+---
+convention:
+  commitTypes:
+    - spec
+    - ops
+    - docs
+    - merge
+  commitScopes:
+    - product # for commits changing ./docs/product
+    - engineering # for commits changing ./docs/engineering
+    - spec # for commits changing ./docs/superpowers
+
+changelog:
+  commitTypes:
+    - feat
+    - fix
+    - refactor
+  includeInvalidCommits: false
+  commitIgnoreRegexPattern: '^[wW][iI][pP]\b'
+  headlines:
+    feat: Features
+    fix: Bug Fixes
+    perf: Performance Improvements
+    merge: Merges
+    breakingChange: BREAKING CHANGES
+
+  # GitHub
+  commitUrl: https://github.com/95octane/95octane/commit/%commit%
+  commitRangeUrl: https://github.com/95octane/95octane/compare/%from%...%to%?diff=split
+
+  # GitHub Issues
+  issueRegexPattern: "#[0-9]+"
+  issueUrl: https://github.com/95octane/95octane/issues/%issue%

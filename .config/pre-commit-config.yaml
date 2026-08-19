@@ -1,0 +1,88 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
+# graphify-out/ holds generated output. Two files under it are tracked so the
+# map is shareable, but no hook may rewrite them: graphify writes them without
+# a trailing newline, so end-of-file-fixer would "fix" every commit and the
+# next rebuild would undo it, forever. Regenerate with graphify, never format.
+exclude: ^graphify-out/
+
+repos:
+  - repo: local
+    hooks:
+      - id: git-config
+        name: Forbidden Local git-config
+        description: Prevents local .git/config from overriding global user and
+          signing settings.
+        entry: mise x -- mise run code:git-config --fix
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [ pre-commit ]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-shebang-scripts-are-executable
+        name: Check that scripts with shebangs are executable
+        stages: [ pre-commit ]
+      - id: check-executables-have-shebangs
+        name: Check that executables have shebangs
+        stages: [ pre-commit ]
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        stages: [ pre-commit ]
+      - id: end-of-file-fixer
+        name: Ensure files end with a newline
+        stages: [ pre-commit ]
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+        stages: [ pre-commit ]
+      - id: check-added-large-files
+        name: Check for added large files (>1MB)
+        args: [ "--maxkb=1024" ]
+        stages: [ pre-commit ]
+      - id: check-symlinks
+        name: Check for broken symlinks
+        stages: [ pre-commit ]
+      - id: destroyed-symlinks
+        name: Check for destroyed symlinks
+        stages: [ pre-commit ]
+
+  - repo: local
+    hooks:
+      - id: formatter
+        name: Formatter
+        entry: |
+          mise x -- dprint fmt \
+            --config .config/dprint.json \
+            --allow-no-files \
+            --log-level warn
+        exclude: (^|.*/)package\.json$
+        language: system
+        stages: [ pre-commit ]
+
+  # - repo: local
+  #   hooks:
+  #     - id: linter
+  #       name: Linter
+  #       entry: mise x -- pnpm dlx @askviraj/linter --fix
+  #       language: system
+  #       stages: [ pre-commit ]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        name: Check for secrets
+        args: [ --config, .config/gitleaks.toml ]
+        stages: [ pre-commit ]
+
+  - repo: https://github.com/qoomon/git-conventional-commits
+    rev: v2.9.0
+    hooks:
+      - id: conventional-commits
+        name: Conventional Commits
+        args: [ "--config", ".config/git-conventional-commits.yaml" ]
+        stages: [ commit-msg ]
