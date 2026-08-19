@@ -11,6 +11,7 @@
     "**/*-lock.json",
     "**/*-lock.yaml",
     "**/graphify-out/",
+    "assets/statusline.defaults.json",
     "**/.claude/skills/flutter-interoperating-with-native-apis"
   ],
   "exec": {

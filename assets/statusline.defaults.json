@@ -1,0 +1,211 @@
+{
+  "$schema": "https://raw.githubusercontent.com/virajp/ai-plugins/main/schemas/statusline.schema.json",
+  "defaultFg": "white",
+  "gauge": {
+    "empty": "▱",
+    "filled": "▰",
+    "width": 10
+  },
+  "lines": [
+    [
+      "model",
+      "context",
+      "rl5h",
+      "rl7d",
+      "spend",
+      "cost"
+    ],
+    [
+      "project",
+      "worktree",
+      "branch"
+    ]
+  ],
+  "palette": {
+    "aqua": [
+      104,
+      157,
+      106
+    ],
+    "bg3": [
+      102,
+      92,
+      84
+    ],
+    "blue": [
+      69,
+      133,
+      136
+    ],
+    "green": [
+      152,
+      151,
+      26
+    ],
+    "grey": [
+      60,
+      56,
+      54
+    ],
+    "orange": [
+      214,
+      93,
+      14
+    ],
+    "purple": [
+      177,
+      98,
+      134
+    ],
+    "red": [
+      204,
+      36,
+      29
+    ],
+    "white": [
+      251,
+      241,
+      199
+    ],
+    "yellow": [
+      215,
+      153,
+      33
+    ]
+  },
+  "powerline": {
+    "cap": "",
+    "sep": "",
+    "sepThin": "",
+    "thinFg": "grey"
+  },
+  "projectName": "Project-Name",
+  "segments": {
+    "branch": {
+      "bg": "aqua"
+    },
+    "context": {
+      "bg": "aqua"
+    },
+    "cost": {
+      "bg": "green",
+      "bold": true,
+      "fg": "white"
+    },
+    "duration": {
+      "bg": "aqua"
+    },
+    "model": {
+      "bg": "blue",
+      "bold": true,
+      "fg": "white"
+    },
+    "project": {
+      "bg": "green",
+      "bold": true,
+      "fg": "white"
+    },
+    "rl5h": {
+      "bg": "blue"
+    },
+    "rl7d": {
+      "bg": "purple"
+    },
+    "session": {
+      "bg": "orange"
+    },
+    "spend": {
+      "bg": "orange",
+      "bold": true,
+      "fg": "white"
+    },
+    "worktree": {
+      "bg": "yellow",
+      "fg": "grey"
+    }
+  },
+  "spend": {
+    "refreshMinutes": 15,
+    "show": "auto"
+  },
+  "subagent": {
+    "descBudgetFraction": 0.45,
+    "segments": {
+      "desc": {
+        "bg": "bg3"
+      },
+      "duration": {
+        "bg": "purple"
+      },
+      "head": {
+        "bold": true
+      },
+      "model": {
+        "bg": "blue"
+      },
+      "name": {
+        "bg": "orange",
+        "bold": true
+      },
+      "tokens": {
+        "bg": "aqua"
+      }
+    },
+    "statuses": {
+      "done": {
+        "bg": "green",
+        "match": "done|complete|success|finish|ok",
+        "symbol": ""
+      },
+      "error": {
+        "bg": "red",
+        "match": "error|fail|cancel|abort",
+        "symbol": ""
+      },
+      "pending": {
+        "bg": "bg3",
+        "match": "",
+        "symbol": ""
+      },
+      "running": {
+        "bg": "blue",
+        "match": "run|active|progress|working|busy",
+        "symbol": ""
+      }
+    }
+  },
+  "symbols": {
+    "agent": "",
+    "ahead": "↑",
+    "branch": "",
+    "context": "",
+    "cost": "⏱️",
+    "dirtyAdd": "+",
+    "dirtyDel": "-",
+    "dirtyMix": "±",
+    "duration": "",
+    "folder": "",
+    "model": "⚡",
+    "project": "",
+    "repo": "",
+    "reset": "↻",
+    "session": "",
+    "spend": "",
+    "tokens": "",
+    "win5h": "",
+    "win7d": "",
+    "worktree": "🌲"
+  },
+  "typeSymbols": {
+    "_default": "",
+    "background": "",
+    "cloud_agent": "",
+    "local_agent": "",
+    "mcp": "",
+    "remote_agent": "",
+    "review": "",
+    "task": "",
+    "test": ""
+  },
+  "worktreePattern": "worktree"
+}
