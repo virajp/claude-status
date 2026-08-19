@@ -156,14 +156,21 @@ fn parse_head(content: &str) -> Option<String> {
     }
 }
 
-/// Lexical `.`/`..` resolution. Never touches the filesystem.
+/// Lexical `.`/`..` resolution, matching `path.normalize`. Never touches the
+/// filesystem — `canonicalize` would resolve symlinks and require the path to
+/// exist, which diverges on exactly the worktree and submodule layouts this is
+/// for.
+///
+/// A `..` that would climb above an absolute root is **dropped**; on a relative
+/// path it is kept.
 fn normalise(path: &Path) -> PathBuf {
+    let rooted = path.has_root();
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
             Component::CurDir => {}
             Component::ParentDir => {
-                if !out.pop() {
+                if !out.pop() && !rooted {
                     out.push(Component::ParentDir);
                 }
             }
@@ -453,7 +460,9 @@ mod tests {
     #[test]
     fn normalise_resolves_dot_and_dotdot_lexically() {
         assert_eq!(normalise(Path::new("/a/b/../c/./d")), PathBuf::from("/a/c/d"));
-        assert_eq!(normalise(Path::new("/a/../../b")), PathBuf::from("/b"));
+        // Cross-checked against node's `path.join`/`path.normalize`.
+        assert_eq!(normalise(Path::new("/a/../../b")), PathBuf::from("/b"), "a climb above root is dropped");
+        assert_eq!(normalise(Path::new("a/../../b")), PathBuf::from("../b"), "but kept on a relative path");
     }
 
     #[test]

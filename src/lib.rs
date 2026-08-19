@@ -9,6 +9,7 @@
 
 pub mod config;
 pub mod fmt;
+pub mod git;
 pub mod json;
 pub mod payload;
 pub mod proc;
