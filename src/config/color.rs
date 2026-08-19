@@ -22,8 +22,13 @@ pub fn resolve(spec: Option<&Value>, palette: Option<&Map<String, Value>>) -> Rg
 
 fn direct(spec: Option<&Value>, palette: Option<&Map<String, Value>>) -> Option<Rgb> {
     match spec? {
-        Value::String(s) if s.starts_with('#') => parse_hex(s),
-        Value::String(name) => triple(palette?.get(name)?),
+        // The palette is consulted *first*, so a palette that defines a key
+        // spelled like a hex string still wins — matching the old resolution
+        // order rather than the contract's prose ordering.
+        Value::String(name) => match palette.and_then(|p| p.get(name)) {
+            Some(entry) => triple(entry),
+            None => name.starts_with('#').then(|| parse_hex(name)).flatten(),
+        },
         arr @ Value::Array(_) => triple(arr),
         _ => None,
     }
@@ -103,6 +108,13 @@ mod tests {
     #[test]
     fn a_literal_triple_resolves() {
         assert_eq!(r(json!([69, 133, 136])), [69, 133, 136]);
+    }
+
+    #[test]
+    fn the_palette_is_consulted_before_the_hex_branch() {
+        let mut p = palette();
+        p.insert("#458588".into(), serde_json::json!([1, 2, 3]));
+        assert_eq!(resolve(Some(&json!("#458588")), Some(&p)), [1, 2, 3], "a palette entry wins over its hex reading");
     }
 
     #[test]

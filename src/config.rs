@@ -20,6 +20,9 @@ use crate::config::matcher::Matcher;
 /// (contract §4).
 pub const FALLBACK_BG: &str = "blue";
 
+/// A ceiling on `gauge.width`, which is a repeat count. See [`Config::gauge_width`].
+pub const MAX_GAUGE_WIDTH: usize = 1000;
+
 pub struct Config {
     root: Value,
 }
@@ -63,15 +66,27 @@ impl Config {
     }
 
     /// The gauge width. A configured `0` means ten, as `||` made it.
+    ///
+    /// Capped at [`MAX_GAUGE_WIDTH`]: the width feeds `str::repeat`, and an
+    /// enormous one aborts on allocation failure. An abort is unrecoverable —
+    /// `catch_unwind` cannot catch it, so the fallback line would never print
+    /// and the bar would go blank, which is the one outcome the third invariant
+    /// forbids.
     pub fn gauge_width(&self) -> usize {
         match self.get("gauge.width").and_then(Value::as_u64) {
             Some(0) | None => 10,
-            Some(n) => n as usize,
+            Some(n) => (n as usize).min(MAX_GAUGE_WIDTH),
         }
     }
 
+    /// A gauge glyph, with the shipped fallback for a missing *or empty* one.
+    ///
+    /// Unlike `symbols.*`, these are not allowed to resolve to `""`: the old
+    /// implementation hard-coded `▰`/`▱` inside the gauge builder, and an empty
+    /// glyph would erase the whole bar rather than one symbol.
     pub fn gauge_glyph(&self, key: &str) -> &str {
-        self.get(&format!("gauge.{key}")).and_then(Value::as_str).unwrap_or_default()
+        let fallback = if key == "filled" { "\u{25b0}" } else { "\u{25b1}" };
+        self.get(&format!("gauge.{key}")).and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or(fallback)
     }
 
     pub fn project_name(&self) -> Option<&str> {
@@ -95,7 +110,10 @@ impl Config {
     /// warns on **stderr** — never on stdout, which is the bar.
     pub fn worktree_matcher(&self) -> Matcher {
         const DEFAULT: &str = "worktree";
-        let pattern = self.get("worktreePattern").and_then(Value::as_str).unwrap_or(DEFAULT);
+        // An *empty* pattern falls back too. It would otherwise match every
+        // path component, making the last match always the final one, so the
+        // worktree prefix would silently vanish instead of erroring.
+        let pattern = self.get("worktreePattern").and_then(Value::as_str).filter(|p| !p.is_empty()).unwrap_or(DEFAULT);
         match Matcher::compile(pattern) {
             Ok(m) => m,
             Err(e) => {
@@ -143,6 +161,31 @@ mod tests {
         assert_eq!(cfg(json!({ "projectName": "" })).project_name(), None);
         assert_eq!(cfg(json!({})).project_name(), None);
         assert_eq!(cfg(json!({ "projectName": "x" })).project_name(), Some("x"));
+    }
+
+    #[test]
+    fn an_enormous_gauge_width_is_capped() {
+        // Uncapped this reaches `str::repeat` and aborts on allocation
+        // failure, which `catch_unwind` cannot catch — a blank bar.
+        assert_eq!(cfg(json!({ "gauge": { "width": 1_000_000_000_000u64 } })).gauge_width(), MAX_GAUGE_WIDTH);
+    }
+
+    #[test]
+    fn an_empty_gauge_glyph_falls_back_to_the_shipped_one() {
+        let c = cfg(json!({ "gauge": { "filled": "", "empty": "" } }));
+        assert_eq!(c.gauge_glyph("filled"), "\u{25b0}");
+        assert_eq!(c.gauge_glyph("empty"), "\u{25b1}");
+        assert_eq!(cfg(json!({})).gauge_glyph("filled"), "\u{25b0}");
+        assert_eq!(cfg(json!({ "gauge": { "filled": "#" } })).gauge_glyph("filled"), "#");
+    }
+
+    #[test]
+    fn an_empty_worktree_pattern_falls_back_to_the_default() {
+        // An empty pattern matches every component, so the last match would
+        // always be the final one and the worktree prefix would vanish.
+        let m = cfg(json!({ "worktreePattern": "" })).worktree_matcher();
+        assert!(m.is_match("worktrees"));
+        assert!(!m.is_match("src"));
     }
 
     #[test]

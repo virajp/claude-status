@@ -43,7 +43,12 @@ pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
 
     for (label, base) in [("user", home), ("repo", repo_root)] {
         let path = base.map(|b| b.join(".config").join(CONFIG_FILE_NAME));
-        let loaded = match path.as_deref().and_then(read_json_file) {
+        // A layer must be an *object*. A file holding `null`, a number or an
+        // array parses fine but would replace the whole merged config
+        // wholesale and blank the bar — the old implementation coerced any
+        // falsy parse to `{}`, and a one-byte file must not cost the defaults.
+        let layer = path.as_deref().and_then(read_json_file).filter(Value::is_object);
+        let loaded = match layer {
             Some(layer) => {
                 deep_merge(&mut merged, &layer);
                 true
@@ -104,6 +109,20 @@ mod tests {
         let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
         assert!(!user.loaded, "the layer is reported as not loaded");
         assert!(user.path.is_some(), "but the path it looked at is still reported");
+    }
+
+    #[test]
+    fn a_valid_but_non_object_layer_does_not_wipe_the_defaults() {
+        for body in ["null", "0", "[]", "\"x\""] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let home = seed(dir.path(), body);
+
+            let layers = load(Some(&home), None);
+            assert_eq!(layers.config.project_name(), Some("Project-Name"), "{body} blanked the bar");
+            assert_eq!(layers.config.lines().len(), 2);
+            let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
+            assert!(!user.loaded, "{body} should not count as a loaded layer");
+        }
     }
 
     #[test]

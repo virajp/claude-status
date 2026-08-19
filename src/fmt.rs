@@ -27,6 +27,10 @@ pub fn to_fixed(n: f64, digits: usize) -> String {
         };
     }
 
+    // A finite f64 has at most 1074 fractional digits, so asking for more would
+    // only pad zeros — and would then underflow the point insertion below.
+    let digits = digits.min(1074);
+
     let exact = format!("{:.*}", 1074, n.abs());
     let (int_part, frac) = exact.split_once('.').expect("a 1074-place format always has a point");
 
@@ -117,7 +121,10 @@ pub fn human_duration(ms: Option<f64>) -> String {
 /// `now_ms` is passed in rather than read, so a golden test can pin a clock.
 pub fn human_reset_in(resets_at_ms: Option<i64>, now_ms: i64) -> Option<String> {
     let ms = resets_at_ms?;
-    let mut s = (ms - now_ms).div_euclid(1000);
+    // Saturating: `to_epoch_ms` saturates an absurd double to `i64::MIN`, and a
+    // plain subtraction there panics in debug and wraps in release. Saturating
+    // lands on "now", which is what the old implementation rendered.
+    let mut s = ms.saturating_sub(now_ms).div_euclid(1000);
     if s <= 0 {
         return Some("now".to_string());
     }

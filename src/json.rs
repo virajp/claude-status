@@ -70,7 +70,9 @@ pub fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
 /// - The three prototype keys are skipped at *every* depth.
 pub fn deep_merge(base: &mut Value, over: &Value) {
     let (Some(base_obj), Some(over_obj)) = (base.as_object_mut(), over.as_object()) else {
-        *base = over.clone();
+        // Still sanitised: a prototype key nested inside a value that replaces
+        // a non-object base would otherwise slip through unfiltered.
+        *base = sanitised(over);
         return;
     };
 
@@ -177,6 +179,15 @@ mod tests {
     #[test]
     fn merging_over_a_non_object_base_replaces_it() {
         assert_eq!(merged(json!(5), json!({ "a": 1 })), json!({ "a": 1 }));
+    }
+
+    #[test]
+    fn a_prototype_key_cannot_ride_in_on_a_non_object_base() {
+        for key in FORBIDDEN_KEYS {
+            let out = merged(json!(5), json!({ key: { "x": 1 }, "kept": 1 }));
+            assert_eq!(out.get(key), None, "`{key}` survived replacing a scalar base");
+            assert_eq!(out.get("kept"), Some(&json!(1)));
+        }
     }
 
     #[test]

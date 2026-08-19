@@ -53,14 +53,14 @@ fn parse_date(s: &str) -> Option<i64> {
         return None;
     }
 
-    let year: i64 = s.get(0..4)?.parse().ok()?;
-    let month: u32 = s.get(5..7)?.parse().ok()?;
-    let day: u32 = s.get(8..10)?.parse().ok()?;
+    let year = digits(s.get(0..4)?)?;
+    let month = digits(s.get(5..7)?)?;
+    let day = digits(s.get(8..10)?)?;
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
 
-    let mut ms = days_from_civil(year, month, day) * 86_400_000;
+    let mut ms = days_from_civil(year, month as u32, day as u32) * 86_400_000;
 
     let rest = &s[10..];
     if rest.is_empty() {
@@ -82,23 +82,20 @@ fn parse_date(s: &str) -> Option<i64> {
     };
 
     let mut parts = time.split(':');
-    let hour: i64 = parts.next()?.parse().ok()?;
-    let minute: i64 = parts.next()?.parse().ok()?;
+    let hour = digits(parts.next()?)?;
+    let minute = digits(parts.next()?)?;
     let (second, millis) = match parts.next() {
         None => (0, 0),
         Some(sec) => match sec.split_once('.') {
-            None => (sec.parse::<i64>().ok()?, 0),
+            None => (digits(sec)?, 0),
             Some((whole, frac)) => {
-                let digits: String = frac.chars().take_while(char::is_ascii_digit).collect();
-                if digits.is_empty() || digits.len() != frac.len() {
-                    return None;
-                }
-                let scaled = format!("{digits:0<3}");
-                (whole.parse::<i64>().ok()?, scaled.get(0..3)?.parse::<i64>().ok()?)
+                // Pad or truncate the fraction to exactly three places.
+                let padded = format!("{frac:0<3}");
+                (digits(whole)?, digits(padded.get(0..3)?)?)
             }
         },
     };
-    if parts.next().is_some() || !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=60).contains(&second) {
+    if parts.next().is_some() || !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
         return None;
     }
 
@@ -106,7 +103,20 @@ fn parse_date(s: &str) -> Option<i64> {
     Some(ms - offset_ms)
 }
 
-/// `±HH:MM` or `±HHMM`, as milliseconds to subtract from the wall reading.
+/// A run of ASCII digits as a number.
+///
+/// Deliberately stricter than `str::parse`, which accepts a leading `+` and
+/// would make `"2026-+8-19"` a date that `Date.parse` rejects. Being
+/// all-ASCII also makes every byte index in this module a char boundary.
+fn digits(s: &str) -> Option<i64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// `±HH:MM`, `±HHMM` or `±HH`, as milliseconds to subtract from the wall
+/// reading.
 fn parse_offset(s: &str) -> Option<i64> {
     let sign = match s.as_bytes().first()? {
         b'+' => 1,
@@ -116,12 +126,15 @@ fn parse_offset(s: &str) -> Option<i64> {
     let body = &s[1..];
     let (hh, mm) = match body.split_once(':') {
         Some((h, m)) => (h, m),
-        None if body.len() == 4 => body.split_at(2),
+        // Safe to split at a byte index only because `digits` below rejects
+        // anything non-ASCII — but check first, since `split_at` panics on a
+        // char boundary violation before we ever get there.
+        None if body.len() == 4 && body.is_ascii() => body.split_at(2),
         None if body.len() == 2 => (body, "0"),
         None => return None,
     };
-    let hours: i64 = hh.parse().ok()?;
-    let minutes: i64 = mm.parse().ok()?;
+    let hours = digits(hh)?;
+    let minutes = digits(mm)?;
     if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
         return None;
     }
@@ -188,9 +201,30 @@ mod tests {
 
     #[test]
     fn malformed_strings_are_rejected() {
-        for s in ["", "not a date", "2026-08", "2026/08/19", "2026-13-01", "2026-08-19T25:00:00Z", "2026-08-19X12:00:00Z"] {
+        for s in [
+            "",
+            "not a date",
+            "2026-08",
+            "2026/08/19",
+            "2026-13-01",
+            "2026-08-19T25:00:00Z",
+            "2026-08-19X12:00:00Z",
+            "2026-+8-19",              // `str::parse` would accept the sign
+            "2026-08-19T12:00:60Z",    // node rejects a 60th second
+            "2026-08-19T12:00:00+a\u{20ac}", // a multi-byte offset: must not panic
+            "2026-08-19T12:00:00+9999",
+        ] {
             assert_eq!(to_epoch_ms(&json!(s)), None, "{s:?} should not normalise");
         }
+    }
+
+    #[test]
+    fn an_absurd_number_saturates_rather_than_panicking() {
+        // Reachable from a hand-written payload; must not panic in debug.
+        assert!(to_epoch_ms(&json!(-1e300)).is_some());
+        assert!(to_epoch_ms(&json!(1e300)).is_some());
+        assert_eq!(to_epoch_ms(&json!(f64::NAN)), None);
+        assert_eq!(to_epoch_ms(&json!(f64::INFINITY)), None);
     }
 
     #[test]
