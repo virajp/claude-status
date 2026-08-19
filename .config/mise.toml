@@ -10,7 +10,7 @@ status.missing_tools = "always"
 DISABLE_TELEMETRY = 1
 
 [tools]
-"core:rust" = { version = "latest" }
+"core:rust" = { profile = "minimal", version = "latest" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.

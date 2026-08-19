@@ -3,11 +3,12 @@ env_shell_expand     = true
 status.missing_tools = "always"
 
 [tools]
-dprint     = { version = "latest" }
-gitleaks   = { version = "latest" }
-grype      = { version = "latest" }
-pre-commit = { version = "latest" }
-taplo      = { version = "latest" }
+"core:rust" = { profile = "default", version = "latest" }
+dprint      = { version = "latest" }
+gitleaks    = { version = "latest" }
+grype       = { version = "latest" }
+pre-commit  = { version = "latest" }
+taplo       = { version = "latest" }
 
 [shell_alias]
 setup = "mise run setup:all"

@@ -23,10 +23,10 @@
       },
       {
         "cacheKeyFiles": [
-          ".config/rustfmt.toml",
-          ".config/rust-toolchain.toml"
+          "rustfmt.toml",
+          "rust-toolchain.toml"
         ],
-        "command": "mise x -- rustfmt --edition 2024 --config-path .config -",
+        "command": "mise x -- rustfmt -",
         "exts": [
           "rs"
         ]

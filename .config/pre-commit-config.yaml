@@ -56,7 +56,7 @@ repos:
         name: Formatter
         entry: |
           mise x -- dprint fmt \
-            --config .config/dprint.json \
+            --config dprint.json \
             --allow-no-files \
             --log-level warn
         exclude: (^|.*/)package\.json$

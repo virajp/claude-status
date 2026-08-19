@@ -8,3 +8,8 @@ docs/memory/runs/
 
 # code-intelligence graph — rebuilt locally, never committed
 graphify-out/
+
+
+# Added by cargo
+
+/target
