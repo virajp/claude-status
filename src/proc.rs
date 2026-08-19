@@ -1,0 +1,152 @@
+//! Running a subprocess under a hard deadline.
+//!
+//! Deliberately **not** the `wait-timeout` crate: it installs a process-global
+//! `SIGCHLD` handler, which is hostile in a 1 ms process that also spawns a
+//! deliberately unreaped detached child (plan 3's refresh), and it does not
+//! drain stdout — so a large `git diff --numstat` can fill the pipe and
+//! deadlock before the timeout is ever consulted.
+//!
+//! Here the pipe is moved into a reader thread and the parent waits on a
+//! channel, so the child is always being drained while the clock runs.
+
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+/// The most stdout one command may produce before it counts as failed. Node's
+/// `execFileSync` default, reproduced so an enormous diff renders no marker
+/// here too rather than a marker the old bar would not have shown.
+const MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
+
+/// A deadline shared by every command in one render, so the whole git budget is
+/// bounded rather than each subprocess separately.
+#[derive(Debug, Clone, Copy)]
+pub struct Deadline {
+    at: Instant,
+}
+
+impl Deadline {
+    pub fn in_ms(ms: u64) -> Self {
+        Self { at: Instant::now() + Duration::from_millis(ms) }
+    }
+
+    pub fn remaining(&self) -> Duration {
+        self.at.saturating_duration_since(Instant::now())
+    }
+
+    pub fn expired(&self) -> bool {
+        self.remaining().is_zero()
+    }
+}
+
+/// Runs a command and returns its stdout, or `None` on any failure — a spawn
+/// error, a non-zero exit, or the deadline passing.
+///
+/// stdin is closed so a command that would prompt exits instead; stderr is
+/// discarded so nothing a subprocess prints can reach the bar.
+pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline: Deadline) -> Option<String> {
+    if deadline.expired() {
+        return None;
+    }
+
+    let mut child = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    // Move the pipe into a reader thread: the child is drained continuously, so
+    // it can never block on a full pipe while the parent waits.
+    let stdout = child.stdout.take()?;
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        // Capped at 1 MiB, matching Node's default `maxBuffer`: the old
+        // implementation treated an oversized diff as a failed command and
+        // rendered no marker, and an unbounded read here would be the one
+        // place a render could balloon.
+        let mut buf = Vec::new();
+        let read = stdout.take(MAX_OUTPUT_BYTES + 1).read_to_end(&mut buf);
+        let over = buf.len() as u64 > MAX_OUTPUT_BYTES;
+        let out = read.ok().filter(|_| !over).and_then(|_| String::from_utf8(buf).ok());
+        let _ = tx.send(out);
+    });
+
+    let output = match rx.recv_timeout(deadline.remaining()) {
+        Ok(out) => out,
+        Err(_) => {
+            // Timed out, or the reader thread died. Kill and reap, so no
+            // zombie outlives this render.
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    };
+
+    // The pipe closed, so the child is done or nearly so; `wait` will not block
+    // meaningfully.
+    let status = child.wait().ok()?;
+    status.success().then_some(output).flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn cwd() -> &'static Path {
+        Path::new(".")
+    }
+
+    #[test]
+    fn a_successful_command_returns_its_stdout() {
+        let out = run_bounded("echo", &["hello"], cwd(), Deadline::in_ms(5_000));
+        assert_eq!(out.as_deref(), Some("hello\n"));
+    }
+
+    #[test]
+    fn a_nonzero_exit_is_none() {
+        assert_eq!(run_bounded("false", &[], cwd(), Deadline::in_ms(5_000)), None);
+    }
+
+    #[test]
+    fn a_missing_program_is_none_rather_than_a_panic() {
+        assert_eq!(run_bounded("definitely-not-a-real-program", &[], cwd(), Deadline::in_ms(5_000)), None);
+    }
+
+    #[test]
+    fn a_slow_command_is_killed_at_the_deadline() {
+        let start = Instant::now();
+        let out = run_bounded("sleep", &["30"], cwd(), Deadline::in_ms(150));
+        assert_eq!(out, None);
+        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}; should have been killed", start.elapsed());
+    }
+
+    #[test]
+    fn an_already_expired_deadline_spawns_nothing() {
+        let deadline = Deadline::in_ms(0);
+        assert!(deadline.expired());
+        assert_eq!(run_bounded("echo", &["hello"], cwd(), deadline), None);
+    }
+
+    #[test]
+    fn a_large_output_does_not_deadlock_on_a_full_pipe() {
+        // Far more than a pipe buffer, which is where a non-draining wait would
+        // hang forever instead of timing out.
+        let out = run_bounded("yes", &["padding-line"], cwd(), Deadline::in_ms(200));
+        // `yes` never exits, so it is killed: the point is that we get here.
+        assert_eq!(out, None);
+    }
+
+    #[test]
+    fn the_deadline_is_shared_not_per_command() {
+        let deadline = Deadline::in_ms(300);
+        assert!(run_bounded("sleep", &["0.2"], cwd(), deadline).is_some());
+        // The second command inherits what is left of the same budget.
+        assert!(deadline.remaining() < Duration::from_millis(150));
+    }
+}

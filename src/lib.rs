@@ -11,5 +11,6 @@ pub mod config;
 pub mod fmt;
 pub mod json;
 pub mod payload;
+pub mod proc;
 pub mod render;
 pub mod time;
