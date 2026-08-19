@@ -2,11 +2,18 @@ default_install_hook_types:
   - pre-commit
   - commit-msg
 
+# Generated output that no hook may rewrite.
+#
 # graphify-out/ holds generated output. Two files under it are tracked so the
 # map is shareable, but no hook may rewrite them: graphify writes them without
 # a trailing newline, so end-of-file-fixer would "fix" every commit and the
 # next rebuild would undo it, forever. Regenerate with graphify, never format.
-exclude: ^graphify-out/
+#
+# tests/golden/ holds rendered status bars — raw ANSI, Nerd Font private-use
+# codepoints, and no trailing newline, because the renderer emits none. A hook
+# that appends one makes every golden fail. Regenerate with
+# `UPDATE_GOLDEN=1 cargo test --test golden`.
+exclude: ^(graphify-out/|tests/golden/)
 
 repos:
   - repo: local

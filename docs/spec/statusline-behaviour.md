@@ -33,31 +33,51 @@ match it. Where it describes structure, use your judgement.
 
 ## 1. What it is
 
-One binary, two rendering surfaces, selected **by the shape of the JSON on
-stdin** — not by a flag:
+One binary, two rendering surfaces, selected **by an explicit flag**:
 
-| stdin carries   | Render                                                |
-| --------------- | ----------------------------------------------------- |
-| a `tasks` array | the **subagent panel** — NDJSON, one row per subagent |
-| anything else   | the **main bar** — two powerline lines                |
+| Invocation     | Render                                                |
+| -------------- | ----------------------------------------------------- |
+| `--statusline` | the **main bar** — two powerline lines                |
+| `--subagent`   | the **subagent panel** — NDJSON, one row per subagent |
+
+> **Amended 2026-08-19** (`main-bar` cycle). This originally specified
+> shape-detection on a `tasks` array in the payload. An explicit surface is
+> diagnosable and a shape heuristic is not — a payload that stopped carrying
+> `tasks` would silently render the wrong surface, with no way to tell from the
+> output. The cost is that **the installer must rewrite both `settings.json`
+> keys on every upgrade**, and anyone who hand-swaps the binary without
+> re-running it gets the missing-flag line below instead of a bar.
 
 Claude Code is wired to it with two keys in `~/.claude/settings.json`, both
-pointing at the same binary:
+pointing at the same binary and **both carrying their flag**:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "${HOME}/.claude/bin/claude-status",
+    "command": "${HOME}/.claude/bin/claude-status --statusline",
     "padding": 0,
     "refreshInterval": 4
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "${HOME}/.claude/bin/claude-status"
+    "command": "${HOME}/.claude/bin/claude-status --subagent"
   }
 }
 ```
+
+Invoked with **no flag at all** — which is what a stale `settings.json` produces
+after an upgrade — the binary discriminates on whether stdin is a TTY. A TTY
+means someone typed it, so it prints full help. A pipe means Claude Code invoked
+it, so it prints exactly one line on stdout:
+
+```text
+claude-status: missing --statusline or --subagent (run --help)
+```
+
+One line fits the bar and names the fix. Twenty lines of usage would be
+unreadable in a status line, and printing nothing would leave the user with a
+silently blank bar and no clue.
 
 ### Three invariants that outrank everything else
 
@@ -65,8 +85,17 @@ pointing at the same binary:
    warnings, errors — all stderr, always. A single stray byte on stdout is a
    corrupted status line.
 2. **A render never blocks.** No network call, no unbounded subprocess, no
-   waiting on a lock. Anything slow is read from cache or skipped. The two git
-   subprocesses are the only exception and both are hard-bounded at 250 ms.
+   waiting on a lock. Anything slow is read from cache or skipped. The git
+   subprocesses are the only exception, and the whole set of them is
+   hard-bounded at 250 ms.
+
+   > **Amended 2026-08-19** (`main-bar` cycle). This originally said "the two
+   > git subprocesses … both are hard-bounded at 250 ms". There are up to
+   > **four** — the ahead count, `diff --numstat HEAD`, its `--cached` fallback,
+   > and the untracked probe — and the old implementation ran them
+   > **sequentially at 250 ms each**, a ~1 s worst case. They now run on two
+   > threads under **one shared 250 ms deadline**, so the budget is what the
+   > invariant always claimed it was. See [§6](#6-git-resolution).
 3. **A render never fails visibly.** Any panic or error must still produce a
    usable line. The current implementation catches everything and falls back to
    printing `⚡ Claude`. Reproduce that: wrap the render in
@@ -160,11 +189,31 @@ Two traps here, both learned the hard way:
 
 ## 3. Configuration
 
-Two JSON layers, deep-merged **low → high**:
+**Three** layers, deep-merged **low → high**:
 
-1. `~/.config/statusline.json` — the per-user config. Seeded with the full
+1. The **shipped defaults, embedded in the binary**. Always present.
+2. `~/.config/claude-status.json` — the per-user config. Seeded with the full
    defaults at install; the user's thereafter.
-2. `<repo-root>/.config/statusline.json` — per-repo overrides. **Wins.**
+3. `<repo-root>/.config/claude-status.json` — per-repo overrides. **Wins.**
+
+> **Amended 2026-08-19** (`main-bar` cycle), on two counts.
+>
+> **The embedded layer is new.** With only the two file layers, a machine with
+> neither rendered *blank*. Embedding the defaults means a cold start draws a
+> full bar. Output is byte-identical for every install whose user file *is* the
+> seeded defaults, which is all of them; the visible change is that a user who
+> deleted a key expecting it gone now gets the default back.
+>
+> **The file is renamed** from `statusline.json` to `claude-status.json`, for
+> consistency with the tool's identity. The note below advises against exactly
+> this, and the migration is the price: `--install` moves the old file,
+> preserving the user's theming, and `--uninstall` puts it back. The binary only
+> ever knows the new name, so no per-render stat is spent on a legacy path.
+> Until the Phase 5 cutover **both files exist on purpose** — the JS bar is
+> still live and still reads the old name. Neither is stale.
+
+A layer that is missing, unreadable, malformed, or **not a JSON object** is
+ignored rather than fatal; the render proceeds on the layers below it.
 
 Merge semantics, which must match exactly:
 
@@ -308,24 +357,41 @@ an all-empty line is dropped rather than printed blank.
 
 ### The segment catalogue
 
-Eleven segments. Exact output text, `{sym.X}` meaning the configured symbol:
+Eleven segments. Exact output text, `{sym.X}` meaning the configured symbol.
+Every `·` below is one literal space; the renderer adds one more space on each
+side of the whole text.
 
-| id         | Text                                                                                                 | Omitted when                   |
-| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `model`    | `{model} Opus 5 [high]` — the `[effort]` part only when effort is present                            | never (falls back to `Claude`) |
-| `context`  | `{context} ▰▰▰▱▱▱▱▱▱▱ 259k/1M (26%)`                                                                 | never                          |
-| `rl5h`     | `{win5h} 7.0%{reset} 4h36m` — reset half only when known                                             | `used_percentage` absent       |
-| `rl7d`     | `{win7d} 1.0%{reset} 5d2h`                                                                           | `used_percentage` absent       |
-| `session`  | `{session} users-and-groups`                                                                         | no `session_name`              |
-| `cost`     | `{cost} $46.51`                                                                                      | never                          |
-| `spend`    | `{spend} $75.93/$150 (51%)`                                                                          | see §7 — four separate gates   |
-| `duration` | `{duration} 9hr 19m`                                                                                 | no `total_duration_ms`         |
-| `project`  | `{project} Project-Name`                                                                             | no `projectName` in config     |
-| `worktree` | `{worktree} {folder} sub/path`                                                                       | not inside a worktree          |
-| `branch`   | `{branch} main ↑ ±` — prefixed by `{worktree}` when in a worktree; `↑` when ahead; dirty marker last | no branch resolved             |
+| id         | Text                                                                      | Omitted when                                   |
+| ---------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
+| `model`    | `{model}·Opus 5·[high]` — the `[effort]` part only when effort is present | never (falls back to `Claude`)                 |
+| `context`  | `{context}·▰▰▰▱▱▱▱▱▱▱·259k/1M·(26%)`                                      | never                                          |
+| `rl5h`     | `{win5h}·7.0%·{reset}·4h36m` — the reset half only when known             | `used_percentage` absent                       |
+| `rl7d`     | `{win7d}·1.0%·{reset}·5d2h`                                               | `used_percentage` absent                       |
+| `session`  | `{session}·users-and-groups`                                              | `session_name` absent **or empty**             |
+| `cost`     | `{cost}·$46.51`                                                           | never — an absent cost renders `$0.00`         |
+| `spend`    | `{spend}·$75.93/$150·(51%)`                                               | see §7 — four separate gates                   |
+| `duration` | `{duration}·9hr 19m`                                                      | `total_duration_ms` **absent**; `0` renders    |
+| `project`  | `{project}·Project-Name`                                                  | no `projectName` **in config**, not in payload |
+| `worktree` | `{worktree}·{folder}·sub/path` — **two** symbols                          | not inside a worktree                          |
+| `branch`   | `{worktree}·{branch}·main·↑·±`                                            | no branch resolved                             |
 
-An unknown segment id in `lines` writes a warning to **stderr** and omits the
-segment. It must not fail the render.
+> **Amended 2026-08-19** (`main-bar` cycle), against the reference builders.
+> Four rows were wrong:
+>
+> - **`rl5h` / `rl7d`** — there is a space **before** the reset glyph as well as
+>   after it. The table showed `7.0%{reset}`, which renders the percentage and
+>   the glyph run together.
+> - **`duration`** — omitted only when `total_duration_ms` is *absent*. An
+>   explicit `0` renders `{duration}·0s`.
+> - **`branch`** — the worktree prefix is `{worktree}` *then* `{branch}`; the
+>   table implied the branch glyph came first. The ahead and dirty markers each
+>   follow one space, and each is conditional.
+> - **`context`** — with no data at all it still renders, as
+>   `{context}·▱▱▱▱▱▱▱▱▱▱·?/?·(0%)`.
+
+An unknown segment id in `lines` writes `statusline: unknown segment "<id>"` to
+**stderr** and omits the segment. It must not fail the render, and the exit code
+stays 0. A segment builder that *panics* costs only its own segment.
 
 ### Formatting helpers
 
@@ -346,26 +412,35 @@ Get these exactly right; they are visible on every render.
 
 ## 5. CLI surface
 
-Four invocations. **`--version` must be checked first and print nothing but the
-version**, because the installer distinguishes an installed binary from a
-bundled one by the *shape* of that answer.
+**`--version` must be checked first and print nothing but the version**, because
+the installer distinguishes an installed binary from a bundled one by the
+*shape* of that answer.
 
-| Invocation        | Does                                                        |
-| ----------------- | ----------------------------------------------------------- |
-| *(stdin payload)* | render, routed by payload shape                             |
-| `--version`       | print `X.Y.Z` and exit. Nothing else on stdout, ever        |
-| `--refresh-spend` | fetch the budget into the cache and exit. Renders nothing   |
-| `--debug`         | **a modifier on any of the above**, never a mode of its own |
+| Invocation        | Does                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `--statusline`    | render the main bar from the payload on stdin                                            |
+| `--subagent`      | render the subagent panel from stdin, as NDJSON                                          |
+| `--refresh-spend` | fetch the budget into the cache and exit. Renders nothing                                |
+| `--debug`         | the diagnostic report — **and** a modifier on any of the above                           |
+| `--version`       | print `X.Y.Z` and exit. Nothing else on stdout, ever                                     |
+| `--help` / `-h`   | full usage                                                                               |
+| *(nothing)*       | TTY stdin → help; piped stdin → the one-line missing-flag error, see [§1](#1-what-it-is) |
 
-`--debug` narrates decisions on **stderr**. It must compose: `--version --debug`
-still prints a bare version; a render with `--debug` still prints the same bar
-on stdout. It exists because the spend path is otherwise completely silent — see
-§7.
+> **Amended 2026-08-19** (`main-bar` cycle). The surface flags are new, per §1.
+> `--debug` is now **both a mode and a modifier**, absorbing the `--info` idea
+> below: as a mode its report is the output and goes to stdout; as a modifier it
+> narrates to stderr and must not change stdout by a single byte.
 
-Consider also porting `--info` (currently a flag on the `ai-plugins` installer,
-not the script): resolved config layers, Claude's wiring, the effective layout,
-the spend verdict, and a sample render. It belongs to whoever owns the binary,
-which is now this repo.
+`--debug` as a modifier narrates decisions on **stderr**. It must compose:
+`--version --debug` still prints a bare version; a render with `--debug` still
+prints the same bar on stdout. It exists because the spend path is otherwise
+completely silent — see §7.
+
+`--debug` as a mode reports the config layers and which resolved, Claude's
+wiring as read from `settings.json`, the effective layout, the resolved git
+facts, the spend verdict, and a sample render. (This absorbs `--info`, which was
+a flag on the `ai-plugins` installer rather than the script; it belongs to
+whoever owns the binary, which is now this repo.)
 
 ---
 
@@ -378,16 +453,43 @@ which is now this repo.
   `.git/HEAD`. If it is a *file*, it is a worktree or submodule pointer — parse
   `gitdir: <path>` (may be relative) and read `HEAD` from there. `HEAD` gives
   `ref: refs/heads/<branch>` → the branch, or a detached SHA → first 7 chars.
-- **Dirty marker** shells out once: `git diff --numstat HEAD`, falling back to
-  `--cached` on a repo with no commits. Sum additions and deletions; add 1 to
-  additions if `git ls-files --others --exclude-standard` is non-empty. Then `±`
-  for both, `+` for additions, `-` for deletions, empty for clean.
+- **Dirty marker** shells out up to twice: `git diff --numstat HEAD`, falling
+  back to `--cached` on a repo with no commits, then
+  `git ls-files --others --exclude-standard`. Sum additions and deletions; add
+  exactly **1** to additions if the untracked probe is non-empty, however many
+  untracked files there are. Then `±` for both, `+` for additions, `-` for
+  deletions, empty for clean.
+  - Each numstat count is `\d+` or `-`, and the two sides are suppressed
+    **independently**. Git reports `-` on both sides for a binary file, so a
+    change touching only binaries renders **clean**. That looks like a bug and
+    is the shipped behaviour.
+  - If the untracked probe fails, the **whole marker is dropped** even though
+    numstat succeeded. A partial count would be a quietly wrong number.
 - **Ahead marker** shells out once: `git rev-list --count @{upstream}..HEAD`,
   `↑` when > 0. Empty on any error, including no upstream.
 
-Both subprocesses take a **250 ms timeout** and swallow all errors into "no
-marker". Rust's `std::process::Command` has no built-in timeout — spawn and wait
-with one, or use a crate that does. **Do not let a slow git hang the bar.**
+Both markers are gated on a resolved **branch**, not on a root: a repo whose
+`HEAD` is empty runs no subprocesses at all.
+
+The whole set takes **one shared 250 ms budget**, with the two pipelines on
+separate threads.
+
+> **Amended 2026-08-19** (`main-bar` cycle). This said "both subprocesses take a
+> 250 ms timeout". There are up to four, and per-subprocess timeouts make the
+> worst case ~1 s. One shared deadline across two threads keeps the real budget
+> at the 250 ms the invariant in §1 promises.
+>
+> Note also what the upward walk does with a **broken** `.git`: an `HEAD` that
+> cannot be *read* does not stop the walk — it continues to the parent, so a
+> nested repo with an unreadable HEAD reports the outer repo. An `HEAD` that
+> reads but says nothing useful, or a `gitdir:` pointer that will not parse,
+> *does* stop it, with a root but no branch. That asymmetry is faithful to the
+> original's try-block scoping and is load-bearing for submodules.
+
+Rust's `std::process::Command` has no built-in timeout. Spawn, move the pipe
+into a reader thread, and wait on a channel: a solution that does not drain
+stdout can deadlock on a full pipe before its timeout is ever consulted. **Do
+not let a slow git hang the bar.**
 
 **Worktree subpath** — split cwd on `/`, find the *last* component matching
 `worktreePattern` (default `worktree`, case-insensitive), and take everything

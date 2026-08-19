@@ -3,3 +3,8 @@ graphify-out/graph.json merge=graphify
 # Nerd Font private-use codepoints: never EOL-normalise, never show as a diff.
 # A lost glyph here is unrecoverable — verify by rendering, not by reading.
 assets/claude-status.defaults.json -text -diff
+
+# Generated golden renders: raw ANSI plus the same private-use glyphs, and
+# deliberately without a trailing newline, because the renderer emits none.
+# Regenerate with `UPDATE_GOLDEN=1 cargo test --test golden`; never hand-edit.
+tests/golden/*.txt -text -diff

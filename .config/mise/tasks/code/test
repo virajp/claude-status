@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Run the test suite (cargo test)"
+
+#USAGE flag "--debug" help="emit debug logs"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+
+print_header "Running tests (cargo test) ..."
+
+# Never let a test reach the real spend endpoint: the macOS keychain is not
+# scoped by $HOME, so a stray fetch is both a privacy leak and a 429 the user
+# wears for half an hour. The e2e suite sets this per-invocation too; this is
+# the belt to that pair of braces.
+export CLAUDE_STATUS_SPEND_URL="${CLAUDE_STATUS_SPEND_URL:-http://127.0.0.1:1/never}"
+export AI_PLUGINS_SPEND_URL="${AI_PLUGINS_SPEND_URL:-http://127.0.0.1:1/never}"
+
+cargo test --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" ${VERBOSE}
+
+print_header "Tests done"

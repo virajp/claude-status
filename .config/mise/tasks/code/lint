@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Lint Rust code (clippy)"
+
+#USAGE flag "--debug" help="emit debug logs"
+#USAGE flag "--fix" help="apply fixes"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+
+if [[ "${usage_fix:-false}" == "true" ]]; then
+  print_header "Linting (clippy --fix) ..."
+  cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --fix --allow-dirty --allow-staged ${VERBOSE}
+fi
+
+print_header "Linting (clippy) ..."
+# Warnings are errors: the render path must not accumulate lint debt, and the
+# pre-commit hook is the only thing enforcing it.
+cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets ${VERBOSE} -- -D warnings
+
+print_header "Linting done"
