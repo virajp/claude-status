@@ -180,11 +180,17 @@ fn normalise(path: &Path) -> PathBuf {
     out
 }
 
-/// Splits `cwd` on `/`, drops empty components, and takes everything after the
-/// **last** component matching the pattern. Nothing after it — or no match at
-/// all — means this is not a worktree.
+/// Splits `cwd` on either separator, drops empty components, and takes
+/// everything after the **last** component matching the pattern. Nothing after
+/// it — or no match at all — means this is not a worktree.
+///
+/// The old implementation split on `/` alone, which was correct for the two
+/// platforms it ran on. On Windows a path is `\`-separated, so splitting on
+/// only `/` yields one component that is the whole path — no match, no worktree
+/// segment, ever. Both separators are accepted, and the subpath is rejoined
+/// with `/` because it is display text, not a path to open.
 pub fn worktree_subpath(cwd: &Path, pattern: &Matcher) -> Option<String> {
-    let parts: Vec<&str> = cwd.to_str()?.split('/').filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> = cwd.to_str()?.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
     let last_match = parts.iter().rposition(|p| pattern.is_match(p))?;
     let tail = parts.get(last_match + 1..)?;
     (!tail.is_empty()).then(|| tail.join("/"))
@@ -427,6 +433,24 @@ mod tests {
         assert_eq!(sub("/a/WORKTREES/b").as_deref(), Some("b"), "matching is case-insensitive");
         assert_eq!(sub("/a/worktree/b/worktrees/c").as_deref(), Some("c"), "the *last* match wins");
         assert_eq!(sub("//a//worktrees//b//").as_deref(), Some("b"), "empty components are dropped");
+    }
+
+    #[test]
+    fn worktree_subpath_understands_windows_separators() {
+        // Splitting on `/` alone made a whole Windows path one component, so no
+        // component ever matched and the worktree segment never appeared. This
+        // runs on every platform on purpose: it is a string operation, and it
+        // must not silently regress just because the developer is on macOS.
+        let m = matcher();
+        let sub = |p: &str| worktree_subpath(Path::new(p), &m);
+
+        assert_eq!(sub(r"C:\Users\x\repo\.worktrees\main-bar").as_deref(), Some("main-bar"));
+        assert_eq!(sub(r"C:\Users\x\worktrees\feat\src").as_deref(), Some("feat/src"), "rejoined for display");
+        assert_eq!(sub(r"C:\Users\x\WORKTREES\b").as_deref(), Some("b"));
+        assert_eq!(sub(r"C:\Users\x\repo\src"), None);
+        assert_eq!(sub(r"C:\Users\x\.worktrees"), None, "nothing after the match");
+        // A mixed path, which is what a POSIX-shaped tool on Windows produces.
+        assert_eq!(sub(r"C:\Users\x/worktrees\feat").as_deref(), Some("feat"));
     }
 
     #[test]

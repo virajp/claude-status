@@ -25,11 +25,12 @@ mise run build:npm ${DEBUG_FLAG}
 # produce a complete, publishable set.
 line_sep "-"
 STAGED="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
-if [[ "${STAGED}" != "4" ]]; then
-  print_error "staged ${STAGED}/4 platform packages — a release needs all four"
+EXPECTED="$(target_count)"
+if [[ "${STAGED}" != "${EXPECTED}" ]]; then
+  print_error "staged ${STAGED}/${EXPECTED} platform packages — a release needs every one"
   exit 1
 fi
 
 VERSION="$(crate_version)"
-print_header "claude-status ${VERSION}: 4 platform packages + the wrapper are staged in target/npm/."
+print_header "claude-status ${VERSION}: ${EXPECTED} platform packages + the wrapper are staged in target/npm/."
 print_yellow "  Publishing is CI's job — push a v${VERSION} tag to release."

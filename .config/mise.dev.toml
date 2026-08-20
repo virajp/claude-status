@@ -19,6 +19,12 @@ taplo       = { version = "latest" }
 "cargo:cargo-zigbuild" = { version = "latest" }
 zig                    = { version = "latest" }
 
+# Cross-compiling the two Windows targets from macOS. cargo-xwin fetches the
+# MSVC headers and import libraries on first use, so the first Windows build is
+# slow and needs a network. CI never touches it — the release workflow builds
+# each Windows target on a native Windows runner.
+"cargo:cargo-xwin" = { version = "latest" }
+
 [shell_alias]
 cc        = "claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
 ccf       = "claude --model 'fable[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"

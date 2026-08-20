@@ -35,8 +35,8 @@ mkdir -p "${OUT}"
 staged=0
 
 stage_platform() {
-  local target="$1" os="$2" cpu="$3"
-  local bin="target/${target}/release/claude-status"
+  local target="$1" os="$2" cpu="$3" exe="$4"
+  local bin="target/${target}/release/${exe}"
 
   if [[ ! -f "${bin}" ]]; then
     print_warn "  skipping ${os}-${cpu}: no binary at ${bin} (run build:cross first)"
@@ -52,17 +52,17 @@ stage_platform() {
       -e "s|{{CPU}}|${cpu}|g" \
       "${TEMPLATE}" > "${dir}/package.json"
 
-  install -m 755 "${bin}" "${dir}/bin/claude-status"
+  install -m 755 "${bin}" "${dir}/bin/${exe}"
   print_yellow "  staged $(platform_package "${os}" "${cpu}")"
   staged=$((staged + 1))
 }
 
-while read -r target os cpu; do
+while read -r target os cpu exe; do
   [[ -z "${target}" ]] && continue
   if [[ -n "${usage_target:-}" && "${target}" != "${usage_target}" ]]; then
     continue
   fi
-  stage_platform "${target}" "${os}" "${cpu}"
+  stage_platform "${target}" "${os}" "${cpu}" "${exe}"
 done < <(supported_targets)
 
 # The wrapper. Its optionalDependencies are pinned to an EXACT version: a range
@@ -89,16 +89,37 @@ if ! shasum -a 256 -c <(printf '%s  %s\n' \
 fi
 print_yellow "  staged @askviraj/claude-status (wrapper)"
 
-# A wrapper whose version does not match its pinned dependencies would install
-# and then fail to resolve a binary at runtime, which is the worst shape of
-# failure available here.
-PINNED="$(grep -c "\"${VERSION}\"" "${WRAPPER}/package.json" || true)"
-if [[ "${PINNED}" -lt 5 ]]; then
-  print_error "wrapper package.json does not pin all four platform packages at ${VERSION}"
+# The wrapper's optionalDependencies are GENERATED from the same target table
+# the platform packages come from, rather than hand-maintained. Adding a
+# platform to `supported_targets` is otherwise a two-file change, and forgetting
+# the second file ships a wrapper that cannot resolve a binary on the new
+# platform — which npm reports as a missing optional dependency, i.e. barely at
+# all. Pinned to an exact version, never a range.
+DEPS=""
+while read -r _target os cpu _exe; do
+  [[ -z "${os}" ]] && continue
+  DEPS+="$(platform_package "${os}" "${cpu}") "
+done < <(supported_targets)
+
+node -e '
+  const [manifest, version, ...packages] = process.argv.slice(1);
+  const fs = require("node:fs");
+  const pkg = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  pkg.optionalDependencies = Object.fromEntries(
+    packages.sort().map((name) => [name, version]),
+  );
+  fs.writeFileSync(manifest, JSON.stringify(pkg, null, 2) + "\n");
+' "${WRAPPER}/package.json" "${VERSION}" ${DEPS}
+
+PINNED="$(node -p "Object.keys(require('./${WRAPPER}/package.json').optionalDependencies).length")"
+if [[ "${PINNED}" != "$(target_count)" ]]; then
+  print_error "wrapper pins ${PINNED} platform packages, expected $(target_count)"
   exit 1
 fi
+print_yellow "  pinned ${PINNED} platform packages at ${VERSION}"
 
-print_header "Staged ${staged}/4 platform packages + the wrapper in ${OUT}/."
-if [[ "${staged}" -lt 4 && -z "${usage_target:-}" ]]; then
+EXPECTED="$(target_count)"
+print_header "Staged ${staged}/${EXPECTED} platform packages + the wrapper in ${OUT}/."
+if [[ "${staged}" -lt "${EXPECTED}" && -z "${usage_target:-}" ]]; then
   print_warn "Not all targets were present — a release must stage all four."
 fi

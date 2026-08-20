@@ -28,8 +28,44 @@ export interface Paths {
   receipt: string;
 }
 
+/** The binary's filename, which carries an extension only on Windows. */
+export const BINARY_NAME = process.platform === "win32"
+  ? "claude-status.exe"
+  : "claude-status";
+
+/**
+ * The home directory.
+ *
+ * `HOME` first — it is what Unix uses, it is what Git Bash sets on Windows, and
+ * honouring it is what lets the tests point the installer at a throwaway
+ * directory. Then `USERPROFILE`, which is where Claude Code keeps `.claude` on
+ * native Windows, and finally the drive/path pair a domain-joined machine may
+ * have instead.
+ */
+export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env["HOME"];
+  if (home && home.length > 0) {
+    return home;
+  }
+
+  if (process.platform === "win32") {
+    const profile = env["USERPROFILE"];
+    if (profile && profile.length > 0) {
+      return profile;
+    }
+
+    const drive = env["HOMEDRIVE"];
+    const path = env["HOMEPATH"];
+    if (drive && path) {
+      return `${drive}${path}`;
+    }
+  }
+
+  return homedir();
+}
+
 export function resolvePaths(env: NodeJS.ProcessEnv = process.env): Paths {
-  const home = env["HOME"] && env["HOME"].length > 0 ? env["HOME"] : homedir();
+  const home = resolveHome(env);
   const claudeDir = join(home, ".claude");
   const configDir = join(home, ".config");
   const stateDir = join(configDir, "claude-status");
@@ -38,7 +74,7 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): Paths {
     home,
     claudeDir,
     binDir: join(claudeDir, "bin"),
-    binary: join(claudeDir, "bin", "claude-status"),
+    binary: join(claudeDir, "bin", BINARY_NAME),
     settings: join(claudeDir, "settings.json"),
     configDir,
     config: join(configDir, "claude-status.json"),

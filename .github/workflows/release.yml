@@ -109,6 +109,12 @@ jobs:
             os: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            exe: .exe
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            exe: .exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -122,20 +128,25 @@ jobs:
 
       # The binary is what ships, so prove this exact file answers `--version`
       # with the bare number the installer keys on.
+      # The binary is what ships, so prove this exact file answers `--version`
+      # with the bare number the installer keys on. `bash` explicitly, because
+      # the Windows runners default to PowerShell.
       - name: Verify the built binary
+        shell: bash
         run: |
-          bin="target/${{ matrix.target }}/release/claude-status"
-          file "$bin"
+          bin="target/${{ matrix.target }}/release/claude-status${{ matrix.exe }}"
           reported="$("$bin" --version)"
           if [ "$reported" != "${{ needs.verify.outputs.version }}" ]; then
             echo "::error::$bin reports $reported, expected ${{ needs.verify.outputs.version }}"
             exit 1
           fi
+          echo "$bin -> $reported"
 
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/claude-status
+          path: target/${{ matrix.target }}/release/claude-status${{ matrix.exe
+            }}
           if-no-files-found: error
           retention-days: 1
 
@@ -159,12 +170,9 @@ jobs:
       - name: Reassemble the build outputs
         run: |
           set -e
-          for target in aarch64-apple-darwin x86_64-apple-darwin \
-                        x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
-            mkdir -p "target/$target/release"
-            cp "artifacts/binary-$target/claude-status" "target/$target/release/claude-status"
-            chmod 755 "target/$target/release/claude-status"
-          done
+          # Driven by the same table build:npm reads, so adding a target does
+          # not need this step edited too.
+          .config/mise/tasks/_scripts/_rust_reassemble
 
       # tsup bundles the installer, so the build dependencies are needed here
       # too — `build:npm` refuses to stage without a bundle.
@@ -174,11 +182,14 @@ jobs:
       - name: Stage the npm packages
         run: mise run build:npm
 
-      - name: Verify all four platform packages staged
+      - name: Verify every platform package staged
         run: |
+          set -e
+          source .config/mise/tasks/_scripts/_rust
+          expected="$(target_count)"
           count="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
-          if [ "$count" != "4" ]; then
-            echo "::error::staged $count platform packages, expected 4"
+          if [ "$count" != "$expected" ]; then
+            echo "::error::staged $count platform packages, expected $expected"
             exit 1
           fi
 

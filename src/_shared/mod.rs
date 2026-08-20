@@ -2,5 +2,6 @@
 
 pub mod fmt;
 pub mod json;
+pub mod paths;
 pub mod proc;
 pub mod time;
