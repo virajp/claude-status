@@ -26,9 +26,9 @@ zig                    = { version = "latest" }
 "cargo:cargo-xwin" = { version = "latest" }
 
 [shell_alias]
-cc        = "claude --name 'claude-status' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
-ccf       = "claude --name 'claude-status' --model 'fable[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
-cco       = "claude --name 'claude-status' --model 'opus[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
+cc        = "claude --name 'claude-status' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status' --continue"
+ccf       = "claude --name 'claude-status' --model 'fable[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status' --continue"
+cco       = "claude --name 'claude-status' --model 'opus[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status' --continue"
 precommit = "mise run code:precommit"
 setup     = "mise run setup:all"
 
