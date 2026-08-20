@@ -1,0 +1,32 @@
+{
+  "name": "@askviraj/claude-status",
+  "version": "0.0.0-managed-by-cargo",
+  "description": "A fast powerline status line for Claude Code",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "statusline",
+    "powerline"
+  ],
+  "homepage": "https://github.com/virajp/claude-status#readme",
+  "bugs": "https://github.com/virajp/claude-status/issues",
+  "repository": "github:virajp/claude-status",
+  "license": "MIT",
+  "author": "Viraj Patel",
+  "type": "module",
+  "bin": {
+    "claude-status": "./bin/claude-status.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@askviraj/claude-status-darwin-arm64": "0.0.0-managed-by-cargo",
+    "@askviraj/claude-status-darwin-x64": "0.0.0-managed-by-cargo",
+    "@askviraj/claude-status-linux-arm64": "0.0.0-managed-by-cargo",
+    "@askviraj/claude-status-linux-x64": "0.0.0-managed-by-cargo"
+  }
+}
