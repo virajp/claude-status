@@ -34,6 +34,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BUNDLE = join(ROOT, "npm", "claude-status", "bin", "installer.mjs");
 const ASSET = join(ROOT, "assets", "claude-status.defaults.json");
+/** The installed binary's filename, which differs on Windows. */
+const BINARY_NAME = process.platform === "win32"
+  ? "claude-status.exe"
+  : "claude-status";
 
 /** A fake platform package, so the installer has a binary to copy. */
 let fakeModules;
@@ -46,9 +50,12 @@ before(() => {
 
   // The installer resolves `@askviraj/claude-status-<os>-<cpu>` relative to
   // itself, so stand one up beside the bundle.
-  const pkg = `@askviraj/claude-status-${process.platform}-${
-    process.arch === "x64" ? "x64" : process.arch
-  }`;
+  const pkg = `@askviraj/claude-status-${process.platform}-${process.arch}`;
+  // The binary carries an extension on Windows, and the installer looks for
+  // exactly that name.
+  const exe = process.platform === "win32"
+    ? "claude-status.exe"
+    : "claude-status";
   fakeModules = join(ROOT, "npm", "claude-status", "node_modules", pkg);
   mkdirSync(join(fakeModules, "bin"), { recursive: true });
   writeFileSync(
@@ -56,7 +63,7 @@ before(() => {
     JSON.stringify({ name: pkg, version: "6.0.0" }),
   );
   writeFileSync(
-    join(fakeModules, "bin", "claude-status"),
+    join(fakeModules, "bin", exe),
     "#!/bin/sh\necho 6.0.0\n",
     { mode: 0o755 },
   );
@@ -166,7 +173,7 @@ describe("--install", () => {
     const { code } = run(home, ["--install"]);
     assert.equal(code, 0);
 
-    assert.ok(existsSync(join(home, ".claude", "bin", "claude-status")));
+    assert.ok(existsSync(join(home, ".claude", "bin", BINARY_NAME)));
 
     // The seeded config must be byte-identical to the shipped asset — every
     // Nerd Font glyph intact.
@@ -406,7 +413,7 @@ describe("--uninstall", () => {
 
     assert.equal(code, 0);
     assert.ok(
-      !existsSync(join(home, ".claude", "bin", "claude-status")),
+      !existsSync(join(home, ".claude", "bin", BINARY_NAME)),
       "the binary is unambiguously ours",
     );
     assert.match(

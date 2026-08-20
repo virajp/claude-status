@@ -11,19 +11,30 @@ crate_version() {
   cargo pkgid | sed -E 's/.*[@#]([0-9]+\.[0-9]+\.[0-9]+.*)$/\1/'
 }
 
-# The four supported targets, as `<rust-triple> <npm-os> <npm-cpu>` rows.
+# The supported targets, as `<rust-triple> <npm-os> <npm-cpu> <binary-name>`
+# rows — every platform Claude Code itself runs on.
 #
-# gnu rather than musl: the bar shells out to git and reads the user's config,
-# so it lives on a normal desktop libc, and a musl build buys nothing here.
+# gnu rather than musl on Linux: the bar shells out to git and reads the user's
+# config, so it lives on a normal desktop libc, and a musl build buys nothing.
+#
+# msvc rather than gnu on Windows: it is the default Rust toolchain there and
+# needs no runtime DLLs beside the binary.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
 supported_targets() {
   printf '%s\n' \
-    'aarch64-apple-darwin darwin arm64' \
-    'x86_64-apple-darwin darwin x64' \
-    'x86_64-unknown-linux-gnu linux x64' \
-    'aarch64-unknown-linux-gnu linux arm64'
+    'aarch64-apple-darwin darwin arm64 claude-status' \
+    'x86_64-apple-darwin darwin x64 claude-status' \
+    'x86_64-unknown-linux-gnu linux x64 claude-status' \
+    'aarch64-unknown-linux-gnu linux arm64 claude-status' \
+    'x86_64-pc-windows-msvc win32 x64 claude-status.exe' \
+    'aarch64-pc-windows-msvc win32 arm64 claude-status.exe'
+}
+
+# How many platform packages a complete release carries.
+target_count() {
+  supported_targets | wc -l | tr -d ' '
 }
 
 # The npm package name for a target's os/cpu pair.

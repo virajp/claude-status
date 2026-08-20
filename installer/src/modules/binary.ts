@@ -18,15 +18,23 @@ import {
   existsSync,
   mkdirSync,
 } from "../_shared/io.js";
+import { BINARY_NAME } from "../_shared/paths.js";
 
 const require = createRequire(import.meta.url);
 
-/** npm installs only the optionalDependency matching the host. */
+/**
+ * npm installs only the optionalDependency matching the host.
+ *
+ * Every platform Claude Code itself runs on: macOS and Linux on both
+ * architectures, and Windows 10 1809+ on x64 and ARM64.
+ */
 const PACKAGES: Record<string, string> = {
   "darwin:arm64": "@askviraj/claude-status-darwin-arm64",
   "darwin:x64": "@askviraj/claude-status-darwin-x64",
   "linux:arm64": "@askviraj/claude-status-linux-arm64",
   "linux:x64": "@askviraj/claude-status-linux-x64",
+  "win32:arm64": "@askviraj/claude-status-win32-arm64",
+  "win32:x64": "@askviraj/claude-status-win32-x64",
 };
 
 export function supportedPlatforms(): string[] {
@@ -60,7 +68,7 @@ export function resolvePlatformBinary(): Resolution {
     const path = join(
       dirname(require.resolve(`${pkg}/package.json`)),
       "bin",
-      "claude-status",
+      BINARY_NAME,
     );
     if (!existsSync(path)) {
       return { ok: false, reason: "missing", package: pkg };
@@ -75,5 +83,9 @@ export function resolvePlatformBinary(): Resolution {
 export function install(source: string, destination: string): void {
   mkdirSync(dirname(destination), { recursive: true });
   copyFileSync(source, destination);
-  chmodSync(destination, 0o755);
+  // No-op on Windows, where the `.exe` extension is what makes a file
+  // runnable — and where chmod can throw on some filesystems.
+  if (process.platform !== "win32") {
+    chmodSync(destination, 0o755);
+  }
 }

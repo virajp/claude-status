@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="Put CI's downloaded build artifacts back where build:npm expects them"
+#MISE hide=true
+
+# Each build job uploads one binary; `actions/download-artifact` lands them in
+# `artifacts/binary-<target>/`. This puts them back under `target/<triple>/
+# release/`, restoring the executable bit that upload-artifact drops.
+#
+# Driven by `supported_targets`, so adding a platform is a one-line change in
+# one file rather than an edit here as well.
+
+set -e
+source "$(dirname "${BASH_SOURCE[0]}")/_rust"
+
+while read -r target _os _cpu exe; do
+  [[ -z "${target}" ]] && continue
+  mkdir -p "target/${target}/release"
+  cp "artifacts/binary-${target}/${exe}" "target/${target}/release/${exe}"
+  chmod 755 "target/${target}/release/${exe}"
+  echo "  restored target/${target}/release/${exe}"
+done < <(supported_targets)

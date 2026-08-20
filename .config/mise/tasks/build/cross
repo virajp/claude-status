@@ -38,6 +38,19 @@ build_one() {
     # Apple ships both slices of the system libraries.
     print_wait "  ${target} (apple cross) ... "
     cargo build --release --target "${target}" ${VERBOSE} >/dev/null
+  elif [[ "${target}" == *-pc-windows-msvc ]]; then
+    # MSVC targets need the Windows SDK headers and import libraries.
+    # cargo-xwin fetches them; CI never gets here, because it builds each
+    # Windows target on a native Windows runner.
+    if ! command -v cargo-xwin >/dev/null 2>&1; then
+      print_newline
+      print_error "${target} needs cargo-xwin, which is not installed."
+      print_warn  "Install it with:  mise use -g cargo:cargo-xwin"
+      print_warn  "Or let CI build it: the release workflow uses a native Windows runner."
+      exit 1
+    fi
+    print_wait "  ${target} (xwin) ... "
+    cargo-xwin xwin build --release --target "${target}" ${VERBOSE} >/dev/null
   else
     if ! command -v "${ZIGBUILD}" >/dev/null 2>&1; then
       print_newline
@@ -50,7 +63,9 @@ build_one() {
     "${ZIGBUILD}" zigbuild --release --target "${target}" ${VERBOSE} >/dev/null
   fi
 
-  local bin="target/${target}/release/claude-status"
+  local exe="claude-status"
+  [[ "${target}" == *-pc-windows-* ]] && exe="claude-status.exe"
+  local bin="target/${target}/release/${exe}"
   if [[ ! -f "${bin}" ]]; then
     print_newline
     print_error "no binary at ${bin}"
@@ -66,7 +81,7 @@ print_header "Building claude-status ${VERSION} ..."
 if [[ -n "${usage_target:-}" ]]; then
   build_one "${usage_target}"
 else
-  while read -r target _os _cpu; do
+  while read -r target _os _cpu _exe; do
     [[ -z "${target}" ]] && continue
     build_one "${target}"
   done < <(supported_targets)

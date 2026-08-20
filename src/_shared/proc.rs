@@ -102,15 +102,36 @@ mod tests {
         Path::new(".")
     }
 
+    /// The same trivial behaviours, spelled for whichever shell is present.
+    /// Windows gets real coverage here rather than a skip: this is the module
+    /// whose process handling is most likely to differ between platforms.
+    #[cfg(unix)]
+    mod shell {
+        pub const ECHO: (&str, &[&str]) = ("echo", &["hello"]);
+        pub const ECHO_STDOUT: &str = "hello\n";
+        pub const FAILS: (&str, &[&str]) = ("false", &[]);
+        pub const NEVER_ENDS: (&str, &[&str]) = ("sleep", &["30"]);
+    }
+
+    #[cfg(windows)]
+    mod shell {
+        pub const ECHO: (&str, &[&str]) = ("cmd", &["/C", "echo hello"]);
+        pub const ECHO_STDOUT: &str = "hello\r\n";
+        pub const FAILS: (&str, &[&str]) = ("cmd", &["/C", "exit 1"]);
+        // `ping` is the portable way to make a Windows child wait while also
+        // producing output, so this exercises draining as well as the kill.
+        pub const NEVER_ENDS: (&str, &[&str]) = ("cmd", &["/C", "ping -n 60 127.0.0.1"]);
+    }
+
     #[test]
     fn a_successful_command_returns_its_stdout() {
-        let out = run_bounded("echo", &["hello"], cwd(), Deadline::in_ms(5_000));
-        assert_eq!(out.as_deref(), Some("hello\n"));
+        let out = run_bounded(shell::ECHO.0, shell::ECHO.1, cwd(), Deadline::in_ms(5_000));
+        assert_eq!(out.as_deref(), Some(shell::ECHO_STDOUT));
     }
 
     #[test]
     fn a_nonzero_exit_is_none() {
-        assert_eq!(run_bounded("false", &[], cwd(), Deadline::in_ms(5_000)), None);
+        assert_eq!(run_bounded(shell::FAILS.0, shell::FAILS.1, cwd(), Deadline::in_ms(5_000)), None);
     }
 
     #[test]
@@ -121,7 +142,7 @@ mod tests {
     #[test]
     fn a_slow_command_is_killed_at_the_deadline() {
         let start = Instant::now();
-        let out = run_bounded("sleep", &["30"], cwd(), Deadline::in_ms(150));
+        let out = run_bounded(shell::NEVER_ENDS.0, shell::NEVER_ENDS.1, cwd(), Deadline::in_ms(150));
         assert_eq!(out, None);
         assert!(start.elapsed() < Duration::from_secs(5), "took {:?}; should have been killed", start.elapsed());
     }
@@ -130,18 +151,21 @@ mod tests {
     fn an_already_expired_deadline_spawns_nothing() {
         let deadline = Deadline::in_ms(0);
         assert!(deadline.expired());
-        assert_eq!(run_bounded("echo", &["hello"], cwd(), deadline), None);
+        assert_eq!(run_bounded(shell::ECHO.0, shell::ECHO.1, cwd(), deadline), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_large_output_does_not_deadlock_on_a_full_pipe() {
         // Far more than a pipe buffer, which is where a non-draining wait would
-        // hang forever instead of timing out.
+        // hang forever instead of timing out. `yes` has no Windows counterpart
+        // that floods a pipe as reliably; the kill path above covers the rest.
         let out = run_bounded("yes", &["padding-line"], cwd(), Deadline::in_ms(200));
         // `yes` never exits, so it is killed: the point is that we get here.
         assert_eq!(out, None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_deadline_is_shared_not_per_command() {
         let deadline = Deadline::in_ms(300);

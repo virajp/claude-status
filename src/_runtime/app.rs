@@ -10,6 +10,7 @@ use std::io::{IsTerminal, Read, Write as _};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
+use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
 use crate::config::Config;
 use crate::config::layers::{self, Layers};
@@ -220,11 +221,6 @@ fn sample_facts() -> MainFacts {
     }
 }
 
-/// `$HOME`, read directly — **not** a platform config dir, which on macOS
-/// resolves to `~/Library/Application Support` and would miss every install.
-fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)
-}
 
 /// One write, after the whole string exists.
 fn write_stdout(output: &str) {
