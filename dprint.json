@@ -24,8 +24,7 @@
       },
       {
         "cacheKeyFiles": [
-          "rustfmt.toml",
-          "rust-toolchain.toml"
+          "rustfmt.toml"
         ],
         "command": "mise x -- rustfmt -",
         "exts": [
