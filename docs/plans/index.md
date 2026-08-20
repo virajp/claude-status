@@ -13,13 +13,13 @@ cycles. Each plan is a diff against
 [the behaviour contract](../spec/statusline-behaviour.md), and each ends at
 something runnable.
 
-| Plan                                                                  | Target repo     | Requires                         | Landed                                  | Status |
-| --------------------------------------------------------------------- | --------------- | -------------------------------- | --------------------------------------- | ------ |
-| [2026-08-19-1400-main-bar](./2026-08-19-1400-main-bar.md)             | `claude-status` | —                                | executed, merged in `7cb6247`           | active |
-| [2026-08-19-1401-subagent-panel](./2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | —                                       | active |
-| [2026-08-19-1402-spend](./2026-08-19-1402-spend.md)                   | `claude-status` | main-bar                         | executed, merged in `d68baf6`           | active |
-| [2026-08-19-1404-caps-hook](./2026-08-19-1404-caps-hook.md)           | `claude-status` | main-bar                         | —                                       | active |
-| [2026-08-19-1403-distribution](./2026-08-19-1403-distribution.md)     | `claude-status` | subagent-panel, spend, caps-hook | steps 1, 3, 4 and 9 only — see its plan | active |
+| Plan                                                                  | Target repo     | Requires                         | Landed                           | Status |
+| --------------------------------------------------------------------- | --------------- | -------------------------------- | -------------------------------- | ------ |
+| [2026-08-19-1400-main-bar](./2026-08-19-1400-main-bar.md)             | `claude-status` | —                                | executed, merged in `7cb6247`    | active |
+| [2026-08-19-1401-subagent-panel](./2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | —                                | active |
+| [2026-08-19-1402-spend](./2026-08-19-1402-spend.md)                   | `claude-status` | main-bar                         | executed, merged in `d68baf6`    | active |
+| [2026-08-19-1404-caps-hook](./2026-08-19-1404-caps-hook.md)           | `claude-status` | main-bar                         | —                                | active |
+| [2026-08-19-1403-distribution](./2026-08-19-1403-distribution.md)     | `claude-status` | subagent-panel, spend, caps-hook | steps 1, 3, 4, 9 and most of 5–8 | active |
 
 **`Landed` records execution; `Status` records archival.** A row stays `active`
 until `/vwf:archive` retires it, and neither executed cycle can be archived yet
@@ -31,13 +31,15 @@ in any order or concurrently in separate worktrees, then `distribution` last.
 Filename timestamps record when each plan was written, not when it runs:
 `caps-hook` was added after `distribution` and precedes it.
 
-**One deliberate exception to that order.** `distribution`'s steps 1, 3, 4 and 9
-— the build tasks, the platform packages, the npx wrapper and the CI release
-workflow — were executed ahead of its `requires:`, on request, because none of
-them depends on the panel, the spend subsystem or the hook. Its remaining steps
-(2 and 5–8 — the installer, its receipts, `--uninstall` and the two migrations —
-plus step 10's readme) stay gated on all three predecessors. Nothing has shipped
-from it: the repo carries no release tag.
+**One deliberate exception to that order.** Most of `distribution` was executed
+ahead of its `requires:`, on request, because little of it depends on the panel,
+the spend subsystem or the hook: steps 1, 3, 4 and 9 (the build tasks, the
+platform packages, the npx wrapper, the CI release workflow), then most of 5–8
+(the installer, its receipt, `--uninstall`, the config seed and the
+`statusline.json` rename). What is left needs a predecessor or a decision —
+`--dry-run` and `--yes`, the `PostToolUse` caps-hook key, the sweep of the
+orphaned JS statusline and hook, and step 10's readme. Nothing has shipped from
+it: the repo carries no release tag.
 
 ## Not planned here
 
