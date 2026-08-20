@@ -13,11 +13,20 @@ cd "$MISE_PROJECT_ROOT"
 
 VERSION="$(crate_version)"
 OUT="target/npm"
+ASSET="assets/claude-status.defaults.json"
 
 # The four platform packages differ only in name, os, cpu and the binary they
 # carry, so they are generated from one template. Hand-maintaining four
 # near-identical manifests is how three of them end up stale.
 TEMPLATE="npm/platform.template.json"
+
+print_header "Bundling the installer (tsup) ..."
+pnpm exec tsup
+
+if [[ ! -f npm/claude-status/bin/installer.mjs ]]; then
+  print_error "tsup produced no npm/claude-status/bin/installer.mjs"
+  exit 1
+fi
 
 print_header "Staging npm packages for claude-status ${VERSION} ..."
 rm -rf "${OUT}"
@@ -65,7 +74,19 @@ cp -R npm/claude-status/. "${WRAPPER}/"
 sed -i.bak "s|0\.0\.0-managed-by-cargo|${VERSION}|g" "${WRAPPER}/package.json"
 rm -f "${WRAPPER}/package.json.bak"
 cp readme.md "${WRAPPER}/README.md" 2>/dev/null || true
-chmod 755 "${WRAPPER}/bin/claude-status.mjs"
+chmod 755 "${WRAPPER}/bin/installer.mjs"
+
+# The installer seeds a fresh config from the shipped defaults, so the asset
+# ships beside the bundle. A byte copy of the ONE source of truth — never a
+# re-encode, never a second hand-maintained copy: almost every symbol in it is
+# a Nerd Font private-use codepoint that does not survive being rewritten.
+install -m 644 "${ASSET}" "${WRAPPER}/bin/claude-status.defaults.json"
+if ! shasum -a 256 -c <(printf '%s  %s\n' \
+  "$(shasum -a 256 "${ASSET}" | cut -d' ' -f1)" \
+  "${WRAPPER}/bin/claude-status.defaults.json") >/dev/null; then
+  print_error "the staged defaults asset does not match ${ASSET}"
+  exit 1
+fi
 print_yellow "  staged @askviraj/claude-status (wrapper)"
 
 # A wrapper whose version does not match its pinned dependencies would install

@@ -13,3 +13,9 @@ graphify-out/
 # Added by cargo
 
 /target
+
+# Built installer bundle — regenerate with `pnpm exec tsup`.
+/npm/claude-status/bin/
+
+# Node dependencies
+node_modules/
