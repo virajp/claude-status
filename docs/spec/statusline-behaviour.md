@@ -522,14 +522,22 @@ for half an hour or more — and the bar can render every few seconds. So:
 
 ### The cache
 
-`~/.cache/ai-plugins/spend.json`, overridable with `$AI_PLUGINS_SPEND_CACHE`
-(honour a leading `~`). **Machine-global on purpose** — one fetch per interval
-per machine, however many sessions are open.
+`~/.cache/claude-status/spend.json`, overridable with
+`$CLAUDE_STATUS_SPEND_CACHE` (honour a leading `~`). **Machine-global on
+purpose** — one fetch per interval per machine, however many sessions are open.
 
-> Pick the new path deliberately. `~/.cache/claude-status/spend.json` is the
-> right name for this repo, but the env var and path are a compatibility
-> surface. Decide whether to migrate an existing cache or just let it re-fetch
-> (re-fetching is harmless — one request).
+> **Amended 2026-08-20** (`spend` cycle). The open question below was resolved:
+> the path and the env var both took this repo's name, and **no migration was
+> written**. An existing `~/.cache/ai-plugins/spend.json` is left in place and
+> ignored, so an upgraded install re-fetches exactly once — harmless by the
+> contract's own reasoning.
+>
+> `$AI_PLUGINS_SPEND_CACHE` is **no longer read at all**. Anyone with it
+> exported in a shell profile will find it silently ignored.
+>
+> Only a **leading `~`** expands — unlike `$AI_PLUGINS_USAGE_DIR` in §8, which
+> also expands `$HOME` and `${HOME}`. The two are different contracts and this
+> document previously conflated them.
 
 ```jsonc
 {
@@ -560,7 +568,7 @@ per machine, however many sessions are open.
    `security find-generic-password -s "Claude Code-credentials" -w`. The first
    keychain read may prompt the user once.
 4. **Fetch** `https://api.anthropic.com/api/oauth/usage` (overridable with
-   `$AI_PLUGINS_SPEND_URL`) with `Authorization: Bearer <token>`.
+   `$CLAUDE_STATUS_SPEND_URL`) with `Authorization: Bearer <token>`.
 5. **Extract**, in this order:
    - `spend.limit.amount_minor` present → use `spend.used.amount_minor`,
      `spend.limit.amount_minor`, `spend.limit.exponent`, `spend.percent`,
@@ -608,6 +616,35 @@ the token itself**), the HTTP status, what was extracted — and, at the end, a
 verdict: `WILL RENDER` with the figure, or which gate stops it.
 
 Reproduce the verdict. It is the single most useful line the tool prints.
+
+> **Amended 2026-08-20** (`spend` cycle). `--debug` **as a mode performs a live,
+> synchronous, foreground fetch.** It does not merely report the cache, and the
+> distinction is the whole reason the subsystem is diagnosable at all:
+>
+> On a fresh machine the cache **does not exist**. The first render reads
+> nothing, therefore draws nothing, and only *then* spawns the detached refresh
+> child — whose stdio is `/dev/null`. So run one is *guaranteed* to show no
+> budget, and every diagnostic from that first fetch is discarded. A passive
+> `--debug` inspecting the cache at that moment could only say "no cache yet",
+> which is precisely the useless answer the user already had.
+>
+> Three consequences, all deliberate:
+>
+> - It **respects the lock and the backoff but reports them rather than silently
+>   obeying** — "a refresh is already running, holder started 14s ago", "in
+>   backoff, 28m left — fetching anyway to diagnose".
+> - It **bypasses the 60-second dedupe**, because a user typing `--debug` twice
+>   wants two answers.
+> - It **writes the result to the cache** like any successful refresh, so a
+>   `--debug` that works leaves the next render working too. This is the
+>   supported fix for a first install that shows no budget.
+>
+> The token is never printed on stdout or stderr in **any** branch — success,
+> 401, 429, no credentials, refused connection, or keychain denial. Only where
+> it was found.
+>
+> As a *modifier* (`--statusline --debug`) this does not apply: a render still
+> never fetches, and stdout stays byte-identical.
 
 ---
 
@@ -704,7 +741,7 @@ extraction ladder, backoff, the four gates, and `--debug`.
 
 *Verify:* against a **stub HTTP server**, not the real endpoint — exercise 200
 with a `spend` block, 200 with `extra_usage`, 200 with neither, 401, 429, and a
-connection refusal. Then one real `--refresh-spend --debug` to confirm the
+connection refusal. Then one real `claude-status --debug` to confirm the
 credential path works on a live machine.
 
 ### Phase 4 — distribution
@@ -739,8 +776,15 @@ Two hazards to design around from the start:
 
 - **The keychain is not scoped by `$HOME`.** A test with a fake home can still
   trigger a real credential read and a real network call if a stale cache spawns
-  a refresh. Zero `refreshMinutes` in test configs, and point
-  `$AI_PLUGINS_SPEND_URL` at a closed port or a stub.
+  a refresh. Zero `refreshMinutes` in test configs, point
+  `$CLAUDE_STATUS_SPEND_URL` at a closed port or a stub, **and seed a
+  `.claude/.credentials.json` inside the fake home** — without it the keychain
+  fallback reaches the developer's real token.
+- **Making a previously inert path live can turn a passing test into a
+  live-fetch test, silently.** When a `match` arm stops being a stub, re-audit
+  the *unit* tests too, not just the integration ones — an in-process test that
+  calls the dispatcher is one arm away from a real request, and nothing about it
+  will look different when it starts fetching.
 - **Assert that no diagnostic reaches stdout.** Capture both streams separately
   and check stdout holds only the bar. This is the invariant most likely to
   regress and least likely to be noticed.
@@ -754,8 +798,15 @@ echo '{"model":{"display_name":"Opus 4.8"},"effort":{"level":"high"},"session_na
 # subagent panel — NDJSON, so pipe through jq to see it
 echo '{"columns":120,"tasks":[{"id":"t1","name":"reviewer","type":"review","status":"running","description":"Auditing auth flow","tokenCount":18234}]}' | claude-status | jq -r .content
 
-# spend, narrated
-AI_PLUGINS_SPEND_CACHE=/tmp/spend.json claude-status --refresh-spend --debug
+# spend, diagnosed — NOTE: this FETCHES, live, in the foreground.
+# Both overrides matter: the cache one keeps it off ~/.cache/claude-status,
+# and without the URL one it hits the real endpoint with your real token.
+CLAUDE_STATUS_SPEND_CACHE=/tmp/spend.json \
+  CLAUDE_STATUS_SPEND_URL=http://127.0.0.1:1/never \
+  claude-status --debug
+
+# spend, against the real endpoint — one request, and it writes the real cache
+claude-status --debug
 ```
 
 ## 13. What not to port

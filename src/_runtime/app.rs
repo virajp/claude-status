@@ -17,6 +17,8 @@ use crate::config::layers::{self, Layers};
 use crate::git::GitFacts;
 use crate::payload::MainFacts;
 use crate::render::main_bar::render_main;
+use crate::_shared::proc;
+use crate::modules::spend;
 use crate::{cli, git, json, payload, time, usage};
 
 /// What the bar falls back to when a render panics: U+26A1, a space, `Claude`.
@@ -41,10 +43,19 @@ fn dispatch(cli: Cli) -> String {
         Mode::Statusline => render_statusline(cli.debug),
         // Plan 2 fills this in; until then it is recognised and silent.
         Mode::Subagent => String::new(),
-        // Plan 3 fills this in.
-        Mode::RefreshSpend => String::new(),
+        Mode::RefreshSpend => refresh_spend(),
         Mode::Debug => debug_report(),
     }
+}
+
+/// The detached refresh child. It writes **nothing** to stdout: it is spawned
+/// with its stdio at `/dev/null`, so anything it said would be discarded, and
+/// it always exits 0.
+fn refresh_spend() -> String {
+    let config = layers::load(home().as_deref(), None).config;
+    let spend_config = spend::SpendConfig::from_config(&config);
+    spend::refresh::run(&spend::cache::path(), spend_config.refresh_minutes, time::now_ms(), false);
+    String::new()
 }
 
 /// Renders the main bar, catching a panic into the fallback line.
@@ -100,7 +111,39 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
     git::resolve_markers(&mut git_facts);
     narrate(&format!("git markers: ahead={} +{} -{}", git_facts.ahead, git_facts.additions, git_facts.deletions));
 
-    render_main(&facts, &git_facts, &layers.config)
+    let spend = resolve_spend(&layers.config, facts.now_ms, narrate);
+    render_main(&facts, &git_facts, &layers.config, spend.as_deref())
+}
+
+/// The spend segment's text, and the decision to spawn a refresh behind it.
+///
+/// **Gate 1 comes before everything.** A user without `spend` in their layout
+/// pays nothing for it: no cache read, no fork, no keychain prompt. That is
+/// why this is not simply a segment builder.
+///
+/// A render never fetches. When the cache is stale this spawns a detached
+/// child and returns the **cached** text immediately, without waiting.
+fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option<String> {
+    let lines = config.lines();
+    if !spend::in_layout(&lines) {
+        narrate("spend: not in the layout, nothing read");
+        return None;
+    }
+
+    let spend_config = spend::SpendConfig::from_config(config);
+    let cached = spend::cache::read_from(&spend::cache::path());
+
+    match spend::schedule::decide(cached.as_ref(), &spend_config, now_ms) {
+        spend::schedule::Decision::Spawn => {
+            let spawned = proc::spawn_detached(&["--refresh-spend"]);
+            narrate(&format!("spend: stale, refresh child spawned={spawned}"));
+        }
+        decision => narrate(&format!("spend: no refresh ({decision:?})")),
+    }
+
+    let verdict = spend::verdict(cached.as_ref(), &spend_config, &lines, config.symbol("spend"));
+    narrate(&format!("spend: {verdict:?}"));
+    verdict.text().map(str::to_string)
 }
 
 /// The `--debug` report: what this binary sees.
@@ -109,6 +152,13 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
 /// is the part users actually reach for. This is the config, wiring, layout and
 /// git half.
 fn debug_report() -> String {
+    // The spend section is produced by a closure rather than called inline so
+    // a test can assemble the report without performing a live fetch — the
+    // whole point of that section is that it reaches the network.
+    debug_report_with(&|config| crate::_runtime::debug::spend_report(config, time::now_ms()))
+}
+
+fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
 
@@ -154,10 +204,13 @@ fn debug_report() -> String {
     let _ = writeln!(out, "  ahead:    {}", git_facts.ahead);
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
-    let _ = writeln!(out, "\nSPEND\n  not built yet — see plan 3");
+    let _ = writeln!(out, "\nSPEND");
+    out.push_str(&spend_section(&config));
 
     let _ = writeln!(out, "\nSAMPLE RENDER");
-    let sample = render_main(&sample_facts(), &git_facts, &config);
+    // No spend text: the SPEND section above already reported what it would
+    // draw and why, and the sample's facts are synthetic anyway.
+    let sample = render_main(&sample_facts(), &git_facts, &config, None);
     for line in sample.lines() {
         let _ = writeln!(out, "  {line}");
     }
@@ -242,8 +295,8 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Renders a bar from already-built facts. The seam the golden tests use, and
 /// the one place a caller can pin the clock.
-pub fn render_bar(facts: &MainFacts, git: &GitFacts, config: &Config) -> String {
-    render_main(facts, git, config)
+pub fn render_bar(facts: &MainFacts, git: &GitFacts, config: &Config, spend: Option<&str>) -> String {
+    render_main(facts, git, config, spend)
 }
 
 #[cfg(test)]
@@ -277,7 +330,8 @@ mod tests {
     #[test]
     fn the_unbuilt_surfaces_are_silent() {
         assert_eq!(dispatch(Cli { mode: Mode::Subagent, debug: false }), "");
-        assert_eq!(dispatch(Cli { mode: Mode::RefreshSpend, debug: false }), "");
+        // `--refresh-spend` is silent too, but it fetches, so its coverage is
+        // in `tests/e2e.rs` where the endpoint is a closed port.
     }
 
     #[test]
@@ -299,7 +353,9 @@ mod tests {
 
     #[test]
     fn the_debug_report_names_every_section() {
-        let out = debug_report();
+        // Stubbed rather than live: `spend_report` fetches, and no unit test
+        // may reach the spend endpoint.
+        let out = debug_report_with(&|_| "  stubbed\n".to_string());
         for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SPEND", "SAMPLE RENDER"] {
             assert!(out.contains(section), "missing {section} in:\n{out}");
         }

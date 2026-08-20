@@ -18,7 +18,6 @@ print_header "Running tests (cargo test) ..."
 # wears for half an hour. The e2e suite sets this per-invocation too; this is
 # the belt to that pair of braces.
 export CLAUDE_STATUS_SPEND_URL="${CLAUDE_STATUS_SPEND_URL:-http://127.0.0.1:1/never}"
-export AI_PLUGINS_SPEND_URL="${AI_PLUGINS_SPEND_URL:-http://127.0.0.1:1/never}"
 
 cargo test ${VERBOSE}
 

@@ -92,6 +92,33 @@ pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline
     status.success().then_some(output).flatten()
 }
 
+/// Spawns this binary again, fully detached, and does not wait for it.
+///
+/// All three stdio streams are null, and on Unix the child is put in its own
+/// process group so it is not in the terminal's foreground group — it receives
+/// neither the Ctrl-C `SIGINT` nor the `SIGHUP` when the session tears down. A
+/// refresh that died because the user pressed Ctrl-C would leave a lock behind
+/// and never update the cache.
+///
+/// Never waited on: the parent exits in about a millisecond and the init
+/// process reaps. Best-effort — a failure to spawn is one missed refresh.
+pub fn spawn_detached(args: &[&str]) -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+
+    let mut command = Command::new(exe);
+    command.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+
+    command.spawn().is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;

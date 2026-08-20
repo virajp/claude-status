@@ -11,8 +11,9 @@ name: Release
 # THIS file; `workflow_call` is unusable for that reason.
 #
 # One-time setup: on npmjs.com, register this repo + `release.yml` as the
-# Trusted Publisher for ALL FIVE packages — the wrapper and each platform
-# package. Miss one and that package alone fails with ENEEDAUTH.
+# Trusted Publisher for ALL SEVEN packages — the wrapper and each of the six
+# platform packages (two darwin, two linux, two windows). Miss one and that
+# package alone fails with ENEEDAUTH, part-way through the release.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v6.0.1). Cargo.toml is the single source of truth for the version — the
@@ -38,7 +39,6 @@ env:
   # No test may reach the real spend endpoint: the credential store is not
   # scoped by $HOME, so a stray fetch is a privacy leak and a rate limit.
   CLAUDE_STATUS_SPEND_URL: http://127.0.0.1:1/never
-  AI_PLUGINS_SPEND_URL: http://127.0.0.1:1/never
 
 jobs:
   # The tag has to agree with Cargo.toml before anything is built, so a

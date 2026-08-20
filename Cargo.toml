@@ -18,6 +18,14 @@ path = "src/main.rs"
 # crate is ~1.5 MB and builds a DFA on a per-render path.
 regex-lite = "0.1.9"
 
+# The single network call, in a detached refresh child — never on the render
+# path. No async runtime: one blocking request cannot justify tokio against the
+# startup-time argument that motivated this rewrite. rustls with baked webpki
+# roots rather than native-tls, whose openssl-sys on linux-gnu would need
+# headers at build time and a versioned libssl.so at run time, ending the
+# single-binary distribution story.
+ureq = { default-features = false, features = [ "rustls" ], version = "3.4" }
+
 # Untyped `Value` parsing, the deep merge, and cache/mirror serialisation. No
 # `serde` derive: every field of every payload is optional, so derives buy
 # nothing and cost the proc-macro. `preserve_order` (via indexmap) is what keeps
