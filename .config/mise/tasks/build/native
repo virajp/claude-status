@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#MISE description="Build the release binary for this host and smoke-test it"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--debug" help="emit debug logs"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
+
+cd "$MISE_PROJECT_ROOT"
+
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+
+print_header "Building the release binary ..."
+cargo build --release ${VERBOSE}
+
+BIN="target/release/claude-status"
+if [[ ! -x "${BIN}" ]]; then
+  print_error "cargo produced no ${BIN}"
+  exit 1
+fi
+
+# Prove the artifact runs, not merely that it exists. `--version` is the shape
+# the installer uses to tell an installed binary from a bundled one, so a build
+# that cannot answer it is a broken build.
+print_header "Smoke-testing ${BIN} ..."
+REPORTED="$("./${BIN}" --version)"
+EXPECTED="$(crate_version)"
+
+if [[ "${REPORTED}" != "${EXPECTED}" ]]; then
+  print_error "Binary reports ${REPORTED}, Cargo.toml says ${EXPECTED}"
+  exit 1
+fi
+
+# And that it renders without reaching the network. A closed port stands in for
+# the spend endpoint, which plan 3 adds — the guard is here from the start so it
+# cannot be forgotten later.
+print_header "Rendering a sample bar ..."
+CLAUDE_STATUS_SPEND_URL="http://127.0.0.1:1/never" \
+  printf '%s' '{"model":{"display_name":"Opus 5"},"cost":{"total_cost_usd":1.5}}' \
+  | CLAUDE_STATUS_SPEND_URL="http://127.0.0.1:1/never" "./${BIN}" --statusline > /dev/null
+
+print_header "Built claude-status ${REPORTED} for $(uname -m)."

@@ -1,0 +1,209 @@
+name: Release
+
+# Publishes @askviraj/claude-status and its four platform packages to npm.
+# Triggered two ways:
+#   1. a pushed version tag (v*)   — the normal release path
+#   2. workflow_dispatch           — manual re-publish of an existing tag
+#
+# Auth is OIDC "trusted publishing" (no stored token) — npm verifies this repo +
+# workflow's GitHub identity and adds provenance automatically. npm validates
+# the ENTRY-POINT workflow's filename, so every publish path must enter through
+# THIS file; `workflow_call` is unusable for that reason.
+#
+# One-time setup: on npmjs.com, register this repo + `release.yml` as the
+# Trusted Publisher for ALL FIVE packages — the wrapper and each platform
+# package. Miss one and that package alone fails with ENEEDAUTH.
+#
+# To release: bump `version` in Cargo.toml, commit, then push a matching tag
+# (e.g. v6.0.1). Cargo.toml is the single source of truth for the version — the
+# npm manifests are generated from it by `mise run build:npm`.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+# id-token: write is required for OIDC trusted publishing.
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MISE_ENV: ci
+  CARGO_TERM_COLOR: always
+  # No test may reach the real spend endpoint: the credential store is not
+  # scoped by $HOME, so a stray fetch is a privacy leak and a rate limit.
+  CLAUDE_STATUS_SPEND_URL: http://127.0.0.1:1/never
+  AI_PLUGINS_SPEND_URL: http://127.0.0.1:1/never
+
+jobs:
+  # The tag has to agree with Cargo.toml before anything is built, so a
+  # mismatched release fails in seconds rather than after four builds.
+  verify:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: jdx/mise-action@v4
+
+      - name: Verify the tag matches Cargo.toml
+        id: version
+        run: |
+          pkg="$(cargo pkgid | sed -E 's/.*[@#]([0-9]+\.[0-9]+\.[0-9]+.*)$/\1/')"
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$pkg" ]; then
+              echo "::error::tag v$tag does not match Cargo.toml version $pkg"
+              exit 1
+            fi
+          fi
+          echo "Releasing claude-status $pkg"
+
+  # The full suite on both operating systems the bar ships to. Git resolution
+  # and the process-spawn path are the parts most likely to differ.
+  test:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ ubuntu-24.04, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: jdx/mise-action@v4
+
+      - name: Lint
+        run: mise run code:lint
+
+      - name: Test
+        run: mise run code:test
+
+  # One target per natively-matching runner, so nothing is cross-compiled and no
+  # C toolchain has to be arranged for the TLS stack the spend subsystem adds.
+  build:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: jdx/mise-action@v4
+
+      - name: Build ${{ matrix.target }}
+        run: mise run build:cross --target ${{ matrix.target }}
+
+      # The binary is what ships, so prove this exact file answers `--version`
+      # with the bare number the installer keys on.
+      - name: Verify the built binary
+        run: |
+          bin="target/${{ matrix.target }}/release/claude-status"
+          file "$bin"
+          reported="$("$bin" --version)"
+          if [ "$reported" != "${{ needs.verify.outputs.version }}" ]; then
+            echo "::error::$bin reports $reported, expected ${{ needs.verify.outputs.version }}"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/claude-status
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [ verify, test, build ]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+
+      # Put each binary back where build:npm expects it, and restore the
+      # executable bit — upload-artifact does not preserve it.
+      - name: Reassemble the build outputs
+        run: |
+          set -e
+          for target in aarch64-apple-darwin x86_64-apple-darwin \
+                        x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            mkdir -p "target/$target/release"
+            cp "artifacts/binary-$target/claude-status" "target/$target/release/claude-status"
+            chmod 755 "target/$target/release/claude-status"
+          done
+
+      - name: Stage the npm packages
+        run: mise run build:npm
+
+      - name: Verify all four platform packages staged
+        run: |
+          count="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
+          if [ "$count" != "4" ]; then
+            echo "::error::staged $count platform packages, expected 4"
+            exit 1
+          fi
+
+      # OIDC trusted publishing needs npm >= 11.5.1; the bundled npm may lag.
+      - name: Ensure npm supports OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      # Order is load-bearing: the platform packages MUST exist before the
+      # wrapper that depends on them. Publishing the wrapper first would leave
+      # every install in that window unable to resolve a binary.
+      #
+      # Each publish is idempotent — an already-published version is skipped,
+      # not failed — so a re-run or a partially-failed release is safe to retry.
+      - name: Publish the platform packages
+        run: |
+          set -e
+          version="${{ needs.verify.outputs.version }}"
+          for dir in target/npm/claude-status-*; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published — skipping."
+              continue
+            fi
+            echo "Publishing $name@$version ..."
+            npm publish --access public "$dir"
+          done
+
+      - name: Publish the wrapper
+        run: |
+          set -e
+          version="${{ needs.verify.outputs.version }}"
+          if npm view "@askviraj/claude-status@$version" version >/dev/null 2>&1; then
+            echo "@askviraj/claude-status@$version is already published — skipping."
+            exit 0
+          fi
+          npm publish --access public target/npm/claude-status

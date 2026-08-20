@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#MISE description="Stage the publishable npm packages into target/npm/"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--debug" help="emit debug logs"
+#USAGE flag "--target <target>" help="stage only the package for one Rust target triple"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
+
+cd "$MISE_PROJECT_ROOT"
+
+VERSION="$(crate_version)"
+OUT="target/npm"
+
+# The four platform packages differ only in name, os, cpu and the binary they
+# carry, so they are generated from one template. Hand-maintaining four
+# near-identical manifests is how three of them end up stale.
+TEMPLATE="npm/platform.template.json"
+
+print_header "Staging npm packages for claude-status ${VERSION} ..."
+rm -rf "${OUT}"
+mkdir -p "${OUT}"
+
+staged=0
+
+stage_platform() {
+  local target="$1" os="$2" cpu="$3"
+  local bin="target/${target}/release/claude-status"
+
+  if [[ ! -f "${bin}" ]]; then
+    print_warn "  skipping ${os}-${cpu}: no binary at ${bin} (run build:cross first)"
+    return 0
+  fi
+
+  local dir="${OUT}/claude-status-${os}-${cpu}"
+  mkdir -p "${dir}/bin"
+
+  sed -e "s|{{VERSION}}|${VERSION}|g" \
+      -e "s|{{TARGET}}|${target}|g" \
+      -e "s|{{OS}}|${os}|g" \
+      -e "s|{{CPU}}|${cpu}|g" \
+      "${TEMPLATE}" > "${dir}/package.json"
+
+  install -m 755 "${bin}" "${dir}/bin/claude-status"
+  print_yellow "  staged $(platform_package "${os}" "${cpu}")"
+  staged=$((staged + 1))
+}
+
+while read -r target os cpu; do
+  [[ -z "${target}" ]] && continue
+  if [[ -n "${usage_target:-}" && "${target}" != "${usage_target}" ]]; then
+    continue
+  fi
+  stage_platform "${target}" "${os}" "${cpu}"
+done < <(supported_targets)
+
+# The wrapper. Its optionalDependencies are pinned to an EXACT version: a range
+# would let npm resolve a platform package built from different sources than the
+# shim expects.
+WRAPPER="${OUT}/claude-status"
+mkdir -p "${WRAPPER}"
+cp -R npm/claude-status/. "${WRAPPER}/"
+sed -i.bak "s|0\.0\.0-managed-by-cargo|${VERSION}|g" "${WRAPPER}/package.json"
+rm -f "${WRAPPER}/package.json.bak"
+cp readme.md "${WRAPPER}/README.md" 2>/dev/null || true
+chmod 755 "${WRAPPER}/bin/claude-status.mjs"
+print_yellow "  staged @askviraj/claude-status (wrapper)"
+
+# A wrapper whose version does not match its pinned dependencies would install
+# and then fail to resolve a binary at runtime, which is the worst shape of
+# failure available here.
+PINNED="$(grep -c "\"${VERSION}\"" "${WRAPPER}/package.json" || true)"
+if [[ "${PINNED}" -lt 5 ]]; then
+  print_error "wrapper package.json does not pin all four platform packages at ${VERSION}"
+  exit 1
+fi
+
+print_header "Staged ${staged}/4 platform packages + the wrapper in ${OUT}/."
+if [[ "${staged}" -lt 4 && -z "${usage_target:-}" ]]; then
+  print_warn "Not all targets were present — a release must stage all four."
+fi

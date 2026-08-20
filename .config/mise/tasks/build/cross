@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#MISE description="Build the release binary for all four published targets"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--debug" help="emit debug logs"
+#USAGE flag "--target <target>" help="build one Rust target triple instead of all four"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
+
+cd "$MISE_PROJECT_ROOT"
+
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+
+# CI builds each target on a runner that natively matches it, so this task is
+# the local path. Cross-compiling Linux from macOS needs a linker for the target
+# libc; cargo-zigbuild supplies one without a per-target cross toolchain, and —
+# the reason it is worth pinning now — it also handles the C dependency that
+# arrives with the spend subsystem's TLS stack in plan 3. A pure-Rust tree
+# builds fine today; picking the tool that survives that change avoids
+# rediscovering this later.
+ZIGBUILD="cargo-zigbuild"
+host_target() {
+  rustc -vV | awk '/^host:/ {print $2}'
+}
+
+build_one() {
+  local target="$1"
+
+  rustup target add "${target}" >/dev/null 2>&1 || true
+
+  if [[ "${target}" == "$(host_target)" ]]; then
+    print_wait "  ${target} (native) ... "
+    cargo build --release --target "${target}" ${VERBOSE} >/dev/null
+  elif [[ "${target}" == *-apple-darwin && "$(uname -s)" == "Darwin" ]]; then
+    # The other macOS arch cross-compiles with nothing but the rustup target —
+    # Apple ships both slices of the system libraries.
+    print_wait "  ${target} (apple cross) ... "
+    cargo build --release --target "${target}" ${VERBOSE} >/dev/null
+  else
+    if ! command -v "${ZIGBUILD}" >/dev/null 2>&1; then
+      print_newline
+      print_error "${target} needs ${ZIGBUILD}, which is not installed."
+      print_warn  "Install it with:  mise use -g cargo:cargo-zigbuild zig"
+      print_warn  "Or build only the targets this host can reach: mise run build:cross --target <triple>"
+      exit 1
+    fi
+    print_wait "  ${target} (zigbuild) ... "
+    "${ZIGBUILD}" zigbuild --release --target "${target}" ${VERBOSE} >/dev/null
+  fi
+
+  local bin="target/${target}/release/claude-status"
+  if [[ ! -f "${bin}" ]]; then
+    print_newline
+    print_error "no binary at ${bin}"
+    exit 1
+  fi
+  print_ok
+  print_yellow "      $(file -b "${bin}")"
+}
+
+VERSION="$(crate_version)"
+print_header "Building claude-status ${VERSION} ..."
+
+if [[ -n "${usage_target:-}" ]]; then
+  build_one "${usage_target}"
+else
+  while read -r target _os _cpu; do
+    [[ -z "${target}" ]] && continue
+    build_one "${target}"
+  done < <(supported_targets)
+fi
+
+print_header "Cross build done."

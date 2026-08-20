@@ -1,0 +1,19 @@
+{
+  "name": "@askviraj/claude-status-{{OS}}-{{CPU}}",
+  "version": "{{VERSION}}",
+  "description": "The claude-status binary for {{OS}} {{CPU}} ({{TARGET}})",
+  "homepage": "https://github.com/virajp/claude-status#readme",
+  "repository": "github:virajp/claude-status",
+  "license": "MIT",
+  "author": "Viraj Patel",
+  "os": [
+    "{{OS}}"
+  ],
+  "cpu": [
+    "{{CPU}}"
+  ],
+  "files": [
+    "bin"
+  ],
+  "preferUnplugged": true
+}
