@@ -64,6 +64,96 @@ fn mark(def: &Value, config: &Config) -> Mark {
     }
 }
 
+/// The glyph for a task's `type`, falling back to `typeSymbols._default`.
+///
+/// **Never rendered as text.** Claude Code reports `type` as the generic
+/// `"local_agent"` regardless of the real subagent type, so the string carries
+/// no information the glyph does not.
+///
+/// Looked up on the object rather than through a dotted path, so a type
+/// containing a `.` cannot silently read some other key.
+pub fn type_glyph<'a>(kind: &str, config: &'a Config) -> &'a str {
+    let symbols = config.get("typeSymbols");
+    let lowered = kind.to_lowercase();
+    // An empty entry falls back too, as `||` made it.
+    let named = symbols.and_then(|s| s.get(&lowered)).and_then(Value::as_str).filter(|g| !g.is_empty());
+    named.or_else(|| symbols.and_then(|s| s.get("_default")).and_then(Value::as_str)).unwrap_or_default()
+}
+
+/// The terminal width the description budget is computed from:
+/// `payload.columns` → `$COLUMNS` → `80`.
+///
+/// The contract mentions neither the env var nor the default. Zero falls
+/// through at each rung rather than winning, because the original chained them
+/// with `||`.
+pub fn columns(payload: &Value, env_columns: Option<&str>) -> f64 {
+    let usable = |n: &f64| *n != 0.0 && !n.is_nan();
+    let from_payload = payload.get("columns").and_then(js_number).filter(usable);
+    let from_env = env_columns.and_then(|s| s.trim().parse::<f64>().ok()).filter(usable);
+    from_payload.or(from_env).unwrap_or(80.0)
+}
+
+/// `Number(v)` for the shapes a config or payload can actually carry.
+fn js_number(v: &Value) -> Option<f64> {
+    match v {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().parse::<f64>().ok(),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        _ => None,
+    }
+}
+
+/// `max(12, floor(cols × descBudgetFraction))`, in UTF-16 code units.
+///
+/// So 120 columns gives 54 and the absent-`columns` case gives 36. A fraction
+/// of `0` is **kept** (the original used `??`, not `||`) and clamps to the
+/// floor of 12.
+///
+/// **Divergence:** a non-numeric `descBudgetFraction` falls back to `0.45`
+/// here. In the JS it produced a `NaN` budget, and `length > NaN` is false, so
+/// the description was never truncated at all — a hand-broken config silently
+/// disabling the budget is not worth reproducing.
+pub fn desc_budget(cols: f64, config: &Config) -> usize {
+    const DEFAULT_FRACTION: f64 = 0.45;
+    let fraction = config.get("subagent.descBudgetFraction").and_then(Value::as_f64).unwrap_or(DEFAULT_FRACTION);
+    let scaled = (cols * fraction).floor();
+    if scaled.is_nan() { 12 } else { scaled.max(12.0) as usize }
+}
+
+/// `description` else `label` else nothing, with every whitespace run collapsed
+/// to a single space and the result trimmed. An empty result omits the segment.
+///
+/// None of this is in the contract, and all of it is observable: a description
+/// carrying a newline would otherwise break the row in half.
+pub fn description(task: &Value) -> Option<String> {
+    let raw = task
+        .get("description")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| task.get("label").and_then(Value::as_str))?;
+
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!collapsed.is_empty()).then_some(collapsed)
+}
+
+/// Truncates to `budget - 1` **UTF-16 code units** plus U+2026, so a truncated
+/// description is exactly `budget` units long.
+///
+/// UTF-16 because that is what JS `String.length` and `slice` count, and the
+/// panel is meant to be byte-identical to the bar it replaces. Two ways to get
+/// this wrong: `&desc[..budget - 1]` **panics** on a non-char boundary, and a
+/// cut through a surrogate pair needs the lossy decode — one replacement
+/// character, which is itself one UTF-16 unit, so the width still holds.
+pub fn truncate(desc: &str, budget: usize) -> String {
+    let units: Vec<u16> = desc.encode_utf16().collect();
+    if units.len() <= budget {
+        return desc.to_string();
+    }
+    let mut out = String::from_utf16_lossy(&units[..budget - 1]);
+    out.push('\u{2026}');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -161,5 +251,98 @@ mod tests {
     fn a_missing_symbol_renders_empty_not_undefined() {
         let config = cfg(json!({ "done": { "match": "done", "bg": [1, 1, 1] } }));
         assert_eq!(task_mark("done", &config).symbol, "");
+    }
+
+    #[test]
+    fn a_known_type_renders_its_glyph_and_an_unknown_one_the_default() {
+        let config = shipped();
+        assert_eq!(type_glyph("local_agent", &config), "\u{f109}");
+        assert_eq!(type_glyph("review", &config), "\u{f06e}");
+        assert_eq!(type_glyph("no_such_type", &config), "\u{f544}", "the _default glyph");
+        assert_eq!(type_glyph("", &config), "\u{f544}");
+    }
+
+    #[test]
+    fn type_lookup_is_case_insensitive_and_never_reads_a_dotted_path() {
+        let config = Config::new(json!({
+            "typeSymbols": { "_default": "D", "local_agent": "L", "a.b": "AB" },
+            "a": { "b": "nested" },
+        }));
+        assert_eq!(type_glyph("LOCAL_AGENT", &config), "L");
+        assert_eq!(type_glyph("a.b", &config), "AB", "the literal key, not typeSymbols → a → b");
+    }
+
+    #[test]
+    fn an_empty_type_glyph_falls_back_to_the_default() {
+        let config = Config::new(json!({ "typeSymbols": { "_default": "D", "task": "" } }));
+        assert_eq!(type_glyph("task", &config), "D");
+    }
+
+    #[test]
+    fn columns_resolve_payload_then_env_then_eighty() {
+        assert_eq!(columns(&json!({ "columns": 120 }), None), 120.0);
+        assert_eq!(columns(&json!({}), Some("100")), 100.0);
+        assert_eq!(columns(&json!({}), None), 80.0);
+        // Zero is not a width; it falls through at each rung, as `||` made it.
+        assert_eq!(columns(&json!({ "columns": 0 }), Some("100")), 100.0);
+        assert_eq!(columns(&json!({ "columns": 0 }), Some("0")), 80.0);
+        assert_eq!(columns(&json!({ "columns": "nonsense" }), None), 80.0);
+    }
+
+    #[test]
+    fn the_budget_is_a_fraction_of_the_columns_with_a_floor_of_twelve() {
+        let config = shipped();
+        assert_eq!(desc_budget(120.0, &config), 54);
+        assert_eq!(desc_budget(80.0, &config), 36, "the absent-columns case");
+        assert_eq!(desc_budget(20.0, &config), 12, "clamped");
+    }
+
+    #[test]
+    fn a_zero_fraction_is_kept_and_clamps_to_twelve() {
+        // `??`, not `||` — an explicit 0 is a real value.
+        let config = Config::new(json!({ "subagent": { "descBudgetFraction": 0 } }));
+        assert_eq!(desc_budget(1000.0, &config), 12);
+    }
+
+    #[test]
+    fn a_negative_width_still_yields_the_floor_rather_than_panicking() {
+        assert_eq!(desc_budget(-5.0, &shipped()), 12);
+    }
+
+    #[test]
+    fn a_description_collapses_whitespace_and_falls_back_to_label() {
+        assert_eq!(description(&json!({ "description": "  a\n\tb   c " })).as_deref(), Some("a b c"));
+        assert_eq!(description(&json!({ "label": "from label" })).as_deref(), Some("from label"));
+        assert_eq!(description(&json!({ "description": "", "label": "L" })).as_deref(), Some("L"));
+        assert_eq!(description(&json!({})), None);
+        assert_eq!(description(&json!({ "description": "   " })), None, "whitespace-only omits");
+    }
+
+    #[test]
+    fn a_truncated_description_is_exactly_the_budget_in_utf16_units() {
+        let long = "x".repeat(100);
+        let out = truncate(&long, 54);
+        assert_eq!(out.encode_utf16().count(), 54);
+        assert!(out.ends_with('\u{2026}'), "one ellipsis character, not three dots");
+        assert_eq!(truncate("short", 54), "short", "under budget is untouched");
+        assert_eq!(truncate(&"y".repeat(54), 54), "y".repeat(54), "exactly at budget is untouched");
+    }
+
+    #[test]
+    fn a_cut_through_a_surrogate_pair_does_not_panic_and_keeps_the_width() {
+        // Each emoji is two UTF-16 units, so a budget of 13 cuts the seventh
+        // one in half. A naive byte slice would panic here.
+        let emojis = "\u{1f600}".repeat(20);
+        let out = truncate(&emojis, 13);
+        assert_eq!(out.encode_utf16().count(), 13, "the replacement char is one unit, like the half it replaced");
+        assert!(out.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn a_multibyte_description_is_measured_in_units_not_bytes() {
+        // Three-byte characters that are one UTF-16 unit each: 20 of them is
+        // 60 bytes and 20 units, so a budget of 30 leaves it alone.
+        let cjk = "\u{4e2d}".repeat(20);
+        assert_eq!(truncate(&cjk, 30), cjk);
     }
 }
