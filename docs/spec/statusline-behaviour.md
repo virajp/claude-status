@@ -685,9 +685,11 @@ file, which a `PostToolUse` hook then reads.
 
 ---
 
-## 9. Open decision: distribution
+## 9. Distribution — resolved: npm with platform binaries
 
-**Resolve this before Phase 4; it does not block Phases 1–3.**
+**Resolved by the distribution cycle, against the recommendation below.** The
+options are kept because the reasoning still matters if the channel is ever
+revisited.
 
 Today the bar is installed by `pnpx @askviraj/ai-plugins --statusline`, an npm
 CLI that copies a JS file to `~/.claude/scripts/statusline` and merges four keys
@@ -700,12 +702,20 @@ into `settings.json`. A Rust binary cannot be `pnpx`'d, so this has to change.
 | **`cargo install`**                  | Trivial to publish                                                               | Requires a Rust toolchain — most users will not have one              |
 | **Homebrew tap**                     | Great on macOS, one command                                                      | A second channel to maintain; Linux users still need another          |
 
-**Recommendation:** GitHub Releases with prebuilt binaries for
-`aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and
-`aarch64-unknown-linux-gnu`, plus a small install script that also merges the
-`settings.json` keys. Add a Homebrew tap later if it is wanted.
+**The recommendation was** GitHub Releases with prebuilt binaries plus a small
+install script that also merges the `settings.json` keys. **The decision went
+the other way:** npm with platform binaries — a `@askviraj/claude-status`
+wrapper whose `optionalDependencies` carry one package per target, so existing
+`ai-plugins` users keep the `pnpx` invocation they already know and the repo
+does not have to own a shell installer, a build matrix *and* a checksum story on
+day one. A Homebrew tap can still come later.
 
-Whatever is chosen, **the installer must keep the receipt discipline** the
+The supported set is **six** targets — macOS and Linux on both architectures,
+plus Windows, which Claude Code runs on natively. `supported_targets()` in
+`.config/mise/tasks/_scripts/_rust` is the single source; nothing else should
+hard-code the list or its length.
+
+Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 user's previous bar rather than deleting it and leaving them with none. And
 replacing a statusline the installer did not write must require explicit
@@ -746,7 +756,7 @@ credential path works on a live machine.
 
 ### Phase 4 — distribution
 
-Whatever §9 resolves to, plus `--version` and the installer.
+The npm packages §9 resolved on, plus `--version` and the installer.
 
 *Verify:* install into a throwaway `$HOME` (`mktemp -d`, with `HOME`,
 `XDG_CONFIG_HOME` and `XDG_DATA_HOME` redirected), render with the *installed*
