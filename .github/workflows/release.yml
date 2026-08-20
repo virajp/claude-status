@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes @askviraj/claude-status and its four platform packages to npm.
+# Publishes @askviraj/claude-status and its six platform packages to npm.
 # Triggered two ways:
 #   1. a pushed version tag (v*)   — the normal release path
 #   2. workflow_dispatch           — manual re-publish of an existing tag
@@ -14,6 +14,13 @@ name: Release
 # Trusted Publisher for ALL SEVEN packages — the wrapper and each of the six
 # platform packages (two darwin, two linux, two windows). Miss one and that
 # package alone fails with ENEEDAUTH, part-way through the release.
+#
+# THIS WORKFLOW CANNOT PERFORM THE FIRST PUBLISH. A Trusted Publisher is
+# configured on a package's settings page, which does not exist until the
+# package does — so all seven have to be created by hand, once, with a granular
+# token, before OIDC can be registered for them. See npm/cli#8544. Publishing a
+# placeholder version to reserve each name is enough; the tag-driven path below
+# then owns every real release, with provenance.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v6.0.1). Cargo.toml is the single source of truth for the version — the
@@ -42,7 +49,7 @@ env:
 
 jobs:
   # The tag has to agree with Cargo.toml before anything is built, so a
-  # mismatched release fails in seconds rather than after four builds.
+  # mismatched release fails in seconds rather than after six builds.
   verify:
     runs-on: ubuntu-24.04
     outputs:

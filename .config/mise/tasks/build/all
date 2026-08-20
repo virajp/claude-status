@@ -12,8 +12,8 @@ cd "$MISE_PROJECT_ROOT"
 
 [[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG="--debug" || DEBUG_FLAG=""
 
-# What CI does across four runners, in one command on one machine. The Linux
-# targets go through cargo-zigbuild, which mise.dev.toml pins.
+# What CI does across its per-target runners, in one command on one machine. The
+# Linux targets go through cargo-zigbuild, which mise.dev.toml pins.
 line_sep "-"
 mise run build:cross ${DEBUG_FLAG}
 

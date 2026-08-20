@@ -15,8 +15,8 @@ VERSION="$(crate_version)"
 OUT="target/npm"
 ASSET="assets/claude-status.defaults.json"
 
-# The four platform packages differ only in name, os, cpu and the binary they
-# carry, so they are generated from one template. Hand-maintaining four
+# The platform packages differ only in name, os, cpu and the binary they
+# carry, so they are generated from one template. Hand-maintaining six
 # near-identical manifests is how three of them end up stale.
 TEMPLATE="npm/platform.template.json"
 
@@ -121,5 +121,5 @@ print_yellow "  pinned ${PINNED} platform packages at ${VERSION}"
 EXPECTED="$(target_count)"
 print_header "Staged ${staged}/${EXPECTED} platform packages + the wrapper in ${OUT}/."
 if [[ "${staged}" -lt "${EXPECTED}" && -z "${usage_target:-}" ]]; then
-  print_warn "Not all targets were present — a release must stage all four."
+  print_warn "Not all targets were present — a release must stage all ${EXPECTED}."
 fi

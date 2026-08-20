@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Build the release binary for all four published targets"
+#MISE description="Build the release binary for every published target"
 #MISE dir="{{ config_root }}"
 
 #USAGE flag "--debug" help="emit debug logs"
-#USAGE flag "--target <target>" help="build one Rust target triple instead of all four"
+#USAGE flag "--target <target>" help="build one Rust target triple instead of every one"
 
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
