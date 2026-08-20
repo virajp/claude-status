@@ -238,6 +238,30 @@ fn the_rendering_process_itself_never_fetches() {
 }
 
 #[test]
+fn a_render_after_a_debug_fetch_draws_the_cache_debug_populated() {
+    // The pay-off of making --debug fetch: it does not merely diagnose the
+    // first-install case, it fixes it. One --debug, and the bar works.
+    let home = home(WITH_SPEND, None);
+    let stub = stub();
+
+    let debugged = Command::new(BINARY)
+        .arg("--debug")
+        .env_clear()
+        .env("HOME", home.path())
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("CLAUDE_STATUS_SPEND_URL", &stub.url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("the binary runs");
+    assert!(stdout(&debugged).contains("200 in"), "--debug fetched: {}", stdout(&debugged));
+
+    let out = render(&home, &stub.url);
+    assert!(stdout(&out).contains("$75.93/$150"), "the render drew what --debug left behind: {}", stdout(&out));
+}
+
+#[test]
 fn the_token_never_reaches_either_stream_of_a_render() {
     let home = home(WITH_SPEND, Some(&cache_aged(16 * 60_000)));
     let stub = stub();
