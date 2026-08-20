@@ -326,6 +326,33 @@ wins; an entry with an empty `match` is the fallback for anything unmatched:
 `error|fail|cancel|abort` · `running` blue `run|active|progress|working|busy` ·
 `pending` bg3 (fallback).
 
+> **Amended 2026-08-21** (`subagent-panel` cycle). Three details of the walk are
+> observable and were unstated: an entry with an empty `match` is *recorded* as
+> the fallback and the walk **continues**, so with two of them the **last**
+> wins; the patterns are unanchored substrings, so `not_ok` matches `done`
+> through its `ok` alternative; and a pattern the engine rejects is skipped
+> rather than fatal.
+
+### The subagent description budget
+
+Absent from this document until the panel was built, and every part of it is
+visible in the output.
+
+- **Width** is `payload.columns`, else `$COLUMNS`, else `80`. A zero falls
+  through at each rung rather than winning.
+- **Budget** is `max(12, floor(width × subagent.descBudgetFraction))` — so 120
+  columns gives 54, and the absent-`columns` case gives 36. A fraction of `0` is
+  kept and clamps to the floor of 12.
+- **The text** is `description`, else `label`, else nothing; every whitespace
+  run collapses to a single space and the result is trimmed. An empty result
+  omits the segment — a description carrying a newline would otherwise break the
+  row in half.
+- **Truncation** is to `budget - 1` **UTF-16 code units** plus one U+2026
+  HORIZONTAL ELLIPSIS, so a truncated description is exactly `budget` units
+  long. UTF-16 because that is what JS `String.length` and `slice` count. It
+  measures units rather than terminal columns, so a CJK-heavy description
+  overruns its visual budget — a known cosmetic flaw the original shares.
+
 ---
 
 ## 4. Rendering model
@@ -805,8 +832,9 @@ Two hazards to design around from the start:
 # main bar
 echo '{"model":{"display_name":"Opus 4.8"},"effort":{"level":"high"},"session_name":"users-and-groups","workspace":{"current_dir":"/tmp/demo"},"cost":{"total_cost_usd":46.51,"total_duration_ms":33540000},"context_window":{"used_percentage":26,"context_window_size":1000000,"total_input_tokens":259000},"rate_limits":{"five_hour":{"used_percentage":7,"resets_at":1774200000},"seven_day":{"used_percentage":1.0,"resets_at":1774600000}}}' | claude-status
 
-# subagent panel — NDJSON, so pipe through jq to see it
-echo '{"columns":120,"tasks":[{"id":"t1","name":"reviewer","type":"review","status":"running","description":"Auditing auth flow","tokenCount":18234}]}' | claude-status | jq -r .content
+# subagent panel — NDJSON, so pipe through jq to see it. The FLAG chooses the
+# surface, not the payload's shape: without it this renders the main bar.
+echo '{"columns":120,"tasks":[{"id":"t1","name":"reviewer","type":"review","status":"running","description":"Auditing auth flow","tokenCount":18234}]}' | claude-status --subagent | jq -r .content
 
 # spend, diagnosed — NOTE: this FETCHES, live, in the foreground.
 # Both overrides matter: the cache one keeps it off ~/.cache/claude-status,
