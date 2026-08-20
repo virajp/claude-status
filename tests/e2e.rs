@@ -55,6 +55,17 @@ impl Home {
             .as_millis();
         std::fs::write(cache_dir.join("spend.json"), format!(r#"{{"ts":{now},"spend":null}}"#)).unwrap();
 
+        // A fourth neutralisation, needed now that `--refresh-spend` is real:
+        // the keychain is not scoped by `$HOME`, so a home with no credentials
+        // file falls through to the user's actual token.
+        let claude = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(
+            claude.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"e2e-stub-token","subscriptionType":"team"}}"#,
+        )
+        .unwrap();
+
         Self { dir }
     }
 
@@ -237,11 +248,13 @@ fn nothing_is_written_when_the_usage_env_var_is_unset() {
 }
 
 #[test]
-fn the_unbuilt_surfaces_are_recognised_and_silent() {
+fn the_non_rendering_surfaces_are_recognised_and_silent() {
+    // `--refresh-spend` now does real work, but it is spawned with its stdio
+    // at /dev/null, so writing anything would be pointless — it stays silent.
     let home = Home::new(&safe_config());
     for flag in ["--subagent", "--refresh-spend"] {
         let out = run(&home, &[flag], FIXTURE, &[]);
-        assert_eq!(stdout(&out), "", "{flag} renders nothing until its own plan");
+        assert_eq!(stdout(&out), "", "{flag} writes nothing to stdout");
         assert!(out.status.success(), "{flag} exits 0");
     }
 }
