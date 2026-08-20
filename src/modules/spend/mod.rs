@@ -12,6 +12,8 @@ pub mod creds;
 pub mod extract;
 pub mod http;
 pub mod lock;
+pub mod refresh;
+pub mod schedule;
 
 use serde_json::Value;
 
