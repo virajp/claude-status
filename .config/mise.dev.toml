@@ -10,6 +10,15 @@ grype       = { version = "latest" }
 pre-commit  = { version = "latest" }
 taplo       = { version = "latest" }
 
+# Cross-compiling the two Linux targets from macOS. zig supplies a linker for
+# the target libc without a per-target cross toolchain, and — the reason it is
+# worth having rather than leaving to CI — it also handles the C dependency that
+# arrives with the spend subsystem's TLS stack. CI builds each target on a
+# natively-matching runner and never needs these; a maintainer running
+# `build:all` locally does.
+"cargo:cargo-zigbuild" = { version = "latest" }
+zig                    = { version = "latest" }
+
 [shell_alias]
 cc        = "claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"
 ccf       = "claude --model 'fable[1m]' --effort 'high' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status'"

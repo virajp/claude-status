@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#MISE description="Build every target and stage the publishable npm packages"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--debug" help="emit debug logs"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
+
+cd "$MISE_PROJECT_ROOT"
+
+[[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG="--debug" || DEBUG_FLAG=""
+
+# What CI does across four runners, in one command on one machine. The Linux
+# targets go through cargo-zigbuild, which mise.dev.toml pins.
+line_sep "-"
+mise run build:cross ${DEBUG_FLAG}
+
+line_sep "-"
+mise run build:npm ${DEBUG_FLAG}
+
+# `build:npm` warns rather than fails when a target is missing, because staging
+# one package is a legitimate thing to want. Here it is not: this task exists to
+# produce a complete, publishable set.
+line_sep "-"
+STAGED="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
+if [[ "${STAGED}" != "4" ]]; then
+  print_error "staged ${STAGED}/4 platform packages — a release needs all four"
+  exit 1
+fi
+
+VERSION="$(crate_version)"
+print_header "claude-status ${VERSION}: 4 platform packages + the wrapper are staged in target/npm/."
+print_yellow "  Publishing is CI's job — push a v${VERSION} tag to release."
