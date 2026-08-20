@@ -10,10 +10,14 @@
 //! The macOS keychain is **not** scoped by `$HOME`, so a fake home does not
 //! stop a real credential read or a real network call — and a stray one is both
 //! a privacy leak and a 429 the user wears for half an hour. Every invocation
-//! here neutralises it three ways at once: `spend.refreshMinutes = 0` in the
-//! seeded config, `CLAUDE_STATUS_SPEND_URL` pointed at a closed port, and a
-//! pre-seeded fresh cache. The spend subsystem does not exist yet (plan 3), and
-//! the point is that the harness is already safe for when it does.
+//! here neutralises it four ways at once: `spend.refreshMinutes = 0` in the
+//! seeded config, `CLAUDE_STATUS_SPEND_URL` pointed at a closed port, a
+//! pre-seeded fresh cache, and a seeded `.claude/.credentials.json` so the
+//! keychain fallback is never reached.
+//!
+//! The fourth was added when `--refresh-spend` and `--debug` stopped being
+//! inert: the first three were written while nothing in this binary could
+//! fetch, and a fake home alone was never enough once something could.
 
 use std::io::Write;
 use std::path::Path;
@@ -55,9 +59,8 @@ impl Home {
             .as_millis();
         std::fs::write(cache_dir.join("spend.json"), format!(r#"{{"ts":{now},"spend":null}}"#)).unwrap();
 
-        // A fourth neutralisation, needed now that `--refresh-spend` is real:
-        // the keychain is not scoped by `$HOME`, so a home with no credentials
-        // file falls through to the user's actual token.
+        // The fourth neutralisation: the keychain is not scoped by `$HOME`, so
+        // a home with no credentials file falls through to the real token.
         let claude = dir.path().join(".claude");
         std::fs::create_dir_all(&claude).unwrap();
         std::fs::write(
@@ -81,9 +84,8 @@ fn run(home: &Home, args: &[&str], stdin: &str, extra_env: &[(&str, &str)]) -> O
         .env_clear()
         .env("HOME", home.path())
         .env("PATH", std::env::var("PATH").unwrap_or_default())
-        // Three-way neutralisation; see the module docs.
+        // See the module docs on the spend hazard.
         .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
-        .env("AI_PLUGINS_SPEND_URL", CLOSED_PORT_URL)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
