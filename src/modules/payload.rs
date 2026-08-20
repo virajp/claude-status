@@ -53,8 +53,8 @@ pub fn normalise(payload: &Value, now_ms: i64, process_cwd: Option<String>) -> M
         now_ms,
         session_id: opt_str(payload, "session_id").map(str::to_string),
         session_name: opt_str(payload, "session_name").filter(|s| !s.is_empty()).map(str::to_string),
-        model: label(payload.get("model"), &["display_name", "id"]),
-        effort: label(payload.get("effort"), &["level"]),
+        model: model_label(payload.get("model")),
+        effort: effort_label(payload.get("effort")),
         cwd: payload
             .get("workspace")
             .and_then(|w| w.get("current_dir"))
@@ -70,6 +70,18 @@ pub fn normalise(payload: &Value, now_ms: i64, process_cwd: Option<String>) -> M
         five_hour: rate_limit(payload, &["five_hour"]),
         seven_day: rate_limit(payload, &["seven_day", "weekly"]),
     }
+}
+
+/// The display label for a `model` field — an object with `display_name` or
+/// `id`, or a bare string. Public because the subagent panel resolves the same
+/// field per task and panel-wide.
+pub fn model_label(v: Option<&Value>) -> Option<String> {
+    label(v, &["display_name", "id"])
+}
+
+/// The label for an `effort` field — an object with `level`, or a bare string.
+pub fn effort_label(v: Option<&Value>) -> Option<String> {
+    label(v, &["level"])
 }
 
 /// `model` and `effort` each accept an object or a bare string.

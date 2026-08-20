@@ -17,6 +17,7 @@ use crate::config::layers::{self, Layers};
 use crate::git::GitFacts;
 use crate::payload::MainFacts;
 use crate::render::main_bar::render_main;
+use crate::render::subagent;
 use crate::_shared::proc;
 use crate::modules::spend;
 use crate::{cli, git, json, payload, time, usage};
@@ -41,8 +42,7 @@ fn dispatch(cli: Cli) -> String {
         Mode::Help => HELP.to_string(),
         Mode::MissingFlag => format!("{MISSING_FLAG}\n"),
         Mode::Statusline => render_statusline(cli.debug),
-        // Plan 2 fills this in; until then it is recognised and silent.
-        Mode::Subagent => String::new(),
+        Mode::Subagent => render_subagent(),
         Mode::RefreshSpend => refresh_spend(),
         Mode::Debug => debug_report(),
     }
@@ -74,6 +74,41 @@ fn render_statusline(debug: bool) -> String {
             FALLBACK_LINE.to_string()
         }
     }
+}
+
+/// Renders the subagent panel, catching a panic into **empty output**.
+///
+/// **Divergence from the JS entry point**, which printed `⚡ Claude` on any
+/// error whichever surface was rendering. Here that would be a line of NDJSON
+/// that is not JSON, and the consumer parses every line it gets. An empty panel
+/// is a valid panel; a malformed one is not.
+fn render_subagent() -> String {
+    match catch_unwind(AssertUnwindSafe(build_panel)) {
+        Ok(panel) => panel,
+        Err(payload) => {
+            eprintln!("claude-status error: {}", panic_message(&payload));
+            String::new()
+        }
+    }
+}
+
+/// The panel's own pipeline. Deliberately shorter than the bar's: no usage
+/// mirror, no spend gate, and no git marker resolution — the panel renders none
+/// of those, and a subagent render must cost nothing it does not use.
+fn build_panel() -> String {
+    let mut stdin = String::new();
+    let _ = std::io::stdin().read_to_string(&mut stdin);
+    let payload = payload::parse(&stdin);
+
+    let process_cwd = std::env::current_dir().ok().map(|p| p.to_string_lossy().into_owned());
+    let cwd = subagent::panel_cwd(&payload, process_cwd);
+
+    // The repo config layer still comes from the resolved git root, so a panel
+    // does pick up per-repo theming.
+    let root = cwd.as_deref().map(PathBuf::from).and_then(|c| git::find_root_and_branch(&c).0);
+    let layers = layers::load(home().as_deref(), root.as_deref());
+
+    subagent::render_panel(&payload, &layers.config, time::now_ms(), std::env::var("COLUMNS").ok().as_deref())
 }
 
 fn build_bar(narrate: &dyn Fn(&str)) -> String {
@@ -327,12 +362,12 @@ mod tests {
         assert!(out.contains("--statusline") && out.contains("--subagent"));
     }
 
-    #[test]
-    fn the_unbuilt_surfaces_are_silent() {
-        assert_eq!(dispatch(Cli { mode: Mode::Subagent, debug: false }), "");
-        // `--refresh-spend` is silent too, but it fetches, so its coverage is
-        // in `tests/e2e.rs` where the endpoint is a closed port.
-    }
+    // `--subagent` and `--refresh-spend` are both covered in `tests/e2e.rs`
+    // rather than here. Neither is inert any more: the panel reads stdin, the
+    // filesystem and the git root, and the refresh child fetches. A unit test
+    // calling `dispatch` for either would inherit the real process's stdin and
+    // `$HOME` — the hazard the spend cycle recorded when two of these tests
+    // quietly became live-fetch tests.
 
     #[test]
     fn the_fallback_line_is_the_documented_bytes() {
