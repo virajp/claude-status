@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+#MISE description="List git worktrees across the root repo and every submodule, with ahead/behind counts"
+#MISE hide=false
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+ROOT="${MISE_PROJECT_ROOT}"
+COMMON_DIR="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir)"
+
+# Default branch of a repo, read from origin/HEAD; falls back to develop.
+default_branch() {
+  local ref
+  ref="$(git "$@" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "${ref}" ]]; then echo "${ref#refs/remotes/origin/}"; else echo "develop"; fi
+}
+
+# "↑<ahead> ↓<behind>" of a commit against a base ref; "-" when the base is missing.
+ahead_behind() {
+  local base="$1" head="$2" counts
+  if [[ -z "${base}" ]] || ! git "${GIT[@]}" rev-parse --verify -q "${base}^{commit}" >/dev/null; then
+    echo "-"
+    return
+  fi
+  counts="$(git "${GIT[@]}" rev-list --left-right --count "${base}...${head}")"
+  echo "↑$(echo "${counts}" | cut -f2) ↓$(echo "${counts}" | cut -f1)"
+}
+
+# Display width of a cell. The arrows are multibyte, and printf pads by bytes
+# unless the locale is UTF-8, so measure an ASCII stand-in instead.
+vwidth() {
+  local s="${1//↑/x}"
+  s="${s//↓/x}"
+  s="${s//↕/x}"
+  echo "${#s}"
+}
+
+# Emit a cell padded to a display width.
+pad() {
+  local s="$1" n
+  n=$(($2 - $(vwidth "${s}")))
+  printf '%s' "${s}"
+  ((n > 0)) && printf '%*s' "${n}" ''
+  return 0
+}
+
+# Path relative to the workspace root when it lives inside it, else absolute.
+display_path() {
+  local p="$1"
+  if [[ "${p}" == "${ROOT}" ]]; then echo "."
+  elif [[ "${p}" == "${ROOT}"/* ]]; then echo "${p#"${ROOT}"/}"
+  else echo "${p}"
+  fi
+}
+
+# Print one repo's worktrees. $1 label, $2 pinned commit ("" for the root repo).
+print_repo() {
+  local label="$1" pinned="$2"
+  local base branch head wt
+  local -a branches=() heads=() vs_base=() vs_pinned=() paths=()
+  local w_branch w_ab
+
+  base="$(default_branch "${GIT[@]}")"
+
+  while IFS= read -r line; do
+    case "${line}" in
+      worktree\ *) wt="${line#worktree }" ;;
+      HEAD\ *) head="${line#HEAD }" ;;
+      branch\ *) branch="${line#branch refs/heads/}" ;;
+      detached) branch="(detached)" ;;
+      "")
+        # The submodule main worktree is reported as its gitdir; show the checkout.
+        if [[ -n "${MAIN_CHECKOUT:-}" && "${wt}" == "${COMMON_DIR}"/modules/* ]]; then
+          wt="${MAIN_CHECKOUT}"
+        fi
+        branches+=("${branch}")
+        heads+=("${head:0:7}")
+        vs_base+=("$(ahead_behind "${base}" "${head}")")
+        vs_pinned+=("$(ahead_behind "${pinned}" "${head}")")
+        paths+=("$(display_path "${wt}")")
+        branch="" head="" wt=""
+        ;;
+    esac
+  done < <(git "${GIT[@]}" worktree list --porcelain)
+
+  local i n
+  local head_base="↕ ${base}" head_pinned="↕ pinned"
+  w_branch=$(vwidth "BRANCH")
+  w_ab=$(vwidth "${head_base}")
+  ((${#head_pinned} > w_ab)) && w_ab=$(vwidth "${head_pinned}")
+  for ((i = 0; i < ${#branches[@]}; i++)); do
+    n=$(vwidth "${branches[i]}")
+    ((n > w_branch)) && w_branch=${n}
+    n=$(vwidth "${vs_base[i]}")
+    ((n > w_ab)) && w_ab=${n}
+    n=$(vwidth "${vs_pinned[i]}")
+    ((n > w_ab)) && w_ab=${n}
+  done
+
+  print_newline
+  if [[ -n "${pinned}" ]]; then
+    print_header "${label} — default ${base} · pinned by ${ROOT_LABEL}/${ROOT_BASE} at ${pinned:0:7}"
+    print_yellow "  $(pad "BRANCH" "${w_branch}")  $(pad "COMMIT" 7)  $(pad "${head_base}" "${w_ab}")  $(pad "${head_pinned}" "${w_ab}")  PATH"
+  else
+    print_header "${label} — default ${base}"
+    print_yellow "  $(pad "BRANCH" "${w_branch}")  $(pad "COMMIT" 7)  $(pad "${head_base}" "${w_ab}")  PATH"
+  fi
+
+  for ((i = 0; i < ${#branches[@]}; i++)); do
+    if [[ -n "${pinned}" ]]; then
+      echo "  $(pad "${branches[i]}" "${w_branch}")  $(pad "${heads[i]}" 7)  $(pad "${vs_base[i]}" "${w_ab}")  $(pad "${vs_pinned[i]}" "${w_ab}")  ${paths[i]}"
+    else
+      echo "  $(pad "${branches[i]}" "${w_branch}")  $(pad "${heads[i]}" 7)  $(pad "${vs_base[i]}" "${w_ab}")  ${paths[i]}"
+    fi
+  done
+}
+
+line_sep "="
+
+ROOT_LABEL="$(basename -s .git "$(git -C "${ROOT}" config --get remote.origin.url 2>/dev/null || echo "${ROOT}")")"
+GIT=(-C "${ROOT}")
+ROOT_BASE="$(default_branch "${GIT[@]}")"
+MAIN_CHECKOUT=""
+print_repo "${ROOT_LABEL}" ""
+
+while read -r _ path; do
+  name="$(basename "${path}")"
+  gitdir="${COMMON_DIR}/modules/${name}"
+  if [[ ! -d "${gitdir}" ]]; then
+    print_newline
+    print_header "${name}"
+    print_warn "  not initialised — run: mise run worktree:init"
+    continue
+  fi
+  GIT=(--git-dir "${gitdir}")
+  MAIN_CHECKOUT="$(cd "${gitdir}" && cd "$(git --git-dir "${gitdir}" config core.worktree)" && pwd)"
+  pinned="$(git -C "${ROOT}" ls-tree "${ROOT_BASE}" -- "${path}" | awk '{print $3}')"
+  print_repo "${name}" "${pinned}"
+done < <(git config -f "${ROOT}/.gitmodules" --get-regexp '^submodule\..*\.path$')
+
+print_newline
+line_sep "="
