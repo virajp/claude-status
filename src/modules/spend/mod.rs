@@ -8,7 +8,10 @@
 //! waiting for it.
 
 pub mod cache;
+pub mod creds;
 pub mod extract;
+pub mod http;
+pub mod lock;
 
 use serde_json::Value;
 
