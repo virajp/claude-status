@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-#MISE description="Run the test suite (cargo test)"
+#MISE description="Run the test suites (cargo test + the installer's)"
+#MISE dir="{{ config_root }}"
 
 #USAGE flag "--debug" help="emit debug logs"
 
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+cd "$MISE_PROJECT_ROOT"
 
 [[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
 
@@ -17,6 +20,17 @@ print_header "Running tests (cargo test) ..."
 export CLAUDE_STATUS_SPEND_URL="${CLAUDE_STATUS_SPEND_URL:-http://127.0.0.1:1/never}"
 export AI_PLUGINS_SPEND_URL="${AI_PLUGINS_SPEND_URL:-http://127.0.0.1:1/never}"
 
-cargo test --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" ${VERBOSE}
+cargo test ${VERBOSE}
+
+print_header "Type-checking the installer (tsc) ..."
+pnpm exec tsc --noEmit
+
+# The installer's tests run against the BUNDLED artifact, so it has to exist
+# first — a bundler misconfiguration is exactly what they are there to catch.
+print_header "Bundling the installer (tsup) ..."
+pnpm exec tsup
+
+print_header "Running installer tests (node --test) ..."
+node --test "installer/test/*.test.mjs"
 
 print_header "Tests done"

@@ -13,9 +13,8 @@
   "repository": "github:virajp/claude-status",
   "license": "MIT",
   "author": "Viraj Patel",
-  "type": "module",
   "bin": {
-    "claude-status": "./bin/claude-status.mjs"
+    "claude-status": "./bin/installer.mjs"
   },
   "files": [
     "bin"

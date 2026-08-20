@@ -6,10 +6,20 @@ gpg_verify           = true     # verify tool signatures
 raw                  = true     # streams output
 status.missing_tools = "always"
 
-[env]
+# NodeJS settings
+node.compile        = false
+npm.package_manager = "pnpm"
 
+[env]
+_.path = { path = "node_modules/.bin", tools = true }
+
+# The common runtime every environment needs. Rust builds the bar; node and pnpm
+# build the npm installer that ships it. Environment-specific tools live in
+# mise.dev.toml and mise.ci.toml.
 [tools]
 "core:rust" = { profile = "minimal", version = "latest" }
+node        = { version = "latest" }
+pnpm        = { version = "latest" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.

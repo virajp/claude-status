@@ -1,0 +1,15 @@
+{
+  "name": "claude-status-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build tooling for the @askviraj/claude-status npm installer. Not published.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  }
+}
