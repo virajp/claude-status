@@ -13,7 +13,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::modules::spend::cache::{self, SpendCache};
-use crate::modules::spend::creds::Credentials;
+use crate::modules::spend::creds::{Credentials, Source};
 use crate::modules::spend::lock::{self, Acquired};
 use crate::modules::spend::{extract, http};
 
@@ -40,11 +40,57 @@ pub enum Outcome {
     LockUnavailable,
 }
 
-/// Runs a refresh, start to finish.
+/// What one refresh attempt saw, stage by stage, for `--debug` to narrate.
+///
+/// It carries **no token**, and cannot gain one by accident: the only
+/// credential-derived fields are the source and the plan tag.
+#[derive(Debug)]
+pub struct Report {
+    pub outcome: Outcome,
+    /// The endpoint actually used, after the environment override.
+    pub url: String,
+    /// Where the credentials were found, when any were.
+    pub source: Option<Source>,
+    pub plan: Option<String>,
+    /// The HTTP status, when a response arrived at all.
+    pub status: Option<u16>,
+    /// The parsed 200 body, so `--debug` can show which extraction rung hit.
+    pub body: Option<Value>,
+    /// Wall time for the whole attempt — lock and credentials included.
+    pub elapsed_ms: u128,
+    /// The cache as it stood before this attempt.
+    pub previous: Option<SpendCache>,
+}
+
+/// Runs a refresh, start to finish, discarding what each stage saw.
 ///
 /// `bypass_dedupe` is what `--debug` passes: a user typing it twice wants two
 /// answers, where the background child wants to stay off the endpoint.
 pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: bool) -> Outcome {
+    run_reported(cache_path, refresh_minutes, now_ms, bypass_dedupe).outcome
+}
+
+/// The same refresh, keeping every stage's observation.
+///
+/// `--debug` needs this rather than [`run`] because the useful diagnostic is
+/// *where* the path stopped, and a bare [`Outcome`] cannot say which
+/// extraction rung matched or where the token came from.
+pub fn run_reported(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: bool) -> Report {
+    let started = std::time::Instant::now();
+
+    // `LockUnavailable` is the default because it is the one outcome reached
+    // by falling out of the lock match rather than by being assigned.
+    let mut report = Report {
+        outcome: Outcome::LockUnavailable,
+        url: http::url(),
+        source: None,
+        plan: None,
+        status: None,
+        body: None,
+        elapsed_ms: 0,
+        previous: None,
+    };
+
     // `mkdir -p` before the lock, or the lock itself has nowhere to live.
     if let Some(parent) = cache_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -52,11 +98,15 @@ pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: 
 
     let _guard = match lock::acquire(cache_path) {
         Acquired::Held(guard) => guard,
-        Acquired::Contended { holder_age } => return Outcome::Locked { holder_age_secs: holder_age.as_secs() },
-        Acquired::Indeterminate => return Outcome::LockUnavailable,
+        Acquired::Contended { holder_age } => {
+            report.outcome = Outcome::Locked { holder_age_secs: holder_age.as_secs() };
+            return finish(report, started);
+        }
+        Acquired::Indeterminate => return finish(report, started),
     };
 
     let previous = cache::read_from(cache_path);
+    report.previous = previous.clone();
 
     // A sibling that just wrote means this fetch would buy nothing. Note the
     // asymmetry the original had and this keeps: the two contended returns
@@ -65,20 +115,26 @@ pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: 
         && let Some(prev) = previous.as_ref()
         && now_ms - prev.ts < DEDUPE_MS
     {
-        return Outcome::Deduped;
+        report.outcome = Outcome::Deduped;
+        return finish(report, started);
     }
 
     let credentials = crate::modules::spend::creds::load();
     let Some(credentials) = credentials else {
         write_failure(cache_path, previous.as_ref(), None, now_ms, None);
-        return Outcome::NoCredentials;
+        report.outcome = Outcome::NoCredentials;
+        return finish(report, started);
     };
+    report.source = Some(credentials.source);
+    report.plan = credentials.plan.clone();
 
-    match http::fetch(&http::url(), &credentials.token) {
+    match http::fetch(&report.url, &credentials.token) {
         http::Response::Ok(body) => {
+            report.status = Some(200);
             let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
             let data = extract::extract(&parsed);
             let had_budget = data.is_some();
+            report.body = Some(parsed);
 
             // Only the 200 branch writes a zero backoff and clears failures.
             let _ = cache::write_to(cache_path, &SpendCache {
@@ -89,10 +145,11 @@ pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: 
                 data,
             });
 
-            if had_budget { Outcome::Updated } else { Outcome::NoBudget }
+            report.outcome = if had_budget { Outcome::Updated } else { Outcome::NoBudget };
         }
 
         http::Response::RateLimited => {
+            report.status = Some(429);
             // The backoff uses the **already-incremented** failure count, so
             // the first 429 gives 30 minutes rather than 15.
             let failures = previous.as_ref().map_or(0, |p| p.failures) + 1;
@@ -100,25 +157,34 @@ pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: 
             let backoff_until = now_ms + backoff;
 
             write_failure(cache_path, previous.as_ref(), Some(&credentials), now_ms, Some(backoff_until));
-            Outcome::RateLimited { backoff_until }
+            report.outcome = Outcome::RateLimited { backoff_until };
         }
 
         // Every other failure leaves `backoffUntil` **absent**, which reads
         // back as 0 and erases any prior backoff. Faithful, and load-bearing
         // for anyone comparing behaviour against the original.
         http::Response::Unauthorized => {
+            report.status = Some(401);
             write_failure(cache_path, previous.as_ref(), Some(&credentials), now_ms, None);
-            Outcome::Unauthorized
+            report.outcome = Outcome::Unauthorized;
         }
         http::Response::Transport(reason) => {
             write_failure(cache_path, previous.as_ref(), Some(&credentials), now_ms, None);
-            Outcome::Failed { reason }
+            report.outcome = Outcome::Failed { reason };
         }
         http::Response::Unexpected(status) => {
+            report.status = Some(status);
             write_failure(cache_path, previous.as_ref(), Some(&credentials), now_ms, None);
-            Outcome::Failed { reason: format!("HTTP {status}") }
+            report.outcome = Outcome::Failed { reason: format!("HTTP {status}") };
         }
     }
+
+    finish(report, started)
+}
+
+fn finish(mut report: Report, started: std::time::Instant) -> Report {
+    report.elapsed_ms = started.elapsed().as_millis();
+    report
 }
 
 /// Records a failure without discarding the last good figures.

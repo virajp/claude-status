@@ -109,6 +109,13 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
 /// is the part users actually reach for. This is the config, wiring, layout and
 /// git half.
 fn debug_report() -> String {
+    // The spend section is produced by a closure rather than called inline so
+    // a test can assemble the report without performing a live fetch — the
+    // whole point of that section is that it reaches the network.
+    debug_report_with(&|config| crate::_runtime::debug::spend_report(config, time::now_ms()))
+}
+
+fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
 
@@ -154,7 +161,8 @@ fn debug_report() -> String {
     let _ = writeln!(out, "  ahead:    {}", git_facts.ahead);
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
-    let _ = writeln!(out, "\nSPEND\n  not built yet — see plan 3");
+    let _ = writeln!(out, "\nSPEND");
+    out.push_str(&spend_section(&config));
 
     let _ = writeln!(out, "\nSAMPLE RENDER");
     let sample = render_main(&sample_facts(), &git_facts, &config);
@@ -299,7 +307,9 @@ mod tests {
 
     #[test]
     fn the_debug_report_names_every_section() {
-        let out = debug_report();
+        // Stubbed rather than live: `spend_report` fetches, and no unit test
+        // may reach the spend endpoint.
+        let out = debug_report_with(&|_| "  stubbed\n".to_string());
         for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SPEND", "SAMPLE RENDER"] {
             assert!(out.contains(section), "missing {section} in:\n{out}");
         }
