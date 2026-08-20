@@ -24,7 +24,7 @@ payload) and §3 (subagent styling and status matching), plus the §10 Phase-2
 verification clause of
 [the behaviour contract](../spec/statusline-behaviour.md).
 
-Plan 2 of 4 — requires [`main-bar`](./2026-08-19-1400-main-bar.md); required by
+Plan 2 of 5 — requires [`main-bar`](./2026-08-19-1400-main-bar.md); required by
 [`distribution`](./2026-08-19-1403-distribution.md).
 
 Independent of [`spend`](./2026-08-19-1402-spend.md): the two share only what
@@ -204,7 +204,7 @@ its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 - Per-task `model`/`effort` becoming real upstream fields — the fallback chain
   is built to accept them, but nothing here depends on them existing.
 - Terminal-width-aware truncation (`unicode-width`) — see Risks / drift.
-- Packaging — [plan 4](./2026-08-19-1403-distribution.md).
+- Packaging — [plan 5](./2026-08-19-1403-distribution.md).
 
 ## Gaps surfaced during execution
 
