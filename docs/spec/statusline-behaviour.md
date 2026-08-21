@@ -747,10 +747,35 @@ wrapper whose `optionalDependencies` carry one package per target, so existing
 does not have to own a shell installer, a build matrix *and* a checksum story on
 day one. A Homebrew tap can still come later.
 
-The supported set is **six** targets — macOS and Linux on both architectures,
-plus Windows, which Claude Code runs on natively. `supported_targets()` in
-`.config/mise/tasks/_scripts/_rust` is the single source; nothing else should
-hard-code the list or its length.
+~~The supported set is **six** targets — macOS and Linux on both architectures,
+plus Windows, which Claude Code runs on natively.~~ **Reversed 2026-08-21**
+(`macos-only` cycle). The supported set is **two** targets — macOS on both
+architectures — and nothing else. Three things the six-target decision could not
+weigh at the time:
+
+- **Four of the six were never verified.** `build:cross` proved architecture,
+  not execution: no Linux or Windows binary this repo produced was ever *run* by
+  anyone. Shipping them was shipping a claim nobody had checked.
+- **The C toolchain problem arrived.** The first full build after the spend
+  subsystem's TLS stack landed produced four of six, both Windows targets
+  failing on a missing archiver. The mitigation was a preflight and a
+  `--host-only` flag — two features whose only purpose was making a partial
+  build survivable.
+- **A platform costs more than a matrix row.** Windows alone was a `cargo-xwin`
+  pin, an `llvm-lib` preflight, a `.exe` filename branch, a `USERPROFILE` home
+  branch, a `chmod` guard, a parallel `cmd /C` test fixture module and two CI
+  runners — for a platform that cannot be tested here.
+
+Nothing had been published when this was decided, so no user lost a platform.
+The narrowing is stated at three layers: the wrapper's `"os": ["darwin"]` makes
+npm refuse the install, the installer names the host it will not serve before
+writing anything, and the readme leads with it.
+
+`supported_targets()` in `.config/mise/tasks/_scripts/_rust` remains the single
+source; nothing else should hard-code the list or its length. Two lists are kept
+deliberately in step with it and named where they live: `PACKAGES` in
+`installer/src/modules/binary.ts` and the `build` matrix in
+`.github/workflows/release.yml`.
 
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the

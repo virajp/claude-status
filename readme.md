@@ -17,16 +17,35 @@ One binary, three surfaces, each chosen by a flag:
 | `--subagent`   | the subagent panel — NDJSON, one row per subagent      |
 | `--caps-hook`  | a `PostToolUse` actuator; silent unless a cap breached |
 
+## Requirements
+
+**macOS only** — Apple Silicon and Intel. Node 18+ is needed to run the
+installer once; nothing after that.
+
+Claude Code also runs on Linux and Windows, and this package does not serve
+them. `npm install` there fails with `EBADPLATFORM` rather than installing
+something that cannot work, and the installer names the platform it will not
+serve before touching anything.
+
+Building from source is the only escape hatch, and it is genuinely unsupported —
+not a soft "we'd rather you didn't". Nothing outside macOS is built, tested or
+checked in CI, and two things are known to stand in the way: the crate calls a
+Unix API to put the detached refresh child in its own process group, so
+**Windows will not compile** without putting that back behind a `cfg`; and the
+TLS stack pulls in `ring`, whose C code needs a working target C toolchain, so
+even a Linux build is a toolchain problem before it is a Rust one. If you take
+that on, `supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the
+platform list lives.
+
 ## Install
 
 ```sh
 npx @askviraj/claude-status --install
 ```
 
-npm resolves one platform package for your machine — macOS, Linux and Windows,
-on both architectures — and the installer puts the binary at
-`~/.claude/bin/claude-status`, seeds `~/.config/claude-status.json` if you have
-no config, and wires three keys into `~/.claude/settings.json`.
+npm resolves the platform package for your Mac, and the installer puts the
+binary at `~/.claude/bin/claude-status`, seeds `~/.config/claude-status.json` if
+you have no config, and wires three keys into `~/.claude/settings.json`.
 
 **The npm package is only ever the installer.** Claude Code runs the raw binary;
 routing a render through a Node shim would pay Node's startup every four seconds
@@ -148,20 +167,21 @@ theming, and offers to remove what the old install left behind.
 ## Building
 
 ```sh
-mise run setup:all                  # toolchain
-mise run code:test                  # the suite
-mise run build:native               # a release binary for this machine
-mise run build:all                  # every published target, then the npm packages
-mise run build:cross --host-only    # only what this machine has a toolchain for
+mise run setup:all      # toolchain
+mise run code:test      # the suite
+mise run build:native   # a release binary for this machine
+mise run build:all      # both published targets, then the npm packages
 ```
 
-The Windows targets need `llvm-lib` locally — `cargo-xwin` supplies the Windows
-SDK, but `ring`'s C code still needs an archiver (`brew install llvm`). CI never
-does: the release workflow builds each Windows target on a native Windows
-runner, where MSVC supplies its own. `--host-only` skips what a machine cannot
-reach and names it; without it a missing toolchain is fatal, because `build:npm`
-refusing to stage a partial set is what stands between a partial build and a
-partial release.
+Both published targets are macOS, and Apple ships both slices of the system
+libraries — so `build:all` on any Mac needs nothing but the two `rustup`
+targets. There is no cross toolchain to install and no partial-build case to
+handle. On a non-Mac host `build:cross` stops and says so rather than staging an
+incomplete set.
+
+`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
+list lives; see [contract §9](docs/spec/statusline-behaviour.md) for why it is
+two rows.
 
 Releases are tag-driven: bump `version` in `Cargo.toml` — the single source for
 every published version — commit, and push a matching `v*` tag.
