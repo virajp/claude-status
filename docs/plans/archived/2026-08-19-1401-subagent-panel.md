@@ -22,7 +22,7 @@ The subagent panel — the second rendering surface, selected by the
 **`--subagent` flag**, not by the payload's shape. Contract §2 (subagent
 payload) and §3 (subagent styling and status matching), plus the §10 Phase-2
 verification clause of
-[the behaviour contract](../spec/statusline-behaviour.md).
+[the behaviour contract](../../spec/statusline-behaviour.md).
 
 Plan 2 of 5 — requires [`main-bar`](./2026-08-19-1400-main-bar.md); required by
 [`distribution`](./2026-08-19-1403-distribution.md).
@@ -141,8 +141,8 @@ Two traps the contract calls out and one it gets wrong:
 
 ## Acceptance criteria (from blueprint)
 
-Derived from [the behaviour contract](../spec/statusline-behaviour.md) §§2–3 and
-its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
+Derived from [the behaviour contract](../../spec/statusline-behaviour.md) §§2–3
+and its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 
 - [x] Given `--subagent` and a payload with **no** `tasks` array, when the
       binary runs, then stdout is empty and the exit code is 0 — it never falls
@@ -150,30 +150,30 @@ its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 - [x] Given `--subagent` and a payload with a `tasks` array, when the binary
       renders, then stdout is NDJSON — one JSON object per line, each with `id`
       and `content` — and not a single blob — from
-      [contract §2](../spec/statusline-behaviour.md)
+      [contract §2](../../spec/statusline-behaviour.md)
 - [x] Given the §12 subagent fixture, when the output is piped through
       `jq -r .content`, then a sane single powerline row is printed — from
-      [contract §10, Phase 2](../spec/statusline-behaviour.md)
+      [contract §10, Phase 2](../../spec/statusline-behaviour.md)
 - [x] Given a task with no `id`, when the binary renders, then that task is
       skipped and the remaining tasks still render — from
-      [contract §10, Phase 2](../spec/statusline-behaviour.md)
+      [contract §10, Phase 2](../../spec/statusline-behaviour.md)
 - [x] Given a task whose `type` is `"local_agent"`, when the binary renders,
       then the type appears as a glyph and the string `local_agent` appears
       nowhere in the output — from
-      [contract §2](../spec/statusline-behaviour.md)
+      [contract §2](../../spec/statusline-behaviour.md)
 - [x] Given a task with no per-task `model` and a panel-wide `model`, when the
       binary renders, then the panel-wide value is used; and given neither, the
       model segment is omitted — from
-      [contract §2](../spec/statusline-behaviour.md)
+      [contract §2](../../spec/statusline-behaviour.md)
 - [x] Given `columns: 120` and a description longer than 54 characters, when the
       binary renders, then the description is truncated to 53 units plus `…` —
-      from [contract §3](../spec/statusline-behaviour.md)
+      from [contract §3](../../spec/statusline-behaviour.md)
 - [x] Given statuses declared in a non-alphabetical order in a user config, when
       the binary matches, then the first matching entry in **config order** wins
-      — from [contract §3](../spec/statusline-behaviour.md)
+      — from [contract §3](../../spec/statusline-behaviour.md)
 - [x] Given a subagent payload, when the binary renders, then no spend cache is
       read, no refresh child is spawned, and no usage mirror is written — from
-      [contract §§7–8](../spec/statusline-behaviour.md)
+      [contract §§7–8](../../spec/statusline-behaviour.md)
 
 ## Risks / drift
 

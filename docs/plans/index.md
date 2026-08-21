@@ -8,42 +8,60 @@ status: stable
 
 # Cycle plans
 
-The Rust rewrite of the Claude Code statusline, decomposed into five chained
-cycles. Each plan is a diff against
+The Rust rewrite of the Claude Code statusline. Each plan is a diff against
 [the behaviour contract](../spec/statusline-behaviour.md), and each ends at
 something runnable.
 
-| Plan                                                                  | Target repo     | Requires                         | Landed                        | Status |
-| --------------------------------------------------------------------- | --------------- | -------------------------------- | ----------------------------- | ------ |
-| [2026-08-19-1400-main-bar](./2026-08-19-1400-main-bar.md)             | `claude-status` | —                                | executed, merged in `7cb6247` | active |
-| [2026-08-19-1401-subagent-panel](./2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | executed, merged in `8728158` | active |
-| [2026-08-19-1402-spend](./2026-08-19-1402-spend.md)                   | `claude-status` | main-bar                         | executed, merged in `d68baf6` | active |
-| [2026-08-19-1404-caps-hook](./2026-08-19-1404-caps-hook.md)           | `claude-status` | main-bar                         | executed, merged in `61a5445` | active |
-| [2026-08-19-1403-distribution](./2026-08-19-1403-distribution.md)     | `claude-status` | subagent-panel, spend, caps-hook | executed, merged in `33d6abc` | active |
+## Active
 
-**`Landed` records execution; `Status` records archival.** A row stays `active`
-until `/vwf:archive` retires it, and neither executed cycle can be archived yet
-— three active plans still name `main-bar` in their `requires:`, and
-`distribution` names `spend`.
+| Plan                                                          | Target repo     | Requires     | Landed | Status |
+| ------------------------------------------------------------- | --------------- | ------------ | ------ | ------ |
+| [2026-08-21-2121-macos-only](./2026-08-21-2121-macos-only.md) | `claude-status` | —            | —      | active |
+| [2026-08-21-2122-release](./2026-08-21-2122-release.md)       | `claude-status` | `macos-only` | —      | active |
 
-**Execution order** — `main-bar`, then `subagent-panel` / `spend` / `caps-hook`
-in any order or concurrently in separate worktrees, then `distribution` last.
-Filename timestamps record when each plan was written, not when it runs:
-`caps-hook` was added after `distribution` and precedes it.
+**Execution order** — `macos-only`, then `release`. They are separated because
+`release` is the only cycle here whose steps are **not** reversible by editing a
+file: a published version cannot be republished, and a wrapper published while
+the target table is still six-wide would reserve four names that will never be
+built again.
 
-**`distribution` ran out of order, deliberately.** Steps 1, 3, 4 and 9 — the
-build tasks, the platform packages, the npx wrapper and the CI release workflow
-— landed ahead of its `requires:`, on request, because none of them depends on
-the panel, the spend subsystem or the hook. Most of 5–8 followed. The rest (step
-2's caps-hook key, `--dry-run`/`--yes`/`--force`, the orphan sweep, the readme)
-landed once `caps-hook` did, in order.
+## Archived
 
-**Nothing has shipped.** The repo carries no release tag, and two of
-`distribution`'s acceptance criteria stay open until it does: one binary per
-platform from a real publish, and a machine with no Node and no Rust running it.
-The first release also cannot go through CI —
+The five cycles that built the binary. All executed and merged; retired
+2026-08-21 into [`archived/`](./archived/).
+
+| Plan                                                                           | Target repo     | Requires                         | Landed                        | Status   |
+| ------------------------------------------------------------------------------ | --------------- | -------------------------------- | ----------------------------- | -------- |
+| [2026-08-19-1400-main-bar](./archived/2026-08-19-1400-main-bar.md)             | `claude-status` | —                                | executed, merged in `7cb6247` | archived |
+| [2026-08-19-1401-subagent-panel](./archived/2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | executed, merged in `8728158` | archived |
+| [2026-08-19-1402-spend](./archived/2026-08-19-1402-spend.md)                   | `claude-status` | main-bar                         | executed, merged in `d68baf6` | archived |
+| [2026-08-19-1404-caps-hook](./archived/2026-08-19-1404-caps-hook.md)           | `claude-status` | main-bar                         | executed, merged in `61a5445` | archived |
+| [2026-08-19-1403-distribution](./archived/2026-08-19-1403-distribution.md)     | `claude-status` | subagent-panel, spend, caps-hook | executed, merged in `33d6abc` | archived |
+
+**`distribution` was archived with two acceptance criteria open**, deliberately.
+Everything it owned has landed except the publish itself, and both open criteria
+— one binary per platform from a real publish, and a machine with no Node and no
+Rust running it — are **carried forward verbatim** into
+[`release`](./2026-08-21-2122-release.md), which is where they can actually be
+closed. Nothing was retired unfinished and unrecorded.
+
+Filename timestamps record when each plan was written, not when it ran:
+`caps-hook` was added after `distribution` and preceded it, and `distribution`
+ran partly ahead of its `requires:` on request. Its own
+[gaps section](./archived/2026-08-19-1403-distribution.md#gaps-surfaced-during-execution)
+records that history.
+
+## Nothing has shipped
+
+The repo carries no release tag and no package is on the registry. The first
+release also cannot go through CI —
 [npm requires a package to exist before a Trusted Publisher can be configured](https://github.com/npm/cli/issues/8544),
-so all seven names need one manual publish first.
+so the names need one manual publish first.
+[`release`](./2026-08-21-2122-release.md) owns that.
+
+**Three names, not seven.** `macos-only` narrows the supported set from six
+targets to two, so a complete release is the wrapper plus two darwin platform
+packages.
 
 ## Not planned here
 
@@ -52,7 +70,7 @@ bar and `context-caps.js` both live there — from `virajp/ai-plugins`, retiring
 the `cli/src/statusline.ts` install path that deploys them to
 `~/.claude/scripts/statusline` and `~/.claude/hooks/context-caps.js`, and
 pointing that repo's docs at this one. A change to a different repository, gated
-on `2026-08-19-1403-distribution` having shipped.
+on [`release`](./2026-08-21-2122-release.md) having shipped.
 
 It also owns the two simplifications this repo cannot make until it lands:
 deleting the transitional `.config/statusline.json`, and retiring
@@ -60,8 +78,9 @@ deleting the transitional `.config/statusline.json`, and retiring
 JS hook is gone, this binary is both the writer and the only reader of that
 file.
 
-> **The contract has caught up.** [`caps-hook`](./2026-08-19-1404-caps-hook.md)
-> executed, and with it §13's `context-caps.js` bullet is struck through and
-> marked reversed, and §10's Phase 5 now has the installer replace the
-> `node …context-caps.js` command with `claude-status --caps-hook` rather than
-> leaving a Node hook behind.
+> **The contract has caught up.**
+> [`caps-hook`](./archived/2026-08-19-1404-caps-hook.md) executed, and with it
+> §13's `context-caps.js` bullet is struck through and marked reversed, and
+> §10's Phase 5 now has the installer replace the `node …context-caps.js`
+> command with `claude-status --caps-hook` rather than leaving a Node hook
+> behind.
