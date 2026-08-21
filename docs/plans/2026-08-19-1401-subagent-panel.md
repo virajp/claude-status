@@ -3,7 +3,7 @@ type: vwf-plan
 title: subagent-panel — 2026-08-19
 description: Cycle plan (a diff) for the subagent panel — status matching,
   type glyphs, the description budget, and NDJSON output.
-status: draft
+status: stable
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

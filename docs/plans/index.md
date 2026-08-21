@@ -16,7 +16,7 @@ something runnable.
 | Plan                                                                  | Target repo     | Requires                         | Landed                           | Status |
 | --------------------------------------------------------------------- | --------------- | -------------------------------- | -------------------------------- | ------ |
 | [2026-08-19-1400-main-bar](./2026-08-19-1400-main-bar.md)             | `claude-status` | —                                | executed, merged in `7cb6247`    | active |
-| [2026-08-19-1401-subagent-panel](./2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | —                                | active |
+| [2026-08-19-1401-subagent-panel](./2026-08-19-1401-subagent-panel.md) | `claude-status` | main-bar                         | executed, merged in `8728158`    | active |
 | [2026-08-19-1402-spend](./2026-08-19-1402-spend.md)                   | `claude-status` | main-bar                         | executed, merged in `d68baf6`    | active |
 | [2026-08-19-1404-caps-hook](./2026-08-19-1404-caps-hook.md)           | `claude-status` | main-bar                         | —                                | active |
 | [2026-08-19-1403-distribution](./2026-08-19-1403-distribution.md)     | `claude-status` | subagent-panel, spend, caps-hook | steps 1, 3, 4, 9 and most of 5–8 | active |
