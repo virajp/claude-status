@@ -29,6 +29,7 @@ const FALLBACK_LINE: &str = "\u{26a1} Claude";
 /// The process entry point. Returns the exit code.
 pub fn run() -> i32 {
     let cli = cli::parse(std::env::args_os(), std::io::stdin().is_terminal());
+    proc::set_narrate(cli.debug);
     let output = dispatch(cli);
     write_stdout(&output);
     0

@@ -539,19 +539,41 @@ fn a_hostile_config_still_puts_a_usable_line_on_stdout() {
 fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
     // The whole git budget is 250 ms *shared*. Run against a `git` that never
     // returns: sequentially at 250 ms each, the four subprocesses the dirty and
-    // ahead pipelines can issue would cost about a second. This asserts the
-    // shared deadline, and that the render still completes.
+    // ahead pipelines can issue would cost about a second.
     let home = Home::new(&safe_config());
 
-    // A `git` shim that hangs, ahead of the real one on PATH.
+    // A `git` shim that records each invocation, then hangs until the deadline
+    // kills it. `--warm` is the escape hatch the warm-up below needs.
     let shim_dir = TempDir::new().unwrap();
+    let alive = shim_dir.path().join("alive");
+    std::fs::create_dir_all(&alive).unwrap();
     let shim = shim_dir.path().join("git");
-    std::fs::write(&shim, "#!/bin/sh\nsleep 30\n").unwrap();
+    std::fs::write(
+        &shim,
+        format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = --warm ] && exit 0\n\
+             touch '{alive}'/$$\n\
+             sleep 30\n",
+            alive = alive.display(),
+        ),
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
+
+    // **Warm the shim before timing anything.** macOS assesses a newly written
+    // executable on its first run — measured at 466 ms against ~4 ms warm — and
+    // that assessment happens *before* the interpreter reads a line. Under a
+    // 250 ms budget the deadline fires during it, so a cold shim is killed
+    // having done nothing at all: no output, no `alive` marker, no `sleep`. The
+    // test then measured one Gatekeeper stall instead of the git budget, which
+    // is both the wrong thing and an unbounded, load-sensitive one — the whole
+    // reason this was the only test in the suite that ever flaked.
+    let _ = std::process::Command::new(&shim).arg("--warm").output();
 
     // A repo the filesystem walk will resolve a branch from, so the markers run.
     let repo = TempDir::new().unwrap();
@@ -567,9 +589,16 @@ fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
 
     assert!(out.status.success());
     assert!(!stdout(&out).is_empty(), "the bar renders even when git hangs");
+
+    // The shim actually ran — without this the timing below proves nothing,
+    // which is exactly the state this test was in before the warm-up.
+    let invocations = std::fs::read_dir(&alive).unwrap().count();
+    assert!(invocations >= 2, "the hanging git was never reached; saw {invocations} invocations");
+
     assert!(
         elapsed < std::time::Duration::from_millis(900),
-        "took {elapsed:?}; a shared 250 ms budget should not approach the ~1 s a per-subprocess timeout would cost",
+        "took {elapsed:?} across {invocations} hanging git calls; a shared 250 ms budget \
+         should not approach the ~1 s a per-subprocess timeout would cost",
     );
 }
 
