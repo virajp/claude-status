@@ -34,10 +34,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BUNDLE = join(ROOT, "npm", "claude-status", "bin", "installer.mjs");
 const ASSET = join(ROOT, "assets", "claude-status.defaults.json");
-/** The installed binary's filename, which differs on Windows. */
-const BINARY_NAME = process.platform === "win32"
-  ? "claude-status.exe"
-  : "claude-status";
+/** The installed binary's filename. macOS only, so there is no extension. */
+const BINARY_NAME = "claude-status";
 
 /** A fake platform package, so the installer has a binary to copy. */
 let fakeModules;
@@ -51,11 +49,7 @@ before(() => {
   // The installer resolves `@askviraj/claude-status-<os>-<cpu>` relative to
   // itself, so stand one up beside the bundle.
   const pkg = `@askviraj/claude-status-${process.platform}-${process.arch}`;
-  // The binary carries an extension on Windows, and the installer looks for
-  // exactly that name.
-  const exe = process.platform === "win32"
-    ? "claude-status.exe"
-    : "claude-status";
+  const exe = BINARY_NAME;
   fakeModules = join(ROOT, "npm", "claude-status", "node_modules", pkg);
   mkdirSync(join(fakeModules, "bin"), { recursive: true });
   writeFileSync(
@@ -165,6 +159,77 @@ describe("the argument surface", () => {
     assert.match(stdout, /USAGE/);
     assert.deepEqual(snapshot(home), {});
   });
+});
+
+describe("unsupported platforms", () => {
+  // The bundle reads `process.platform` and `process.arch` directly, and there
+  // is no environment override for either. A tiny shim redefines both before
+  // importing the bundle, so this exercises the real resolution path on a host
+  // this package does not ship to — which is the only way to test it from a
+  // Mac.
+  function runAs(home, platform, arch, args) {
+    const shim = join(home, "as-host.mjs");
+    writeFileSync(
+      shim,
+      `Object.defineProperty(process, "platform", { value: ${
+        JSON.stringify(platform)
+      } });\n`
+        + `Object.defineProperty(process, "arch", { value: ${
+          JSON.stringify(arch)
+        } });\n`
+        + `process.argv = [process.argv[0], ${JSON.stringify(BUNDLE)}, ${
+          JSON.stringify(args)
+        }].flat();\n`
+        + `await import(${JSON.stringify(BUNDLE)});\n`,
+    );
+    try {
+      const stdout = execFileSync(process.execPath, [shim], {
+        env: { ...process.env, HOME: home },
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { code: 0, stdout, stderr: "" };
+    }
+    catch (error) {
+      return {
+        code: error.status ?? 1,
+        stdout: error.stdout ?? "",
+        stderr: error.stderr ?? "",
+      };
+    }
+  }
+
+  for (
+    const [platform, arch] of [
+      ["linux", "x64"],
+      ["linux", "arm64"],
+      ["win32", "x64"],
+      ["win32", "arm64"],
+    ]
+  ) {
+    it(`refuses to install on ${platform}:${arch}, naming what is supported`, () => {
+      const home = newHome();
+      const { code, stderr } = runAs(home, platform, arch, ["--install"]);
+
+      assert.equal(code, 1);
+      assert.match(
+        stderr,
+        new RegExp(`unsupported platform ${platform}:${arch}`),
+      );
+      assert.match(stderr, /darwin:arm64/);
+      assert.match(stderr, /darwin:x64/);
+      assert.doesNotMatch(
+        stderr,
+        new RegExp(`claude-status-${platform}`),
+        "an unsupported host must not be told to reinstall a package that does not exist",
+      );
+      assert.deepEqual(
+        Object.keys(snapshot(home)).filter(name => name !== "as-host.mjs"),
+        [],
+        "an unsupported platform must fail having touched nothing",
+      );
+    });
+  }
 });
 
 describe("the caps hook", () => {
