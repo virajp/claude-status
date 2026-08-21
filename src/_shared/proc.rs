@@ -27,9 +27,20 @@ pub fn set_narrate(on: bool) {
     NARRATE.store(on, Ordering::Relaxed);
 }
 
+/// The `--debug` narration, and the **fifth terminal surface** contract §4a
+/// names.
+///
+/// stderr is a terminal too. This carries the cwd, the program name and its
+/// argv — all attacker-nameable, all under the same `--debug` flag as the
+/// report — so it is filtered here, at the one point every narration passes
+/// through, rather than by each caller remembering `{:?}` over `{}`. Two of
+/// them had already forgotten.
+///
+/// Newlines go with everything else: a narration is one line by construction,
+/// and a value that added one could forge a second `claude-status:` line.
 fn narrate(message: &str) {
     if NARRATE.load(Ordering::Relaxed) {
-        eprintln!("claude-status: {message}");
+        eprintln!("claude-status: {}", crate::render::sanitize(message));
     }
 }
 
@@ -72,7 +83,7 @@ pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline
     // `{:?}` on the path, not `{}`: this is a stderr write like any other, and
     // a directory name carrying an escape would repaint the terminal the
     // narration is being read in. `Debug` escapes it; `Display` does not.
-    narrate(&format!("run {program} {args:?} in {:?}", cwd.display().to_string()));
+    narrate(&format!("run {program} {args:?} in {cwd:?}"));
 
     // A spawn failure and a command that ran and said nothing are both `None`
     // to the caller, and they mean completely different things: the first is a
@@ -89,8 +100,7 @@ pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline
         Ok(child) => child,
         Err(error) => {
             narrate(&format!(
-                "spawn {program} {args:?} in {:?} failed: {error} ({:?})",
-                cwd.display().to_string(),
+                "spawn {program} {args:?} in {cwd:?} failed: {error} ({:?})",
                 error.kind(),
             ));
             return None;

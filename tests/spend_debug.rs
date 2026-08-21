@@ -61,6 +61,12 @@ fn config_with(show: &str) -> String {
 
 /// Runs `--debug`, returning both streams separately.
 fn debug(home: &TempDir, url: &str) -> Output {
+    // The endpoint is passed in, so assert it here rather than trusting each
+    // caller to have remembered. `http::fetch`'s own `#[cfg(test)]` check does
+    // not apply to a subprocess, and the macOS keychain is not `$HOME`-scoped —
+    // so a missing override means a real token to the real endpoint.
+    assert_ne!(url, claude_status::spend::http::DEFAULT_URL, "this would reach the real spend endpoint");
+
     Command::new(BINARY)
         .arg("--debug")
         .env_clear()

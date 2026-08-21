@@ -296,11 +296,17 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // there was no home or no git root to build one from. Printing
         // `<embedded>` for the second is how `--debug` outside a repo came to
         // report `repo  not found  <embedded>`.
+        // Each `None` is explained by the layer it belongs to, and the arms
+        // are matched against the named constants rather than string literals:
+        // a catch-all here is how `repo  not found  <embedded>` happened, and a
+        // renamed or fourth layer would reintroduce it silently.
         let path = match (&source.path, source.label) {
             (Some(path), _) => path.display().to_string(),
-            (None, "embedded") => "<embedded>".to_string(),
-            (None, "repo") => "<no git root>".to_string(),
-            (None, _) => "<no $HOME>".to_string(),
+            (None, layers::LABEL_EMBEDDED) => "<embedded>".to_string(),
+            (None, layers::LABEL_USER) => "<no $HOME>".to_string(),
+            // Also reached when the process has no readable cwd to walk up from.
+            (None, layers::LABEL_REPO) => "<no git root>".to_string(),
+            (None, other) => format!("<no path for {other}>"),
         };
         let state = if source.loaded { "loaded" } else { "not found" };
         let _ = writeln!(out, "  {:8} {state:10} {}", source.label, field(&path));

@@ -72,7 +72,7 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
             let _ = writeln!(out, "  lock     HELD — holder started {holder_age_secs}s ago, not waiting");
         }
         Outcome::LockUnavailable => {
-            let _ = writeln!(out, "  lock     unreadable — no fetch was attempted");
+            let _ = writeln!(out, "  lock     could not be created or read — no fetch was attempted");
         }
         _ => {
             let _ = writeln!(out, "  lock     free");
@@ -230,8 +230,13 @@ fn verdict_of(
             // The **lock**, not the cache beside it: they differ by a `.lock`
             // suffix, and naming the healthy file sends the reader to the wrong
             // one in the only situation where this line is printed.
+            // Not only "unreadable": the lock is `create_new`, so this arm also
+            // covers PermissionDenied, NotADirectory and ENOSPC on the cache
+            // directory. Saying "could not be read" sends a user hunting for a
+            // stale lock file that was never created.
             format!(
-                "the lock at {} could not be read, so no fetch was made.",
+                "the lock at {} could not be created or read, so no fetch was made. \
+                 Check that its directory exists and is writable.",
                 crate::modules::spend::lock::lock_path(cache_path).display(),
             )
         }

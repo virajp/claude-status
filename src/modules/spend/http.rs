@@ -49,10 +49,17 @@ pub fn fetch(url: &str, token: &str) -> Response {
     // **A test must never reach the real endpoint.** The macOS keychain is not
     // scoped by `$HOME`, so a test with a fake home still finds a real token —
     // making a stray fetch a privacy leak and a 429 the user wears for half an
-    // hour. Every layer that could reach here is supposed to pin the endpoint,
-    // and one of them silently stopped doing so; this turns that class of
-    // mistake into a failing test instead of a live request. Panicking is
-    // correct here: there is no safe way to continue.
+    // hour.
+    //
+    // **This covers the lib's own unit tests and nothing else.** `cfg(test)` is
+    // false when this crate is compiled as the binary, and false again when it
+    // is linked by an integration test under `tests/` — so an integration test
+    // calling into this function gets a build without the assertion. The
+    // in-process harness that can reach here, `refresh_against` in
+    // `tests/spend_refresh.rs`, carries its own copy of this check for exactly
+    // that reason. The harnesses that spawn the binary as a subprocess are
+    // covered differently: they pass the endpoint as an environment variable on
+    // the command they build.
     #[cfg(test)]
     assert_ne!(url, DEFAULT_URL, "a test reached the real spend endpoint — pin ${URL_ENV}");
 

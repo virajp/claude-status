@@ -515,15 +515,22 @@ Kept: ZWJ, variation selectors, and the private-use codepoints — the bar is
 built from Nerd Font glyphs, so filtering those would erase it.
 
 **The filter belongs at the point every value passes through**, not in each
-producer. There are **four** such points, one per surface, and a fifth surface
+producer. There are **five** such points, one per surface, and a sixth surface
 would need its own:
 
-| Surface         | Chokepoint                                                                | Why there                                                                                           |
-| --------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Main bar        | `segments::build`                                                         | Every segment's text is assembled through it                                                        |
-| Subagent panel  | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering                   |
-| Powerline seams | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest surface of the four |
-| `--debug`       | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                               |
+| Surface             | Chokepoint                                                                | Why there                                                                                   |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Main bar            | `segments::build`                                                         | Every segment's text is assembled through it                                                |
+| Subagent panel      | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering           |
+| Powerline seams     | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest of the five |
+| `--debug` report    | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                       |
+| `--debug` narration | `proc::narrate`                                                           | stderr is a terminal too, and it carries the cwd, the program name and its argv             |
+
+The narration surface was the last to be found, and for the usual reason:
+`narrate` writes to stderr rather than stdout, so it did not look like a
+rendering surface. It is one. It was reached by two `{}` writes of a path that
+were patched by hand — the per-write pattern this section exists to reject — and
+the rule now lives inside `narrate` itself.
 
 `--debug` earned a chokepoint rather than a call per write, and the reason is
 the cycle that added it: filtering the paths first missed the layout entries and

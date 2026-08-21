@@ -70,9 +70,23 @@ fn stub(status: u16, reason: &str, body: &'static str) -> Stub {
 
 /// Points the fetch at a stub and seeds credentials, then runs one refresh.
 ///
-/// `HOME` is redirected too, so the credentials file is the fake one and the
-/// macOS keychain fallback is never reached.
+/// `HOME` is redirected too, so the credentials file is the fake one.
+///
+/// **With `with_credentials == false`, `PATH` is emptied as well.** Redirecting
+/// `$HOME` removes the *file* arm of `creds::load`, but the macOS keychain arm
+/// is not `$HOME`-scoped: it shells out to `security`, which on a logged-in
+/// machine returns a real token. That made "no credentials" untestable — the
+/// outcome depended on whose laptop ran it — and it is how a real token came to
+/// be sent to a loopback stub. `security` is resolved through `PATH`, so an
+/// empty `PATH` makes the spawn fail and the arm return `None`, deterministically
+/// and on every machine.
 fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outcome {
+    run_reported_against(url, cache_path, with_credentials).outcome
+}
+
+/// The same, keeping the whole report — for the assertions that need to know
+/// whether a request was actually made.
+fn run_reported_against(url: &str, cache_path: &Path, with_credentials: bool) -> refresh::Report {
     // **The guard for this harness.** `http::fetch`'s own `#[cfg(test)]`
     // assertion does not apply here: `cfg(test)` is false when the library is
     // linked by an integration test, so the lib code these tests call is
@@ -102,13 +116,29 @@ fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outc
     // broken test rather than a slow one.
     let _serialised = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
+    let saved_path = std::env::var("PATH").ok();
+
     // SAFETY: every writer of these variables in this binary holds ENV_LOCK.
     unsafe {
         std::env::set_var("HOME", home.path());
         std::env::set_var("CLAUDE_STATUS_SPEND_URL", url);
+        if !with_credentials {
+            std::env::set_var("PATH", "");
+        }
     }
 
-    refresh::run(cache_path, 15.0, 1_000_000, true)
+    let report = refresh::run_reported(cache_path, 15.0, 1_000_000, true);
+
+    // Restored before the lock is released — other tests spawn `git`.
+    // SAFETY: as above.
+    unsafe {
+        match saved_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    report
 }
 
 /// Serialises the process-global environment these tests depend on.
@@ -208,7 +238,7 @@ fn a_network_error_after_a_429_erases_the_backoff() {
     assert!(cache::read_from(&path).unwrap().backoff_until > 0);
 
     // Port 1 is reserved; nothing listens.
-    let outcome = refresh_against("http://127.0.0.1:1/never", &path, true);
+    let outcome = refresh_against(CLOSED_PORT_URL, &path, true);
     assert!(matches!(outcome, Outcome::Failed { .. }), "got {outcome:?}");
 
     assert_eq!(
@@ -222,7 +252,7 @@ fn a_network_error_after_a_429_erases_the_backoff() {
 #[test]
 fn a_connection_refusal_is_a_failure_not_a_panic() {
     let (_dir, path) = temp_cache();
-    let outcome = refresh_against("http://127.0.0.1:1/never", &path, true);
+    let outcome = refresh_against(CLOSED_PORT_URL, &path, true);
     assert!(matches!(outcome, Outcome::Failed { .. }), "got {outcome:?}");
     assert_eq!(cache::read_from(&path).unwrap().failures, 1);
 }
@@ -231,30 +261,21 @@ fn a_connection_refusal_is_a_failure_not_a_panic() {
 fn without_credentials_nothing_is_fetched() {
     let (_dir, path) = temp_cache();
 
-    // **The closed port, not a live stub.** On macOS the keychain is the
-    // credential fallback and it is **not** scoped by `$HOME`, so on a machine
-    // where the user is logged into Claude Code this path finds a real token
-    // even with a fake home. Pointed at a listening stub, that token was sent
-    // to it as an `Authorization` header and captured — and the old `if
-    // outcome == NoCredentials` guard skipped every assertion in exactly the
-    // case where that happened, so the leak was invisible and the test proved
-    // nothing on the machines it mattered on.
-    //
-    // Against a closed port nothing can receive it. The two outcomes below are
-    // the two real machines this runs on: a CI box with no keychain item, and
-    // a developer's laptop with one.
-    let outcome = refresh_against(CLOSED_PORT_URL, &path, false);
+    // A **live** stub, deliberately: the invariant this test is named for is
+    // that no request is made, and only something listening can prove a request
+    // did not arrive. What makes that safe — and deterministic — is that
+    // `refresh_against(.., false)` empties `PATH` as well as redirecting
+    // `$HOME`, so the keychain arm cannot resolve and no real token exists to
+    // be sent. Without that, this was machine-dependent: on a logged-in laptop
+    // the keychain answered, the real token went to the stub as an
+    // `Authorization` header, and the outcome guard skipped every assertion in
+    // exactly that case.
+    let server = stub(200, "OK", MODERN);
+    let report = run_reported_against(&server.url, &path, false);
 
-    match outcome {
-        // No keychain item: the fetch was never attempted.
-        Outcome::NoCredentials => {
-            assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure must still be recorded");
-        }
-        // A keychain item exists, so credentials resolved and the fetch was
-        // attempted against a port nothing listens on.
-        Outcome::Failed { .. } => {
-            assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure must still be recorded");
-        }
-        other => panic!("expected NoCredentials or Failed, got {other:?}"),
-    }
+    assert_eq!(report.outcome, Outcome::NoCredentials, "PATH and HOME are both stubbed, so neither arm can resolve");
+    assert_eq!(server.hits.load(Ordering::SeqCst), 0, "no credentials means no request");
+    assert!(report.status.is_none(), "no response can have been seen");
+    assert!(server.auth.lock().unwrap().is_empty(), "nothing may have been sent as a credential");
+    assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure is still recorded");
 }

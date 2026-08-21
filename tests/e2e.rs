@@ -417,6 +417,14 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
     }
     assert!(text.contains("claude-status.json"), "it names the config path it looked at");
     assert!(out.status.success());
+
+    // The `SAMPLE RENDER` carve-out contract §4a calls load-bearing: that
+    // section is appended **after** the report-wide sweep precisely so its SGR
+    // codes survive. Asserting the header alone would pass with an empty body,
+    // and would still pass if the sweep were moved to cover it — which would
+    // silently strip the colours the section exists to show.
+    let sample = text.split("SAMPLE RENDER").nth(1).expect("the section is present");
+    assert!(sample.contains('\u{1b}'), "the sample render lost its colour: {}", sample.escape_debug());
 }
 
 #[test]
@@ -675,9 +683,14 @@ fn with_no_home_debug_names_the_missing_variable() {
     let dir = TempDir::new().unwrap();
     let out = run_without_home(&["--debug"], "", dir.path(), &[]);
 
+    // Scoped to the SPEND section. A bare `contains("$HOME")` over the whole
+    // report is satisfied by the `user  not found  <no $HOME>` row in CONFIG
+    // LAYERS — which this same cycle added — so it would pass even if the spend
+    // section said nothing at all.
     let report = stdout(&out);
-    assert!(report.contains("$HOME"), "the report never mentions it: {report}");
-    assert!(report.contains("UNAVAILABLE"), "no cache verdict: {report}");
+    let spend = report.split("\nSPEND").nth(1).expect("the SPEND section is present");
+    assert!(spend.contains("$HOME"), "the spend section never mentions it: {spend}");
+    assert!(spend.contains("UNAVAILABLE"), "no cache verdict: {spend}");
 }
 
 #[test]
