@@ -4,6 +4,7 @@ pub mod fmt;
 pub mod json;
 pub mod paths;
 pub mod proc;
+pub mod text;
 pub mod time;
 
 /// **The stderr chokepoint** — contract §4a's fifth surface.
@@ -18,8 +19,16 @@ pub mod time;
 /// are static, so filtering them costs nothing and leaves one rule instead of
 /// two. §4a exists because the per-write alternative was tried and missed
 /// writers three times.
+///
+/// **One line out per call, deliberately.** This uses the *row* filter, which
+/// strips newlines, not the report one that keeps them — so a multi-line panic
+/// payload is collapsed onto a single line rather than keeping its shape. That
+/// is a real readability cost and it is the right trade: a panic message quotes
+/// whatever it panicked on, so letting it carry a newline would let a branch or
+/// a config value forge a second `claude-status:` line on stderr. A stack shape
+/// is worth less than a diagnostic a reader can trust the boundaries of.
 pub fn diag(line: &str) {
-    eprintln!("{}", crate::render::sanitize(line));
+    eprintln!("{}", text::sanitize(line));
 }
 
 /// Serialises the tests that mutate the process environment, and puts back

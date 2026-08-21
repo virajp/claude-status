@@ -106,6 +106,30 @@ fn cache_aged(age_ms: i64) -> String {
     )
 }
 
+/// `--debug` against the same stub, through the same guard as [`render`].
+///
+/// This existed inline as a second `Command::new(BINARY)` — the fourth
+/// hand-rolled builder across this repo's tests, and the one that bypassed the
+/// `assert_ne!` its sibling had just gained. That is exactly the hazard the
+/// shared helper in `tests/e2e.rs` was introduced to remove, reappearing one
+/// file over.
+fn debug(home: &TempDir, url: &str) -> Output {
+    assert_ne!(url, claude_status::spend::http::DEFAULT_URL, "this would reach the real spend endpoint");
+
+    Command::new(BINARY)
+        .arg("--debug")
+        .env_clear()
+        .env("HOME", home.path())
+        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("CLAUDE_STATUS_SPEND_URL", url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("the binary runs")
+}
+
 fn render(home: &TempDir, url: &str) -> Output {
     // The endpoint is passed in, so assert it here rather than trusting each
     // caller to have remembered. `http::fetch`'s own `#[cfg(test)]` check does
@@ -251,18 +275,7 @@ fn a_render_after_a_debug_fetch_draws_the_cache_debug_populated() {
     let home = home(WITH_SPEND, None);
     let stub = stub();
 
-    let debugged = Command::new(BINARY)
-        .arg("--debug")
-        .env_clear()
-        .env("HOME", home.path())
-        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env("CLAUDE_STATUS_SPEND_URL", &stub.url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("the binary runs");
+    let debugged = debug(&home, &stub.url);
     assert!(stdout(&debugged).contains("200 in"), "--debug fetched: {}", stdout(&debugged));
 
     let out = render(&home, &stub.url);

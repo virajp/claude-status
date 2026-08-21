@@ -565,6 +565,13 @@ load-bearing:
   inside it already passed through `segments::build`. Sweeping it would strip
   the colours the section exists to show.
 
+**stderr keeps newlines out, and pays for it.** `_shared::diag` uses the row
+filter, so one call is one line — which collapses a multi-line panic payload
+onto a single line rather than preserving its shape. Deliberate: a panic message
+quotes whatever it panicked on, so allowing a newline there would let a branch
+name or a config value forge a second `claude-status:` line. A stack's shape is
+worth less than a diagnostic whose boundaries a reader can trust.
+
 **A dynamic value may never contribute a newline.** This is a rule, not a
 consequence of the one above, and it is why `--debug`'s report-wide sweep is
 **not** its only defence: that sweep exempts `\n` so the report can be many

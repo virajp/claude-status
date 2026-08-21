@@ -286,6 +286,41 @@ fn a_held_lock_is_reported_rather_than_waited_on() {
 }
 
 #[test]
+fn an_unwritable_cache_directory_is_reported_as_a_lock_that_could_not_be_created() {
+    // The `LockUnavailable` outcome, which was the only one this file did not
+    // cover — so the wording was rewritten once on reasoning alone. It is
+    // reached not by an unreadable lock but by `create_new` failing for any
+    // reason other than "already exists": here `PermissionDenied` on a cache
+    // directory the process cannot write to.
+    let home = home(&config_with("always"), "team");
+    let cache = cache_path(&home);
+    let dir = cache.parent().unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+
+    // Read+execute, no write. Restored below so the TempDir can be cleaned up.
+    use std::os::unix::fs::PermissionsExt;
+    let original = std::fs::metadata(dir).unwrap().permissions();
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let out = debug(&home, CLOSED_PORT_URL);
+    std::fs::set_permissions(dir, original).unwrap();
+
+    let (stdout, _) = streams(&out);
+
+    // Scoped to the lock row. A bare `contains("unreadable")` over the whole
+    // report matches the CLAUDE WIRING line — `settings.json is missing or
+    // unreadable` — which is a different and entirely correct use of the word.
+    let lock_line = stdout.lines().find(|l| l.trim_start().starts_with("lock")).expect("the lock stage is reported");
+    assert!(lock_line.contains("could not be created or read"), "the lock row says what happened: {lock_line:?}");
+    assert!(!lock_line.contains("unreadable"), "the old wording sent users hunting a stale lock: {lock_line:?}");
+    assert!(
+        stdout.contains("directory exists and is writable"),
+        "and the verdict names the thing to check — the point of the rewording:\n{stdout}",
+    );
+    assert_no_token(&out, "lock-unavailable");
+}
+
+#[test]
 fn debug_bypasses_the_sixty_second_dedupe() {
     // A user typing --debug twice wants two answers.
     let home = home(&config_with("always"), "team");

@@ -72,14 +72,13 @@ fn stub(status: u16, reason: &str, body: &'static str) -> Stub {
 ///
 /// `HOME` is redirected too, so the credentials file is the fake one.
 ///
-/// **With `with_credentials == false`, `PATH` is emptied as well.** Redirecting
-/// `$HOME` removes the *file* arm of `creds::load`, but the macOS keychain arm
-/// is not `$HOME`-scoped: it shells out to `security`, which on a logged-in
-/// machine returns a real token. That made "no credentials" untestable — the
-/// outcome depended on whose laptop ran it — and it is how a real token came to
-/// be sent to a loopback stub. `security` is resolved through `PATH`, so an
-/// empty `PATH` makes the spawn fail and the arm return `None`, deterministically
-/// and on every machine.
+/// **With `with_credentials == false`, `PATH` is redirected too** — see
+/// [`PathGuard`], which points it at a directory that does not exist.
+/// Redirecting `$HOME` removes the *file* arm of `creds::load`, but the macOS
+/// keychain arm is not `$HOME`-scoped: it shells out to `security`, which on a
+/// logged-in machine returns a real token. That made "no credentials"
+/// untestable — the outcome depended on whose laptop ran it — and it is how a
+/// real token came to be sent to a loopback stub.
 fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outcome {
     run_reported_against(url, cache_path, with_credentials).outcome
 }
@@ -141,11 +140,15 @@ fn run_reported_against(url: &str, cache_path: &Path, with_credentials: bool) ->
 /// kill-switch that instead executes an arbitrary local binary is worse than
 /// the hazard it replaces. `remove_var` is no good either: the C library then
 /// falls back to `_PATH_DEFPATH`, which contains `/usr/bin`.
-struct PathGuard(Option<String>);
+struct PathGuard(Option<std::ffi::OsString>);
 
 impl PathGuard {
     fn new(with_credentials: bool) -> Self {
-        let saved = std::env::var("PATH").ok();
+        // `var_os`, not `var`: a non-UTF-8 `PATH` is `Err` from `var`, which
+        // would collapse into the same `None` as "unset" — and `Drop` would
+        // then *remove* it, restoring `_PATH_DEFPATH` and silently undoing the
+        // very kill-switch this guard exists to be.
+        let saved = std::env::var_os("PATH");
         if !with_credentials {
             // SAFETY: the caller holds ENV_LOCK for this guard's whole life.
             unsafe { std::env::set_var("PATH", "/nonexistent/claude-status-test-path") };

@@ -610,7 +610,14 @@ fn stdout_never_carries_a_diagnostic_whatever_the_input() {
 /// A separate process, so this needs none of the in-process env locking the
 /// unit tests do — `env_clear()` simply never sets it.
 fn run_without_home(args: &[&str], stdin: &str, cwd: &Path, extra_env: &[(&str, &str)]) -> Output {
-    run_in(args, stdin, None, Some(cwd), extra_env)
+    // A `PATH` with no `security` on it, per invariant 5's second rule: with no
+    // `$HOME` there is no credentials **file**, and the keychain arm is not
+    // `$HOME`-scoped — so without this the "no credentials" half is true only
+    // because the code happens to bail on the cache path first. Relying on that
+    // is relying on an ordering, not on the test's own setup.
+    let no_security = [("PATH", "/nonexistent/claude-status-test-path")];
+    let env: Vec<(&str, &str)> = no_security.iter().chain(extra_env.iter()).copied().collect();
+    run_in(args, stdin, None, Some(cwd), &env)
 }
 
 /// The one place this file builds a command.
@@ -688,7 +695,16 @@ fn with_no_home_debug_names_the_missing_variable() {
     // LAYERS — which this same cycle added — so it would pass even if the spend
     // section said nothing at all.
     let report = stdout(&out);
-    let spend = report.split("\nSPEND").nth(1).expect("the SPEND section is present");
+    // Bounded at both ends. `SAMPLE RENDER` is appended after SPEND, so a slice
+    // that only cut at the start would run to the end of the report and pick up
+    // whatever came after — holding by luck rather than by construction.
+    let spend = report
+        .split("\nSPEND")
+        .nth(1)
+        .expect("the SPEND section is present")
+        .split("\nSAMPLE RENDER")
+        .next()
+        .expect("split always yields one");
     assert!(spend.contains("$HOME"), "the spend section never mentions it: {spend}");
     assert!(spend.contains("UNAVAILABLE"), "no cache verdict: {spend}");
 }
