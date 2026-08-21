@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
+  "title": "claude-status config",
+  "description": "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string",
+      "description": "Project display name shown in the `project` segment (with the `symbols.project` glyph before it). When unset, the segment is omitted."
+    },
+    "palette": {
+      "type": "object",
+      "description": "Named colours as 24-bit RGB triples. Referenced by name anywhere a colour is expected.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
+    "powerline": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Powerline divider glyphs (require a Nerd Font).",
+      "properties": {
+        "sep": {
+          "type": "string",
+          "description": "Right-fill triangle between differently-coloured segments."
+        },
+        "sepThin": {
+          "type": "string",
+          "description": "Thin divider used when two neighbours share a background."
+        },
+        "cap": {
+          "type": "string",
+          "description": "Rounded left cap that opens each line."
+        },
+        "thinFg": {
+          "$ref": "#/$defs/color",
+          "description": "Foreground colour of the thin divider."
+        }
+      }
+    },
+    "defaultFg": {
+      "$ref": "#/$defs/color",
+      "description": "Foreground colour for segments that don't set their own `fg`."
+    },
+    "gauge": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The fixed-width meter used by the `context` segment.",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of blocks in the gauge."
+        },
+        "filled": {
+          "type": "string",
+          "description": "Glyph for filled blocks."
+        },
+        "empty": {
+          "type": "string",
+          "description": "Glyph for empty blocks."
+        }
+      }
+    },
+    "worktreePattern": {
+      "type": "string",
+      "description": "Case-insensitive regex matched against path components to detect a git worktree checkout; the subpath after the matched component feeds the `worktree` segment."
+    },
+    "symbols": {
+      "type": "object",
+      "description": "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, project, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "spend": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches.",
+      "properties": {
+        "refreshMinutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum minutes between fetches of the OAuth usage endpoint (the file-based timer). 0 disables the background refresh entirely; the segment then renders whatever the cache holds. Default 15."
+        },
+        "show": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always"
+          ],
+          "description": "`auto` (default) renders only for team/enterprise seats — the plans whose budget is a monthly spend limit. `always` renders whenever budget data exists (e.g. to watch a Pro/Max extra-usage credit cap)."
+        }
+      }
+    },
+    "typeSymbols": {
+      "type": "object",
+      "description": "Subagent `type` (lower-cased) -> glyph. `_default` is the fallback for unknown types.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "segments": {
+      "type": "object",
+      "description": "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`.",
+      "additionalProperties": {
+        "$ref": "#/$defs/style"
+      }
+    },
+    "lines": {
+      "type": "array",
+      "description": "Ordered list of rows; each row is an ordered list of segment entries. A row that resolves to no visible segments is dropped.",
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/segmentEntry"
+        }
+      }
+    },
+    "subagent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Configuration for the subagent panel surface.",
+      "properties": {
+        "descBudgetFraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of the terminal width allotted to the description before it is truncated."
+        },
+        "statuses": {
+          "type": "object",
+          "description": "Status buckets, tried in order. The first whose `match` regex hits the task status wins; an entry with an empty `match` is the fallback for unmatched statuses.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "match": {
+                "type": "string",
+                "description": "Case-insensitive regex against the lower-cased task status. Empty string = fallback bucket."
+              },
+              "symbol": {
+                "type": "string",
+                "description": "Glyph shown for this status."
+              },
+              "bg": {
+                "$ref": "#/$defs/color",
+                "description": "Head-segment background for this status."
+              }
+            }
+          }
+        },
+        "segments": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Styling for each subagent row segment.",
+          "properties": {
+            "head": {
+              "$ref": "#/$defs/style",
+              "description": "Status + type glyph head (background comes from the matched status; bg here is ignored)."
+            },
+            "name": {
+              "$ref": "#/$defs/style",
+              "description": "The subagent's name (rendered when the task has one)."
+            },
+            "model": {
+              "$ref": "#/$defs/style"
+            },
+            "desc": {
+              "$ref": "#/$defs/style"
+            },
+            "tokens": {
+              "$ref": "#/$defs/style"
+            },
+            "duration": {
+              "$ref": "#/$defs/style"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "description": "A palette name, a hex string (#rgb or #rrggbb), or an RGB triple.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      ]
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bg": {
+          "$ref": "#/$defs/color"
+        },
+        "fg": {
+          "$ref": "#/$defs/color"
+        },
+        "bold": {
+          "type": "boolean"
+        }
+      }
+    },
+    "segmentEntry": {
+      "description": "Either a segment id string, or an object that names a segment and overrides its styling.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Segment id."
+            },
+            "id": {
+              "type": "string",
+              "description": "Alias for `name`."
+            },
+            "bg": {
+              "$ref": "#/$defs/color"
+            },
+            "fg": {
+              "$ref": "#/$defs/color"
+            },
+            "bold": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

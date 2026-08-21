@@ -1,4 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/virajp/ai-plugins/main/schemas/statusline.schema.json",
+  "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "projectName": "@askviraj/claude-status"
 }

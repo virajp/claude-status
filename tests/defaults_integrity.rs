@@ -7,6 +7,8 @@
 //! from the table in contract §3. The *asset* is not. Never edit the asset
 //! through an editor buffer, and never let a formatter touch it.
 
+use std::collections::BTreeSet;
+
 use claude_status::config::defaults::DEFAULTS_JSON;
 use serde_json::Value;
 
@@ -168,4 +170,37 @@ fn subagent_statuses_stay_in_config_order() {
     let order: Vec<&str> = statuses.keys().map(String::as_str).collect();
     assert_eq!(order, ["done", "error", "pending", "running"]);
     assert_eq!(str_at(&d, "subagent.statuses.pending.match"), "", "`pending` is the empty-match fallback");
+
+}
+
+#[test]
+fn the_schema_url_points_at_this_repo_not_the_one_it_came_from() {
+    // The asset **is** the seeded config, so this URL ships to every install.
+    // It pointed at `virajp/ai-plugins` until the schema was republished here,
+    // and a revert would be invisible in any render.
+    let defaults: Value = serde_json::from_str(DEFAULTS_JSON).expect("the asset parses");
+    let url = defaults["$schema"].as_str().expect("the asset declares a $schema");
+    assert_eq!(
+        url,
+        "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
+    );
+}
+
+#[test]
+fn the_shipped_schema_describes_exactly_the_keys_the_asset_carries() {
+    // A schema that has drifted from the file it describes is worse than none:
+    // an editor reports a valid key as an error, or misses a typo.
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("schemas").join("claude-status.schema.json"),
+        )
+        .expect("the schema ships in this repo"),
+    )
+    .expect("the schema parses");
+
+    let described: BTreeSet<&str> = schema["properties"].as_object().unwrap().keys().map(String::as_str).collect();
+    let defaults: Value = serde_json::from_str(DEFAULTS_JSON).unwrap();
+    let shipped: BTreeSet<&str> = defaults.as_object().unwrap().keys().map(String::as_str).collect();
+
+    assert_eq!(described, shipped, "the schema and the shipped defaults describe different configs");
 }

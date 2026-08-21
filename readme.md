@@ -148,11 +148,20 @@ theming, and offers to remove what the old install left behind.
 ## Building
 
 ```sh
-mise run setup:all      # toolchain
-mise run code:test      # the suite
-mise run build:native   # a release binary for this machine
-mise run build:all      # every published target, then the npm packages
+mise run setup:all                  # toolchain
+mise run code:test                  # the suite
+mise run build:native               # a release binary for this machine
+mise run build:all                  # every published target, then the npm packages
+mise run build:cross --host-only    # only what this machine has a toolchain for
 ```
+
+The Windows targets need `llvm-lib` locally — `cargo-xwin` supplies the Windows
+SDK, but `ring`'s C code still needs an archiver (`brew install llvm`). CI never
+does: the release workflow builds each Windows target on a native Windows
+runner, where MSVC supplies its own. `--host-only` skips what a machine cannot
+reach and names it; without it a missing toolchain is fatal, because `build:npm`
+refusing to stage a partial set is what stands between a partial build and a
+partial release.
 
 Releases are tag-driven: bump `version` in `Cargo.toml` — the single source for
 every published version — commit, and push a matching `v*` tag.
