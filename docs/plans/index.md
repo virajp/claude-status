@@ -60,8 +60,8 @@ deleting the transitional `.config/statusline.json`, and retiring
 JS hook is gone, this binary is both the writer and the only reader of that
 file.
 
-> **The contract has not caught up with that last paragraph.** §13 still says
-> `context-caps.js` "stays in `ai-plugins`", and §10's Phase 5 still has it
-> reading the usage mirror after the cutover.
-> [`caps-hook`](./2026-08-19-1404-caps-hook.md) reverses §13 and amends it when
-> that cycle executes.
+> **The contract has caught up.** [`caps-hook`](./2026-08-19-1404-caps-hook.md)
+> executed, and with it §13's `context-caps.js` bullet is struck through and
+> marked reversed, and §10's Phase 5 now has the installer replace the
+> `node …context-caps.js` command with `claude-status --caps-hook` rather than
+> leaving a Node hook behind.
