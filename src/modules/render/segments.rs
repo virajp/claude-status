@@ -45,6 +45,9 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
 
     // A panicking builder costs its own segment and nothing else.
     let text = catch_unwind(AssertUnwindSafe(|| text_for(id, facts, git, config, spend))).ok().flatten()?;
+    // Every segment's text passes through here, which is why the filter lives
+    // at this one point rather than in each builder.
+    let text = sanitize(&text);
 
     // Inline override → `segments.<id>` default → hard fallback. An explicit
     // `null` at either level falls through, as `??` made it, while `false` and
@@ -66,6 +69,27 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
         fg: config.color(style("fg").or_else(|| config.default_fg())),
         bold: style("bold").is_some_and(truthy),
     })
+}
+
+/// Strips control characters from a segment's text.
+///
+/// Almost everything on the bar is **attacker-nameable**: a branch, a directory
+/// under a worktree, a session name, a model string from the payload, a
+/// `projectName` from a repo-level config. The renderer emits its own SGR
+/// escapes around each segment, so a value carrying `\x1b[` of its own could
+/// close them early and repaint the rest of the row — and `\n` or `\r` could
+/// break the two-line bar into something else entirely. None of that is
+/// hypothetical for a tool that renders whatever directory you happen to `cd`
+/// into.
+///
+/// Removed rather than escaped: this is display text, and there is no reading
+/// of a control character in a status bar that is worth preserving. C0
+/// (`U+0000`–`U+001F`), `DEL`, and C1 (`U+0080`–`U+009F`) — C1 because a
+/// terminal in 8-bit mode treats `U+009B` as CSI directly. Everything else
+/// survives untouched, including the Nerd Font private-use glyphs the whole bar
+/// is built from.
+fn sanitize(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control() && !matches!(c, '\u{80}'..='\u{9f}')).collect()
 }
 
 /// JavaScript truthiness, because `bold` was coerced with `!!` — a config
@@ -209,6 +233,36 @@ mod tests {
             seven_day: RateLimit { used_pct: Some(1.0), resets_at: Some(json!(1_774_600_000i64)) },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn sanitize_strips_the_escapes_that_could_repaint_the_row() {
+        assert_eq!(sanitize("\u{1b}[31mred"), "[31mred", "ESC cannot start an SGR");
+        assert_eq!(sanitize("a\nb"), "ab", "a newline cannot split the two-line bar");
+        assert_eq!(sanitize("a\rb"), "ab", "a carriage return cannot overwrite the row");
+        assert_eq!(sanitize("a\tb"), "ab");
+        assert_eq!(sanitize("a\u{7f}b"), "ab", "DEL");
+        assert_eq!(sanitize("a\u{9b}31mb"), "a31mb", "C1 CSI, which an 8-bit terminal honours");
+    }
+
+    #[test]
+    fn sanitize_leaves_real_text_alone() {
+        // The bar is built from Nerd Font private-use codepoints; stripping
+        // those would erase every glyph on it.
+        assert_eq!(sanitize("\u{e0b0} main ↑ ± é 🚀"), "\u{e0b0} main ↑ ± é 🚀");
+    }
+
+    #[test]
+    fn a_malicious_branch_name_reaches_the_row_defanged() {
+        // Through `build`, not `text_for` — the filter is only worth anything
+        // if it sits on the path the renderer actually takes.
+        let git = GitFacts {
+            branch: Some("main\u{1b}[0m\u{1b}[41mPWNED".into()),
+            ..Default::default()
+        };
+        let segment = build(&json!("branch"), &facts(), &git, &config(), None).unwrap();
+        assert!(!segment.text.contains('\u{1b}'), "got {:?}", segment.text);
+        assert!(segment.text.contains("PWNED"), "the text survives, only the escapes go");
     }
 
     #[test]

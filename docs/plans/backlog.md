@@ -90,28 +90,14 @@ schema's job). Whether validation stays `--debug`-only — it must never make a
 render fail. Whether it exits non-zero, which would let a setup script check a
 config.
 
-## Deferred from review
+## Closed
 
-Both were raised by security review during the `macos-only` cycle, rated `low`,
-and declined there as out of scope. Neither is a regression; both are
-pre-existing.
+Kept as a record of what was raised and where it went, so a later reader does
+not re-open either.
 
-### An unresolvable `$HOME` has no defined meaning
-
-`src/_shared/paths.rs`'s `home()` returns `Option`, and its four callers each
-invented a different fallback. One of them — `src/modules/spend/cache.rs` —
-falls back to the **relative** path `spend.json`, so with no `$HOME` the spend
-cache is written into whatever directory Claude Code was launched from. The
-contract never says what an unresolvable home means, which is the root cause:
-fix the contract first, then the four call sites. Absent is almost certainly the
-right answer rather than relative.
-
-### Path-derived segment text is not filtered before it reaches the row
-
-`worktree_subpath` and the branch segment interpolate path- and git-derived
-strings into the ANSI row with no C0/ESC filtering, so a directory or branch
-named with escape sequences can spoof the status bar. The contract specifies
-which escapes the *renderer* emits ([§4](../spec/statusline-behaviour.md)) but
-never which bytes a *dynamic value* may carry into one. Affects every
-path-derived segment, so the fix belongs in the renderer rather than in each
-producer.
+- **An unresolvable `$HOME` had no defined meaning.** Raised by security review
+  during `macos-only`, deferred, then fixed in that same cycle. The contract now
+  says absent-never-relative and the four callers agree with it.
+- **Path-derived segment text reached the row unfiltered.** Same origin, same
+  outcome: filtering now sits at the single point every segment's text passes
+  through.

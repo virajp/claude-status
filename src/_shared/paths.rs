@@ -26,6 +26,9 @@ mod tests {
 
     #[test]
     fn home_reads_the_environment() {
+        // Takes the lock even though it only reads: the tests that *unset*
+        // `HOME` would otherwise make this one flake.
+        let _guard = crate::_shared::env_lock();
         assert!(home().is_some(), "a test process always has $HOME");
     }
 
@@ -42,8 +45,10 @@ mod tests {
         // `HOME=""` resolved to `Some("")` and every caller joined its paths
         // onto nothing.
         //
-        // `set_var`/`remove_var` are unsafe and process-global; this test owns
-        // a variable no other test touches, so there is nothing to race with.
+        // `set_var`/`remove_var` are unsafe because they are process-global —
+        // racing one against any other env access is undefined, whichever
+        // variable each names. The lock is what makes it defined.
+        let _guard = crate::_shared::env_lock();
         const KEY: &str = "CLAUDE_STATUS_EMPTY_HOME_PROBE";
         unsafe { std::env::set_var(KEY, "") };
         assert_eq!(non_empty(KEY), None, "an empty value is not a value");

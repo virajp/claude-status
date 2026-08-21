@@ -47,7 +47,7 @@ build_one() {
   fi
   cargo build --release --target "${target}" ${VERBOSE} >/dev/null
 
-  local bin="target/${target}/release/claude-status"
+  local bin="target/${target}/release/${BINARY_NAME}"
   if [[ ! -f "${bin}" ]]; then
     print_newline
     print_error "no binary at ${bin}"
@@ -77,7 +77,7 @@ if [[ -n "${usage_target:-}" ]]; then
   fi
   build_one "${usage_target}"
 else
-  while read -r target _os _cpu _exe; do
+  while read -r target _os _cpu; do
     [[ -z "${target}" ]] && continue
     build_one "${target}"
   done < <(supported_targets)

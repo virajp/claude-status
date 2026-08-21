@@ -35,8 +35,8 @@ mkdir -p "${OUT}"
 staged=0
 
 stage_platform() {
-  local target="$1" os="$2" cpu="$3" exe="$4"
-  local bin="target/${target}/release/${exe}"
+  local target="$1" os="$2" cpu="$3"
+  local bin="target/${target}/release/${BINARY_NAME}"
 
   if [[ ! -f "${bin}" ]]; then
     print_warn "  skipping ${os}-${cpu}: no binary at ${bin} (run build:cross first)"
@@ -52,17 +52,17 @@ stage_platform() {
       -e "s|{{CPU}}|${cpu}|g" \
       "${TEMPLATE}" > "${dir}/package.json"
 
-  install -m 755 "${bin}" "${dir}/bin/${exe}"
+  install -m 755 "${bin}" "${dir}/bin/${BINARY_NAME}"
   print_yellow "  staged $(platform_package "${os}" "${cpu}")"
   staged=$((staged + 1))
 }
 
-while read -r target os cpu exe; do
+while read -r target os cpu; do
   [[ -z "${target}" ]] && continue
   if [[ -n "${usage_target:-}" && "${target}" != "${usage_target}" ]]; then
     continue
   fi
-  stage_platform "${target}" "${os}" "${cpu}" "${exe}"
+  stage_platform "${target}" "${os}" "${cpu}"
 done < <(supported_targets)
 
 # The wrapper. Its optionalDependencies are pinned to an EXACT version: a range
@@ -96,7 +96,7 @@ print_yellow "  staged @askviraj/claude-status (wrapper)"
 # platform — which npm reports as a missing optional dependency, i.e. barely at
 # all. Pinned to an exact version, never a range.
 DEPS=""
-while read -r _target os cpu _exe; do
+while read -r _target os cpu; do
   [[ -z "${os}" ]] && continue
   DEPS+="$(platform_package "${os}" "${cpu}") "
 done < <(supported_targets)

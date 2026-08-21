@@ -566,6 +566,30 @@ purpose** — one fetch per interval per machine, however many sessions are open
 > also expands `$HOME` and `${HOME}`. The two are different contracts and this
 > document previously conflated them.
 
+### An unresolvable `$HOME` means absent, never relative
+
+**Added 2026-08-21** (`macos-only` cycle), after review found four callers of
+the home-directory helper had each invented their own answer and one of them had
+invented the wrong one.
+
+`$HOME` is the only source of the user's home directory. When it is unset or
+empty, every path derived from it is **absent** — the feature that needed it
+does nothing and says so where there is somewhere to say it. A path that names
+the home directory and cannot resolve one must **never** degrade to the
+unexpanded text, because `~/x` and `spend.json` taken literally are *relative*
+paths: the process then writes into whatever directory Claude Code happened to
+be launched from, believing it wrote into the home one. That is a stray file in
+the user's working tree and a cache that never hits, because the next session
+starts somewhere else.
+
+Concretely: the spend cache path, the usage mirror directory, and the
+credentials file are each `None` without a home. A render still succeeds — the
+segment omits, like any other — and `--debug` names the missing `$HOME` rather
+than reporting an empty result.
+
+A path that never asked for the home directory is unaffected: an absolute
+`$CLAUDE_STATUS_SPEND_CACHE` works with no `$HOME` at all.
+
 ```jsonc
 {
   "ts": 1787037452146, // when this entry was written
@@ -738,6 +762,13 @@ into `settings.json`. A Rust binary cannot be `pnpx`'d, so this has to change.
 | **npm with platform binaries**       | Keeps `pnpx`, which existing users already know; the pattern esbuild and swc use | A published package per platform; awkward for a repo with no other JS |
 | **`cargo install`**                  | Trivial to publish                                                               | Requires a Rust toolchain — most users will not have one              |
 | **Homebrew tap**                     | Great on macOS, one command                                                      | A second channel to maintain; Linux users still need another          |
+
+> **Read this table as of the day it was written.** Every row's reasoning
+> assumed the six-target set the paragraph below now strikes through — most
+> visibly the Homebrew row, whose "Linux users still need another" stopped being
+> an argument against anything on 2026-08-21. The table is kept unedited because
+> it is the record of a decision, and a revisited channel should see what was
+> actually weighed rather than a tidied version of it.
 
 **The recommendation was** GitHub Releases with prebuilt binaries plus a small
 install script that also merges the `settings.json` keys. **The decision went

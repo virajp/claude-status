@@ -26,7 +26,13 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let mut out = String::new();
     let spend_config = SpendConfig::from_config(config);
     let lines = config.lines();
-    let path = cache::path();
+    // `--debug` exists to name what is wrong, so an unresolvable `$HOME` is
+    // reported here rather than silently producing an empty report.
+    let Some(path) = cache::path() else {
+        let _ = writeln!(out, "  cache    UNAVAILABLE — $HOME is unset, so there is nowhere to cache");
+        let _ = writeln!(out, "\n  VERDICT  spend cannot work without $HOME. Nothing was fetched.");
+        return out;
+    };
 
     let _ = writeln!(out, "  cache    {}", path.display());
     let before = cache::read_from(&path);
@@ -206,7 +212,12 @@ fn verdict_of(
             "a refresh is already running — its lock is {holder_age_secs}s old. No fetch was made; re-run once it finishes."
         ),
         Outcome::LockUnavailable => {
-            format!("the lock at {} could not be read, so no fetch was made.", cache::path().display())
+            // `spend_report` returns early when there is no path, so reaching
+            // here with `None` is not possible; say so rather than unwrap.
+            match cache::path() {
+                Some(path) => format!("the lock at {} could not be read, so no fetch was made.", path.display()),
+                None => "there is no $HOME, so there is no lock to read and no fetch was made.".into(),
+            }
         }
         Outcome::NoCredentials => format!(
             "no credentials — neither {} nor {} yielded a token. Log in with Claude Code, then re-run.",

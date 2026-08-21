@@ -55,9 +55,14 @@ fn dispatch(cli: Cli) -> String {
 /// with its stdio at `/dev/null`, so anything it said would be discarded, and
 /// it always exits 0.
 fn refresh_spend() -> String {
+    // No cache path — no `$HOME` — means there is nowhere to write the result,
+    // so there is no point making the request.
+    let Some(path) = spend::cache::path() else {
+        return String::new();
+    };
     let config = layers::load(home().as_deref(), None).config;
     let spend_config = spend::SpendConfig::from_config(&config);
-    spend::refresh::run(&spend::cache::path(), spend_config.refresh_minutes, time::now_ms(), false);
+    spend::refresh::run(&path, spend_config.refresh_minutes, time::now_ms(), false);
     String::new()
 }
 
@@ -104,7 +109,12 @@ fn build_caps_directive() -> String {
     let (Some(dir), Some(session_id)) = (usage::usage_dir_from_env(), json::opt_str(&input, "session_id")) else {
         return String::new();
     };
-    let dir = usage::expand_home(&dir);
+    // Inert too when the directory names `$HOME` and there is none — the same
+    // rule the writer follows, so the hook never reads from a directory the bar
+    // would not have written to.
+    let Some(dir) = usage::expand_home(&dir) else {
+        return String::new();
+    };
 
     // No mirror yet: the bar has not rendered this session. Not an error.
     let Some(mirror) = json::read_json_file(&dir.join(format!("{session_id}.json"))) else {
@@ -221,8 +231,13 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
         return None;
     }
 
+    let Some(cache_path) = spend::cache::path() else {
+        narrate("spend: no $HOME, so no cache to read and nowhere to refresh into");
+        return None;
+    };
+
     let spend_config = spend::SpendConfig::from_config(config);
-    let cached = spend::cache::read_from(&spend::cache::path());
+    let cached = spend::cache::read_from(&cache_path);
 
     match spend::schedule::decide(cached.as_ref(), &spend_config, now_ms) {
         spend::schedule::Decision::Spawn => {

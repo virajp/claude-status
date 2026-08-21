@@ -48,8 +48,13 @@ pub fn mirror(facts: &MainFacts, usage_dir: Option<&str>, session_id: Option<&st
     // collide, but the two names are a contract, so assert the shape here.
     debug_assert!(!format!("{session_id}.json").ends_with(".state.json"));
 
-    let path = expand_home(dir).join(format!("{session_id}.json"));
-    let _ = write_json_atomic(&path, &document(facts, session_id));
+    // No `$HOME` to expand against means no directory, which means no mirror.
+    // Writing to a relative path instead would put it wherever Claude Code was
+    // launched from, which is nobody's idea of a cache.
+    let Some(dir) = expand_home(dir) else {
+        return;
+    };
+    let _ = write_json_atomic(&dir.join(format!("{session_id}.json")), &document(facts, session_id));
 }
 
 /// The nine keys, in order. `serde_json`'s `preserve_order` is what keeps them
@@ -93,18 +98,20 @@ fn number(v: Option<f64>) -> Value {
 /// Deliberately loose, matching the old implementation: `${HOME` and `$HOME}`
 /// expand too. Claude Code may or may not have expanded the value before
 /// exporting it, so every spelling arrives in the wild.
-pub(crate) fn expand_home(dir: &str) -> PathBuf {
-    let Some(home) = crate::_shared::paths::home() else {
-        return PathBuf::from(dir);
-    };
-    let home = home.to_string_lossy();
+pub(crate) fn expand_home(dir: &str) -> Option<PathBuf> {
+    const PREFIXES: [&str; 5] = ["${HOME}", "${HOME", "$HOME}", "$HOME", "~"];
 
-    for prefix in ["${HOME}", "${HOME", "$HOME}", "$HOME", "~"] {
-        if let Some(rest) = dir.strip_prefix(prefix) {
-            return PathBuf::from(format!("{home}{rest}"));
-        }
-    }
-    PathBuf::from(dir)
+    let Some(prefix) = PREFIXES.into_iter().find(|p| dir.starts_with(p)) else {
+        // Nothing to expand — the value stands as given.
+        return Some(PathBuf::from(dir));
+    };
+
+    // A value that *asks* for the home directory and cannot get one resolves to
+    // **nothing**, never to the unexpanded text: `~/x` taken literally is a
+    // relative path, and the caller would then write into whatever directory it
+    // happened to be started in, believing it had written into the home one.
+    let home = crate::_shared::paths::home()?;
+    Some(PathBuf::from(format!("{}{}", home.to_string_lossy(), &dir[prefix.len()..])))
 }
 
 #[cfg(test)]
@@ -219,11 +226,31 @@ mod tests {
 
     #[test]
     fn home_prefixes_expand_loosely() {
-        // SAFETY: single-threaded test setup; no other thread reads HOME here.
+        let _guard = crate::_shared::env_lock();
+        // SAFETY: the lock above serialises every env-mutating test.
         unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
         for spelling in ["~/usage", "$HOME/usage", "${HOME}/usage", "${HOME/usage", "$HOME}/usage"] {
-            assert_eq!(expand_home(spelling), PathBuf::from("/tmp/fakehome/usage"), "{spelling} should expand");
+            assert_eq!(expand_home(spelling), Some(PathBuf::from("/tmp/fakehome/usage")), "{spelling} should expand");
         }
-        assert_eq!(expand_home("/absolute/usage"), PathBuf::from("/absolute/usage"));
+        assert_eq!(expand_home("/absolute/usage"), Some(PathBuf::from("/absolute/usage")));
+    }
+
+    #[test]
+    fn a_home_prefix_with_no_home_is_absent_rather_than_literal() {
+        let _guard = crate::_shared::env_lock();
+        // SAFETY: the lock above serialises every env-mutating test. `HOME` is
+        // restored before it is released — other tests read it.
+        unsafe { std::env::remove_var("HOME") };
+
+        for spelling in ["~/usage", "$HOME/usage", "${HOME}/usage"] {
+            // The old behaviour returned the text unexpanded, so `~/usage`
+            // became a *relative* path and the mirror landed in the cwd.
+            assert_eq!(expand_home(spelling), None, "{spelling} must not degrade to a relative path");
+        }
+        // A path that never asked for the home directory is unaffected.
+        assert_eq!(expand_home("/absolute/usage"), Some(PathBuf::from("/absolute/usage")));
+
+        // SAFETY: still holding the lock.
+        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
     }
 }
