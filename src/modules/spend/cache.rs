@@ -105,21 +105,14 @@ fn expand_tilde(path: &str) -> Option<PathBuf> {
 
 /// Reads the cache. Missing, unreadable or corrupt all read as `None` — a
 /// render must never fail because of this file.
-pub fn read() -> Option<SpendCache> {
-    read_from(&path()?)
-}
-
+///
+/// There is no `read()`/`write()` pair taking the path implicitly. Both existed
+/// and neither had a caller: every real site resolves `path()` once and threads
+/// it, which is also what lets the tests point at a temp directory. Making the
+/// path an argument is the reason there is nothing here to get wrong when
+/// `$HOME` is unresolvable.
 pub fn read_from(path: &std::path::Path) -> Option<SpendCache> {
     SpendCache::from_json(&read_json_file(path)?)
-}
-
-pub fn write(cache: &SpendCache) -> std::io::Result<()> {
-    let Some(path) = path() else {
-        // Absent, never relative — see `path()`. A caller that cannot cache is
-        // told so rather than scattering a `spend.json` across the filesystem.
-        return Err(std::io::Error::other("no $HOME, so there is nowhere to cache the spend figure"));
-    };
-    write_to(&path, cache)
 }
 
 pub fn write_to(path: &std::path::Path, cache: &SpendCache) -> std::io::Result<()> {
@@ -190,42 +183,39 @@ mod tests {
 
     #[test]
     fn the_env_override_wins_and_expands_a_leading_tilde() {
-        let _guard = crate::_shared::env_lock();
-        // SAFETY: the lock above serialises every env-mutating test.
-        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
-        unsafe { std::env::set_var(CACHE_ENV, "~/custom/spend.json") };
+        let mut env = crate::_shared::env_lock();
+        env.set("HOME", "/tmp/fakehome");
+        env.set(CACHE_ENV, "~/custom/spend.json");
         assert_eq!(path(), Some(PathBuf::from("/tmp/fakehome/custom/spend.json")));
 
-        unsafe { std::env::set_var(CACHE_ENV, "/absolute/spend.json") };
+        env.set(CACHE_ENV, "/absolute/spend.json");
         assert_eq!(path(), Some(PathBuf::from("/absolute/spend.json")));
 
         // Unlike the usage mirror, `$HOME` is NOT expanded here.
-        unsafe { std::env::set_var(CACHE_ENV, "$HOME/spend.json") };
+        env.set(CACHE_ENV, "$HOME/spend.json");
         assert_eq!(path(), Some(PathBuf::from("$HOME/spend.json")));
 
-        unsafe { std::env::remove_var(CACHE_ENV) };
+        env.unset(CACHE_ENV);
         assert_eq!(path(), Some(PathBuf::from("/tmp/fakehome/.cache/claude-status/spend.json")));
     }
 
     #[test]
     fn without_a_home_the_path_is_absent_rather_than_relative() {
-        let _guard = crate::_shared::env_lock();
-        // SAFETY: the lock above serialises every env-mutating test. `HOME` is
-        // restored before it is released — other tests read it.
-        unsafe { std::env::remove_var(CACHE_ENV) };
-        unsafe { std::env::remove_var("HOME") };
+        // Both variables are restored on drop, including if an assertion here
+        // fails — a trailing restore would be skipped by the unwind and every
+        // later test would then run with no `HOME`.
+        let mut env = crate::_shared::env_lock();
+        env.unset(CACHE_ENV);
+        env.unset("HOME");
         assert_eq!(path(), None, "a bare spend.json would land in the user's cwd");
 
         // A `~` override cannot resolve either — and must not degrade to the
         // literal `~/…`, which is just as relative.
-        unsafe { std::env::set_var(CACHE_ENV, "~/custom/spend.json") };
+        env.set(CACHE_ENV, "~/custom/spend.json");
         assert_eq!(path(), None);
 
         // An absolute override needs no home and still works.
-        unsafe { std::env::set_var(CACHE_ENV, "/absolute/spend.json") };
+        env.set(CACHE_ENV, "/absolute/spend.json");
         assert_eq!(path(), Some(PathBuf::from("/absolute/spend.json")));
-
-        unsafe { std::env::remove_var(CACHE_ENV) };
-        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
     }
 }

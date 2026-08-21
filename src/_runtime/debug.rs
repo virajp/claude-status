@@ -79,7 +79,11 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let verdict = spend::verdict(after.as_ref(), &spend_config, &lines, config.symbol("spend"));
     write_gates(&mut out, after.as_ref(), &spend_config, &verdict);
 
-    let _ = writeln!(out, "\n  VERDICT  {}", verdict_of(&report, &verdict, after.as_ref(), &spend_config, config));
+    let _ = writeln!(
+        out,
+        "\n  VERDICT  {}",
+        verdict_of(&report, &verdict, after.as_ref(), &spend_config, config, &path),
+    );
 
     out
 }
@@ -206,18 +210,14 @@ fn verdict_of(
     cached: Option<&cache::SpendCache>,
     spend_config: &SpendConfig,
     config: &Config,
+    cache_path: &std::path::Path,
 ) -> String {
     match &report.outcome {
         Outcome::Locked { holder_age_secs } => format!(
             "a refresh is already running — its lock is {holder_age_secs}s old. No fetch was made; re-run once it finishes."
         ),
         Outcome::LockUnavailable => {
-            // `spend_report` returns early when there is no path, so reaching
-            // here with `None` is not possible; say so rather than unwrap.
-            match cache::path() {
-                Some(path) => format!("the lock at {} could not be read, so no fetch was made.", path.display()),
-                None => "there is no $HOME, so there is no lock to read and no fetch was made.".into(),
-            }
+            format!("the lock at {} could not be read, so no fetch was made.", cache_path.display())
         }
         Outcome::NoCredentials => format!(
             "no credentials — neither {} nor {} yielded a token. Log in with Claude Code, then re-run.",
@@ -363,7 +363,14 @@ mod tests {
         };
         let config = SpendConfig { refresh_minutes: 15.0, show: "auto".into() };
         let verdict = Verdict::Hidden { gate: Gate::NoData };
-        let line = verdict_of(&report, &verdict, None, &config, &Config::new(serde_json::json!({})));
+        let line = verdict_of(
+            &report,
+            &verdict,
+            None,
+            &config,
+            &Config::new(serde_json::json!({})),
+            std::path::Path::new("/tmp/spend.json"),
+        );
 
         assert!(line.contains("14s"), "it names the holder's age: {line}");
         assert!(line.contains("already running"), "{line}");

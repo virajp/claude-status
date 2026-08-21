@@ -612,3 +612,84 @@ fn stdout_never_carries_a_diagnostic_whatever_the_input() {
     }
     assert!(!stderr(&out).is_empty(), "the diagnostics did happen — just not on stdout");
 }
+
+/// Runs the binary with **no `$HOME` at all**, which is the case the contract's
+/// absent-never-relative clause governs.
+///
+/// A separate process, so this needs none of the in-process env locking the
+/// unit tests do — `env_clear()` simply never sets it.
+fn run_without_home(args: &[&str], stdin: &str, cwd: &Path, extra_env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(BINARY);
+    cmd.args(args)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().expect("the binary runs");
+    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn with_no_home_the_bar_still_renders() {
+    // Invariant 3 outranks the new clause: a render never fails visibly, even
+    // when every path derived from `$HOME` is absent.
+    let dir = TempDir::new().unwrap();
+    let out = run_without_home(&["--statusline"], FIXTURE, dir.path(), &[]);
+
+    assert!(out.status.success(), "exit code {:?}", out.status.code());
+    let bar = stdout(&out);
+    assert!(bar.contains("Opus 4.8"), "got: {}", bar.escape_debug());
+}
+
+#[test]
+fn with_no_home_nothing_is_written_relative_to_the_cwd() {
+    // The point of the clause. Before it, the spend cache fell back to a bare
+    // `spend.json` and the usage mirror to an unexpanded `~/usage`, both of
+    // which land right here.
+    let dir = TempDir::new().unwrap();
+    let before: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+
+    run_without_home(&["--statusline"], FIXTURE, dir.path(), &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")]);
+    run_without_home(&["--refresh-spend"], "", dir.path(), &[]);
+
+    let after: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(before, after, "the working directory must be untouched");
+    assert!(!dir.path().join("spend.json").exists(), "the spend cache went relative");
+    assert!(!dir.path().join("usage").exists(), "the usage mirror went relative");
+}
+
+#[test]
+fn with_no_home_debug_names_the_missing_variable() {
+    // `--debug` exists to say what is wrong; an empty SPEND section would be
+    // the useless answer the user already had.
+    let dir = TempDir::new().unwrap();
+    let out = run_without_home(&["--debug"], "", dir.path(), &[]);
+
+    let report = stdout(&out);
+    assert!(report.contains("$HOME"), "the report never mentions it: {report}");
+    assert!(report.contains("UNAVAILABLE"), "no cache verdict: {report}");
+}
+
+#[test]
+fn with_no_home_the_caps_hook_stays_silent() {
+    // Its usage directory names `$HOME` and cannot resolve one, so it is inert
+    // — the same rule the writer follows, rather than reading from a directory
+    // relative to wherever the hook happened to run.
+    let dir = TempDir::new().unwrap();
+    let out = run_without_home(
+        &["--caps-hook"],
+        r#"{"session_id":"s1"}"#,
+        dir.path(),
+        &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")],
+    );
+
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "", "a directive was injected into the agent's context");
+}

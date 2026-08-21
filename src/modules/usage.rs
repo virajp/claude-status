@@ -226,9 +226,8 @@ mod tests {
 
     #[test]
     fn home_prefixes_expand_loosely() {
-        let _guard = crate::_shared::env_lock();
-        // SAFETY: the lock above serialises every env-mutating test.
-        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
+        let mut env = crate::_shared::env_lock();
+        env.set("HOME", "/tmp/fakehome");
         for spelling in ["~/usage", "$HOME/usage", "${HOME}/usage", "${HOME/usage", "$HOME}/usage"] {
             assert_eq!(expand_home(spelling), Some(PathBuf::from("/tmp/fakehome/usage")), "{spelling} should expand");
         }
@@ -237,10 +236,9 @@ mod tests {
 
     #[test]
     fn a_home_prefix_with_no_home_is_absent_rather_than_literal() {
-        let _guard = crate::_shared::env_lock();
-        // SAFETY: the lock above serialises every env-mutating test. `HOME` is
-        // restored before it is released — other tests read it.
-        unsafe { std::env::remove_var("HOME") };
+        // Restored on drop, so a failing assertion below cannot strand `HOME`.
+        let mut env = crate::_shared::env_lock();
+        env.unset("HOME");
 
         for spelling in ["~/usage", "$HOME/usage", "${HOME}/usage"] {
             // The old behaviour returned the text unexpanded, so `~/usage`
@@ -249,8 +247,5 @@ mod tests {
         }
         // A path that never asked for the home directory is unaffected.
         assert_eq!(expand_home("/absolute/usage"), Some(PathBuf::from("/absolute/usage")));
-
-        // SAFETY: still holding the lock.
-        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
     }
 }

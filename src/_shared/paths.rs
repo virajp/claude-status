@@ -45,15 +45,13 @@ mod tests {
         // `HOME=""` resolved to `Some("")` and every caller joined its paths
         // onto nothing.
         //
-        // `set_var`/`remove_var` are unsafe because they are process-global —
-        // racing one against any other env access is undefined, whichever
-        // variable each names. The lock is what makes it defined.
-        let _guard = crate::_shared::env_lock();
+        // The guard serialises against every other env-touching test and puts
+        // the variable back on drop — including when an assertion below fails.
+        let mut env = crate::_shared::env_lock();
         const KEY: &str = "CLAUDE_STATUS_EMPTY_HOME_PROBE";
-        unsafe { std::env::set_var(KEY, "") };
+        env.set(KEY, "");
         assert_eq!(non_empty(KEY), None, "an empty value is not a value");
-        unsafe { std::env::set_var(KEY, "/somewhere") };
+        env.set(KEY, "/somewhere");
         assert_eq!(non_empty(KEY).as_deref(), Some("/somewhere"));
-        unsafe { std::env::remove_var(KEY) };
     }
 }

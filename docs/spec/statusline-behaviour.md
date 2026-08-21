@@ -79,7 +79,12 @@ One line fits the bar and names the fix. Twenty lines of usage would be
 unreadable in a status line, and printing nothing would leave the user with a
 silently blank bar and no clue.
 
-### Three invariants that outrank everything else
+### Five invariants that outrank everything else
+
+These cut across every section below. Each is here rather than beside the
+feature it constrains because more than one feature has to obey it, and the ones
+added later were added precisely because a rule kept in one place had been
+applied in one place.
 
 1. **stdout is the bar.** Claude renders whatever arrives there. Diagnostics,
    warnings, errors — all stderr, always. A single stray byte on stdout is a
@@ -104,8 +109,31 @@ silently blank bar and no clue.
 4. **Only the renderer emits escapes.** **Added 2026-08-21** (`macos-only`
    cycle), after review found the powerline separators reaching the row
    unfiltered. Every dynamic value is stripped of control characters before it
-   is written, on **both** surfaces. See
+   is written, on **both** rendering surfaces and in `--debug`. See
    [§4a](#4a-what-may-carry-an-escape-and-what-may-not).
+5. **An unresolvable `$HOME` means absent, never relative.** **Added
+   2026-08-21** (`macos-only` cycle), after review found four callers of the
+   home-directory helper had each invented their own answer and one had invented
+   the wrong one.
+
+   `$HOME` is the only source of the user's home directory. When it is unset or
+   empty, every path derived from it is **absent** — the feature that needed it
+   does nothing, and says so where there is somewhere to say it. A path that
+   names the home directory and cannot resolve one must **never** degrade to the
+   unexpanded text: `~/x` and `spend.json` taken literally are *relative* paths,
+   so the process writes into whatever directory Claude Code was launched from
+   believing it wrote into the home one. That is a stray file in the user's
+   working tree, and a cache that never hits because the next session starts
+   somewhere else.
+
+   Concretely, the spend cache path ([§7](#7-the-spend-subsystem)), the usage
+   mirror directory ([§8](#8-the-usage-mirror--a-contract-with-ai-plugins)) and
+   the credentials file are each absent without a home. Invariant 3 still
+   outranks this: the render succeeds, the segment omits like any other, and
+   `--debug` names the missing `$HOME` rather than reporting an empty result.
+
+   A path that never asked for the home directory is unaffected — an absolute
+   `$CLAUDE_STATUS_SPEND_CACHE` works with no `$HOME` at all.
 
 ---
 
@@ -608,30 +636,6 @@ purpose** — one fetch per interval per machine, however many sessions are open
 > Only a **leading `~`** expands — unlike `$AI_PLUGINS_USAGE_DIR` in §8, which
 > also expands `$HOME` and `${HOME}`. The two are different contracts and this
 > document previously conflated them.
-
-### An unresolvable `$HOME` means absent, never relative
-
-**Added 2026-08-21** (`macos-only` cycle), after review found four callers of
-the home-directory helper had each invented their own answer and one of them had
-invented the wrong one.
-
-`$HOME` is the only source of the user's home directory. When it is unset or
-empty, every path derived from it is **absent** — the feature that needed it
-does nothing and says so where there is somewhere to say it. A path that names
-the home directory and cannot resolve one must **never** degrade to the
-unexpanded text, because `~/x` and `spend.json` taken literally are *relative*
-paths: the process then writes into whatever directory Claude Code happened to
-be launched from, believing it wrote into the home one. That is a stray file in
-the user's working tree and a cache that never hits, because the next session
-starts somewhere else.
-
-Concretely: the spend cache path, the usage mirror directory, and the
-credentials file are each `None` without a home. A render still succeeds — the
-segment omits, like any other — and `--debug` names the missing `$HOME` rather
-than reporting an empty result.
-
-A path that never asked for the home directory is unaffected: an absolute
-`$CLAUDE_STATUS_SPEND_CACHE` works with no `$HOME` at all.
 
 ```jsonc
 {

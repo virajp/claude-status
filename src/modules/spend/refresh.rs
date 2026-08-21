@@ -307,6 +307,10 @@ mod tests {
 
     #[test]
     fn debug_bypasses_the_dedupe() {
+        // Reads the environment indirectly: `run` reaches the credential file
+        // under `$HOME` and the endpoint override. Held so a test that unsets
+        // either cannot run underneath it.
+        let _env = crate::_shared::env_lock();
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("spend.json");
         cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None })

@@ -86,17 +86,18 @@ mod tests {
 
     #[test]
     fn the_endpoint_is_overridable_for_tests() {
-        // SAFETY: single-threaded test.
-        unsafe { std::env::remove_var(URL_ENV) };
+        // `cargo test` threads a binary's tests, so this shares the process
+        // environment with every other test in it — including the ones that
+        // unset `HOME`. The guard restores `URL_ENV` on drop.
+        let mut env = crate::_shared::env_lock();
+        env.unset(URL_ENV);
         assert_eq!(url(), DEFAULT_URL);
 
-        unsafe { std::env::set_var(URL_ENV, "http://127.0.0.1:1/stub") };
+        env.set(URL_ENV, "http://127.0.0.1:1/stub");
         assert_eq!(url(), "http://127.0.0.1:1/stub");
 
-        unsafe { std::env::set_var(URL_ENV, "") };
+        env.set(URL_ENV, "");
         assert_eq!(url(), DEFAULT_URL, "an empty override is not an override");
-
-        unsafe { std::env::remove_var(URL_ENV) };
     }
 
     #[test]

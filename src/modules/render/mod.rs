@@ -22,10 +22,11 @@ pub mod subagent;
 ///
 /// What goes, and why each is not paranoia:
 ///
-/// - **`Cc`** — C0 and DEL. `\x1b` starts every escape sequence; `\n` and `\r`
-///   break or overwrite a row that is supposed to be one line.
-/// - **C1 (`U+0080`–`U+009F`)** — a terminal in 8-bit mode treats `U+009B` as
-///   CSI directly, with no `\x1b` needed.
+/// - **`Cc`** — C0, DEL **and C1** (`U+0080`–`U+009F`); Rust's `is_control` is
+///   the Unicode `Cc` category, which spans all three. `\x1b` starts every
+///   escape sequence, `\n` and `\r` break or overwrite a row that is supposed
+///   to be one line, and a terminal in 8-bit mode reads `U+009B` as CSI
+///   directly with no `\x1b` in front of it.
 /// - **Bidi overrides and isolates** (`U+202A`–`U+202E`, `U+2066`–`U+2069`) —
 ///   reorder rendered text without changing it, so `main` can be made to read
 ///   as something else.
@@ -43,8 +44,9 @@ pub mod subagent;
 pub fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|c| {
+            // `is_control` already covers C1 — there is deliberately no
+            // second range check for it here.
             !c.is_control()
-                && !matches!(c, '\u{80}'..='\u{9f}')
                 && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
                 && !matches!(c, '\u{200b}' | '\u{feff}')
         })
