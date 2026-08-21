@@ -25,6 +25,8 @@ file: a published version cannot be republished, and a wrapper published while
 the target table is still six-wide would reserve four names that will never be
 built again.
 
+Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md).
+
 ## Archived
 
 The five cycles that built the binary. All executed and merged; retired
