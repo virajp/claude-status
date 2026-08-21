@@ -11,6 +11,8 @@ import {
 
 export const STATUS_LINE = "statusLine";
 export const SUBAGENT_STATUS_LINE = "subagentStatusLine";
+export const HOOKS = "hooks";
+export const POST_TOOL_USE = "PostToolUse";
 
 export interface CommandKey {
   type?: string;
@@ -73,4 +75,98 @@ export function writeSettings(
   settings: Record<string, unknown>,
 ): void {
   writeJson(path, settings);
+}
+
+/**
+ * The `PostToolUse` caps hook — a third key, and the only one that **removes**
+ * a `node` invocation rather than adding one.
+ *
+ * Claude Code's shape here is a list of groups, each with its own `hooks` list
+ * and an optional `matcher`. This tool owns exactly one command inside it and
+ * must leave every other group, matcher and key untouched.
+ */
+export interface HookCommand {
+  type?: string;
+  command?: string;
+  [key: string]: unknown;
+}
+
+export interface HookGroup {
+  hooks?: HookCommand[];
+  [key: string]: unknown;
+}
+
+/** The command an install writes. */
+export function desiredHook(binary: string): HookCommand {
+  return { type: "command", command: `${binary} --caps-hook` };
+}
+
+/**
+ * Whether a command is this tool's, in its current or its previous form.
+ *
+ * The `ai-plugins` installer wired the hook as
+ * `node ${HOME}/.claude/hooks/context-caps.js`. That is **ours in its old
+ * form** — the same actuator, one process heavier — so it is replaced without
+ * asking. Anything else is someone else's hook and is preserved alongside.
+ */
+export function hookOwnershipOf(command: unknown): Ownership {
+  if (typeof command !== "string") {
+    return "foreign";
+  }
+  if (/claude-status.*--caps-hook/.test(command)) {
+    return "ours";
+  }
+  return /context-caps\.js/.test(command) ? "ours-stale" : "foreign";
+}
+
+export interface HookWiring {
+  /** The `hooks` value to write. */
+  hooks: Record<string, unknown>;
+  /** What was found where our command now sits. */
+  ownership: Ownership;
+}
+
+/**
+ * Puts our command into the `PostToolUse` list, replacing our own previous
+ * form in place when one is there and appending a group when it is not.
+ *
+ * Replacing **in place** matters: appending while an old form is still present
+ * would fire the same actuator twice per tool call.
+ */
+export function wireHook(
+  settings: Record<string, unknown>,
+  binary: string,
+): HookWiring {
+  const hooks = { ...(asObject(settings[HOOKS]) ?? {}) };
+  const groups = Array.isArray(hooks[POST_TOOL_USE])
+    ? (hooks[POST_TOOL_USE] as HookGroup[]).map(group => ({ ...group }))
+    : [];
+
+  let ownership: Ownership = "absent";
+  for (const group of groups) {
+    if (!Array.isArray(group.hooks)) {
+      continue;
+    }
+    group.hooks = group.hooks.map(entry => {
+      const found = hookOwnershipOf(entry?.command);
+      if (found === "foreign" || ownership !== "absent") {
+        return entry;
+      }
+      ownership = found;
+      return desiredHook(binary);
+    });
+  }
+
+  if (ownership === "absent") {
+    groups.push({ hooks: [desiredHook(binary)] });
+  }
+
+  hooks[POST_TOOL_USE] = groups;
+  return { hooks, ownership };
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
