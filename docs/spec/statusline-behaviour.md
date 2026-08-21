@@ -684,7 +684,17 @@ Context-window and rate-limit figures arrive **only on the statusline payload**
 — never on hook stdin. So every main-bar render mirrors them to a session-keyed
 file, which a `PostToolUse` hook then reads.
 
-- Enabled only when `$AI_PLUGINS_USAGE_DIR` is set. Inert otherwise.
+- Enabled only when `$CLAUDE_STATUS_USAGE_DIR` or `$AI_PLUGINS_USAGE_DIR` is set
+  — the new name first, the old one still honoured. Inert otherwise.
+
+  > **Amended 2026-08-21** (`caps-hook` cycle). The variable was
+  > `$AI_PLUGINS_USAGE_DIR` alone, and this section said the name does not
+  > change. It now migrates: **both** the writer and the reader try
+  > `$CLAUDE_STATUS_USAGE_DIR` first and fall back, so a machine still running
+  > the JS hook — which only knows the old name — keeps working through the
+  > transition. Phase 5 drops the fallback, and with the JS hook gone this
+  > binary is both the writer and the only reader, so §8 stops being a
+  > cross-repo contract at all.
 - Expand a leading `~`, `$HOME` or `${HOME}` in that value — Claude Code may or
   may not have expanded it before exporting.
 - Write `<dir>/<session_id>.json`, atomically (temp + rename).
@@ -791,8 +801,11 @@ binary, then uninstall and confirm the tree is byte-identical to before.
 
 ### Phase 5 — cut over
 
-Update `ai-plugins` to stop shipping `tools/statusline/`, point its docs here,
-and keep `context-caps.js` reading the same usage file.
+Update `ai-plugins` to stop shipping `tools/statusline/` and point its docs
+here. `context-caps.js` goes with it — the `caps-hook` cycle moved that actuator
+into this binary as `--caps-hook`, so the installer replaces the
+`node …context-caps.js` command with `claude-status --caps-hook` rather than
+leaving a Node hook behind.
 
 ---
 
@@ -849,8 +862,16 @@ claude-status --debug
 
 ## 13. What not to port
 
-- **`context-caps.js`** — stays in `ai-plugins`. It is vwf policy, not
-  statusline behaviour. This repo's obligation to it is §8 and nothing more.
+- ~~**`context-caps.js`** — stays in `ai-plugins`. It is vwf policy, not
+  statusline behaviour. This repo's obligation to it is §8 and nothing more.~~
+  **Reversed 2026-08-21** (`caps-hook` cycle). The ownership argument is sound
+  and never addressed the performance one: the hook is wired as
+  `node ${HOME}/.claude/hooks/context-caps.js` on `PostToolUse`, so it paid
+  Node's startup after **every tool call** — measured at **28.6 ms** against
+  this binary's **2.8 ms** for the same work. It is now `--caps-hook`, one more
+  mode on the same binary. vwf still owns the *policy*: the caps, the thresholds
+  and the directive wording live in `vwf.yaml` and in the vwf skills, and this
+  binary only actuates them.
 - **The four retired render targets** (OpenCode, Oh-My-Pi, Cursor) and every
   trace of them. Cursor never had a status surface; the other two are
   discontinued.

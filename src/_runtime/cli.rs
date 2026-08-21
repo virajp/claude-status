@@ -15,6 +15,7 @@ USAGE:
     claude-status --statusline      render the main bar from a payload on stdin
     claude-status --subagent        render the subagent panel from stdin (NDJSON)
     claude-status --refresh-spend   refresh the spend cache and exit
+    claude-status --caps-hook       vwf PostToolUse cap actuator; silent unless breached
     claude-status --debug           report configuration, wiring and a sample render
     claude-status --version         print the version and exit
     claude-status --help            print this help
@@ -29,6 +30,11 @@ WIRING:
 
       \"statusLine\":         { \"type\": \"command\", \"command\": \"…/claude-status --statusline\" }
       \"subagentStatusLine\": { \"type\": \"command\", \"command\": \"…/claude-status --subagent\" }
+
+    The caps hook is a third key, on PostToolUse:
+
+      \"hooks\": { \"PostToolUse\": [{ \"hooks\": [{ \"type\": \"command\",
+        \"command\": \"…/claude-status --caps-hook\" }] }] }
 
     Run --debug to see what is currently wired.
 ";
@@ -46,6 +52,9 @@ pub enum Mode {
     Statusline,
     Subagent,
     RefreshSpend,
+    /// `--caps-hook`: the vwf `PostToolUse` actuator. Writes nothing at all in
+    /// the common case — silence is the normal outcome for this surface.
+    CapsHook,
     /// `--debug` on its own: the diagnostic report is the output.
     Debug,
     /// No surface flag and stdin is piped — a stale `settings.json`.
@@ -78,6 +87,7 @@ pub fn parse<I: IntoIterator<Item = OsString>>(args: I, stdin_is_tty: bool) -> C
             "--statusline" => surface = surface.or(Some(Mode::Statusline)),
             "--subagent" => surface = surface.or(Some(Mode::Subagent)),
             "--refresh-spend" => surface = surface.or(Some(Mode::RefreshSpend)),
+            "--caps-hook" => surface = surface.or(Some(Mode::CapsHook)),
             // Anything unrecognised is ignored rather than fatal; with no
             // surface flag the no-flag case below still explains itself.
             _ => {}

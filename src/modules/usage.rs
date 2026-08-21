@@ -15,8 +15,23 @@ use serde_json::{Map, Value, json};
 use crate::json::write_json_atomic;
 use crate::payload::MainFacts;
 
-/// The env var that enables the mirror. **This name does not change.**
-pub const USAGE_DIR_ENV: &str = "AI_PLUGINS_USAGE_DIR";
+/// The env var that enables the mirror, under this repo's own name.
+pub const USAGE_DIR_ENV: &str = "CLAUDE_STATUS_USAGE_DIR";
+
+/// The name `ai-plugins` exports and `context-caps.js` reads. Still honoured on
+/// **both** sides so the variable can migrate without breaking a machine that
+/// is still running the JS hook, which only knows this one. Phase 5 drops it.
+pub const LEGACY_USAGE_DIR_ENV: &str = "AI_PLUGINS_USAGE_DIR";
+
+/// The usage directory, new name first. Both readers — the mirror writer and
+/// the caps hook — resolve it through here, so the two can never disagree
+/// about which variable won.
+pub fn usage_dir_from_env() -> Option<String> {
+    std::env::var(USAGE_DIR_ENV)
+        .ok()
+        .or_else(|| std::env::var(LEGACY_USAGE_DIR_ENV).ok())
+        .filter(|d| !d.is_empty())
+}
 
 /// Writes `<dir>/<session_id>.json`, or does nothing.
 ///
@@ -80,7 +95,7 @@ fn number(v: Option<f64>) -> Value {
 /// exporting it, so every spelling arrives in the wild — and on Windows the
 /// unexpanded form is `%USERPROFILE%`, which no POSIX-shaped matcher would
 /// catch.
-fn expand_home(dir: &str) -> PathBuf {
+pub(crate) fn expand_home(dir: &str) -> PathBuf {
     let Some(home) = crate::_shared::paths::home() else {
         return PathBuf::from(dir);
     };

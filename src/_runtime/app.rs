@@ -20,6 +20,7 @@ use crate::render::main_bar::render_main;
 use crate::render::subagent;
 use crate::_shared::proc;
 use crate::modules::spend;
+use crate::modules::caps;
 use crate::{cli, git, json, payload, time, usage};
 
 /// What the bar falls back to when a render panics: U+26A1, a space, `Claude`.
@@ -44,6 +45,7 @@ fn dispatch(cli: Cli) -> String {
         Mode::Statusline => render_statusline(cli.debug),
         Mode::Subagent => render_subagent(),
         Mode::RefreshSpend => refresh_spend(),
+        Mode::CapsHook => caps_hook(),
         Mode::Debug => debug_report(),
     }
 }
@@ -74,6 +76,59 @@ fn render_statusline(debug: bool) -> String {
             FALLBACK_LINE.to_string()
         }
     }
+}
+
+/// The vwf caps hook. **Silence is the normal outcome**, and a panic is
+/// silent too: the `⚡ Claude` fallback must not apply here, because whatever
+/// this writes to stdout is injected verbatim into the agent's context. A
+/// status-bar fragment arriving there is worse than nothing.
+fn caps_hook() -> String {
+    match catch_unwind(AssertUnwindSafe(build_caps_directive)) {
+        Ok(out) => out,
+        Err(payload) => {
+            eprintln!("claude-status error: {}", panic_message(&payload));
+            String::new()
+        }
+    }
+}
+
+/// Reads the hook JSON, resolves the caps, and emits a directive only when the
+/// breach is an **escalation** above the last one recorded for this session.
+fn build_caps_directive() -> String {
+    let mut stdin = String::new();
+    let _ = std::io::stdin().read_to_string(&mut stdin);
+    let input = payload::parse(&stdin);
+
+    // Inert without a usage directory or a session to key on.
+    let (Some(dir), Some(session_id)) = (usage::usage_dir_from_env(), json::opt_str(&input, "session_id")) else {
+        return String::new();
+    };
+    let dir = usage::expand_home(&dir);
+
+    // No mirror yet: the bar has not rendered this session. Not an error.
+    let Some(mirror) = json::read_json_file(&dir.join(format!("{session_id}.json"))) else {
+        return String::new();
+    };
+
+    let caps = caps::resolve_caps(json::opt_str(&input, "cwd"));
+    let Some((level, directive)) = caps::level(&caps::Usage::from_mirror(&mirror), &caps, time::now_ms()) else {
+        return String::new();
+    };
+
+    // The debounce file's name is **not ours to choose**: it sits beside
+    // `<sid>.json`, and during the transition the JS hook writes it too. A
+    // machine running both must not double-fire.
+    let state = dir.join(format!("{session_id}.state.json"));
+    let last = json::read_json_file(&state).and_then(|s| json::opt_f64(&s, "level")).unwrap_or(0.0);
+    if f64::from(level) <= last {
+        return String::new();
+    }
+
+    // A failed write must never suppress the directive — a read-only usage
+    // directory should cost the debounce, not the cap.
+    let _ = json::write_json_atomic(&state, &serde_json::json!({ "level": level, "ts": time::now_ms() }));
+
+    caps::envelope(&directive)
 }
 
 /// Renders the subagent panel, catching a panic into **empty output**.
@@ -121,7 +176,7 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
 
     // The mirror runs before anything that can fail, and is gated on neither
     // the layout nor git: a broken config must not cost the caps hook its data.
-    usage::mirror(&facts, std::env::var(usage::USAGE_DIR_ENV).ok().as_deref(), facts.session_id.as_deref());
+    usage::mirror(&facts, usage::usage_dir_from_env().as_deref(), facts.session_id.as_deref());
 
     // Root first, because the repo config layer is read from it, and only then
     // is `worktreePattern` available to match with.
