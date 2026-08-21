@@ -11,8 +11,27 @@
 
 use std::io::Read;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+/// Whether subprocess failures are narrated. Off unless `--debug` turns it on.
+///
+/// A process-global rather than a parameter because the git pipelines run on
+/// their own threads, two calls deep, and threading a narrator through them
+/// would cost more in signature noise than it buys.
+static NARRATE: AtomicBool = AtomicBool::new(false);
+
+/// Turns subprocess diagnostics on for this process.
+pub fn set_narrate(on: bool) {
+    NARRATE.store(on, Ordering::Relaxed);
+}
+
+fn narrate(message: &str) {
+    if NARRATE.load(Ordering::Relaxed) {
+        eprintln!("claude-status: {message}");
+    }
+}
 
 /// The most stdout one command may produce before it counts as failed. Node's
 /// `execFileSync` default, reproduced so an enormous diff renders no marker
@@ -47,17 +66,33 @@ impl Deadline {
 /// discarded so nothing a subprocess prints can reach the bar.
 pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline: Deadline) -> Option<String> {
     if deadline.expired() {
+        narrate(&format!("skip {program} {args:?}: the budget was already spent"));
         return None;
     }
+    narrate(&format!("run {program} {args:?} in {}", cwd.display()));
 
-    let mut child = Command::new(program)
+    // A spawn failure and a command that ran and said nothing are both `None`
+    // to the caller, and they mean completely different things: the first is a
+    // broken environment, the second is a normal answer. Silently collapsing
+    // the two is what hid the git-budget test's fake `git` never running.
+    let mut child = match Command::new(program)
         .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .ok()?;
+    {
+        Ok(child) => child,
+        Err(error) => {
+            narrate(&format!(
+                "spawn {program} {args:?} in {} failed: {error} ({:?})",
+                cwd.display(),
+                error.kind(),
+            ));
+            return None;
+        }
+    };
 
     // Move the pipe into a reader thread: the child is drained continuously, so
     // it can never block on a full pipe while the parent waits.
@@ -199,5 +234,23 @@ mod tests {
         assert!(run_bounded("sleep", &["0.2"], cwd(), deadline).is_some());
         // The second command inherits what is left of the same budget.
         assert!(deadline.remaining() < Duration::from_millis(150));
+    }
+
+    #[test]
+    fn a_program_that_cannot_be_spawned_is_none_not_a_panic() {
+        // The two failures this collapses — a spawn error and a command that
+        // ran and said nothing — are still both `None` to the caller. What
+        // changed is that the first one is now narrated under `--debug`
+        // instead of vanishing, which is what made the git-budget test's
+        // silence diagnosable.
+        let deadline = Deadline::in_ms(250);
+        let out = run_bounded("definitely-not-a-program-on-this-machine", &[], std::path::Path::new("."), deadline);
+        assert_eq!(out, None);
+    }
+
+    #[test]
+    fn narration_is_off_until_it_is_turned_on() {
+        // Default off: a render must not narrate to stderr unless asked.
+        assert!(!NARRATE.load(Ordering::Relaxed) || cfg!(test), "narration defaults off");
     }
 }
