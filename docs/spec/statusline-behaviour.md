@@ -483,23 +483,48 @@ repository the user changes into: cloning a hostile repo is the entire attack,
 with no further interaction.
 
 **Only the renderer emits escape sequences.** Every dynamic value is stripped of
-control characters before it is written. This applies to the main bar *and* the
-subagent panel — the panel's NDJSON `` escaping is **transport encoding, not a
-control**, because Claude Code decodes it before rendering.
+control characters before it is written. This applies to the main bar, the
+subagent panel and `--debug` alike: the panel's NDJSON escaping is **transport
+encoding, not a control** — Claude Code decodes it back before rendering — and
+`--debug` writes to a terminal like everything else.
 
-Stripped: `Cc` (C0 and DEL), C1 (`U+0080`–`U+009F`, since a terminal in 8-bit
-mode reads `U+009B` as CSI with no `ESC` needed), bidi overrides and isolates
-(`U+202A`–`U+202E`, `U+2066`–`U+2069`), and `U+200B` / `U+FEFF`.
+Stripped, as **two** filters rather than three:
+
+- **`Cc`** — the Unicode control category, which is `U+0000`–`U+001F`, `U+007F`
+  **and** `U+0080`–`U+009F`. C1 needs no rule of its own: it is already `Cc`. It
+  matters because a terminal in 8-bit mode reads `U+009B` as CSI with no `ESC`
+  in front of it.
+- **The invisibles that are not `Cc`** — bidi overrides and isolates
+  (`U+202A`–`U+202E`, `U+2066`–`U+2069`), and `U+200B` / `U+FEFF`.
 
 Kept: ZWJ, variation selectors, and the private-use codepoints — the bar is
 built from Nerd Font glyphs, so filtering those would erase it.
 
 **The filter belongs at the point every value passes through**, not in each
-producer. There are three such points, and a fourth surface would need its own:
-`segments::build` for the main bar, the sweep at the end of `task_row` for the
-panel, and `Powerline::from_config` for the separators — which are the widest
-surface of all, being config-supplied and written *outside* any segment's SGR
-bracket.
+producer. There are **four** such points, one per surface, and a fifth surface
+would need its own:
+
+| Surface         | Chokepoint                                                                | Why there                                                                                           |
+| --------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Main bar        | `segments::build`                                                         | Every segment's text is assembled through it                                                        |
+| Subagent panel  | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering                   |
+| Powerline seams | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest surface of the four |
+| `--debug`       | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                               |
+
+`--debug` earned a chokepoint rather than a call per write, and the reason is
+the cycle that added it: filtering the paths first missed the layout entries and
+the spend gate table, both of which reach the terminal by a different route.
+Anything added to the report later is covered without anyone having to remember.
+
+Two consequences of the `--debug` sweep worth stating, because both are
+load-bearing:
+
+- **Newlines survive it.** The report is deliberately many lines, so it uses a
+  variant of the filter that keeps `\n` and strips everything else.
+- **The `SAMPLE RENDER` section is appended after it.** That section *is*
+  renderer output: its SGR codes are meant to be there, and every dynamic value
+  inside it already passed through `segments::build`. Sweeping it would strip
+  the colours the section exists to show.
 
 **Known residual.** A dynamic value may still contain a private-use separator
 glyph and so *look* like a segment boundary. Accepted: the same config layer can

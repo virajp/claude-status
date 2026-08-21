@@ -278,10 +278,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
 
     let _ = writeln!(out, "\nCONFIG LAYERS (low to high)");
     for source in &sources {
-        let path = source
-            .path
-            .as_ref()
-            .map_or_else(|| "<embedded>".to_string(), |p| crate::render::sanitize(&p.display().to_string()));
+        let path = source.path.as_ref().map_or_else(|| "<embedded>".to_string(), |p| p.display().to_string());
         let state = if source.loaded { "loaded" } else { "not found" };
         let _ = writeln!(out, "  {:8} {state:10} {path}", source.label);
     }
@@ -297,16 +294,10 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         let _ = writeln!(out, "  line {i}: {}", ids.join(", "));
     }
 
-    // `--debug` is the **fourth surface** contract §4a names, and it is a
-    // terminal write like any other: a path or branch carrying an escape would
-    // repaint the report that exists to diagnose it. `narrate` elsewhere in
-    // this file uses `{:?}`, which escapes; these are plain `{}`, so they are
-    // filtered here.
-    let clean = |s: String| crate::render::sanitize(&s);
     let _ = writeln!(out, "\nGIT");
-    let _ = writeln!(out, "  cwd:      {}", cwd.as_ref().map_or("<unknown>".into(), |c| clean(c.display().to_string())));
-    let _ = writeln!(out, "  root:     {}", root.as_ref().map_or("<none>".into(), |r| clean(r.display().to_string())));
-    let _ = writeln!(out, "  branch:   {}", branch.as_deref().map_or("<none>".into(), |b| clean(b.to_string())));
+    let _ = writeln!(out, "  cwd:      {}", cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string()));
+    let _ = writeln!(out, "  root:     {}", root.as_ref().map_or("<none>".into(), |r| r.display().to_string()));
+    let _ = writeln!(out, "  branch:   {}", branch.as_deref().unwrap_or("<none>"));
 
     let mut git_facts = GitFacts {
         worktree_subpath: cwd.as_deref().and_then(|c| git::worktree_subpath(c, &config.worktree_matcher())),
@@ -315,17 +306,26 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         ..Default::default()
     };
     git::resolve_markers(&mut git_facts);
-    let _ = writeln!(
-        out,
-        "  worktree: {}",
-        git_facts.worktree_subpath.as_deref().map_or("<none>".into(), |w| clean(w.to_string())),
-    );
+    let _ = writeln!(out, "  worktree: {}", git_facts.worktree_subpath.as_deref().unwrap_or("<none>"));
     let _ = writeln!(out, "  ahead:    {}", git_facts.ahead);
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
     let _ = writeln!(out, "\nSPEND");
     out.push_str(&spend_section(&config));
 
+    // **The one place `--debug` output is filtered** (contract §4a, invariant
+    // 4). Everything assembled above is diagnostic text drawn from untrusted
+    // sources — the config `lines` entries, the spend gate table and its
+    // symbols, the `settings.json` command, the endpoint URL, the plan tag,
+    // and every path — and filtering those one write at a time is how several
+    // of them were missed. One sweep covers whatever is added here later.
+    //
+    // Newlines survive: the report is deliberately many lines.
+    let mut out = crate::render::sanitize_report(&out);
+
+    // Appended AFTER the sweep, because it is the one part whose escapes are
+    // meant to be there: `render_main` emits the SGR codes itself, and every
+    // dynamic value inside it already went through `segments::build`.
     let _ = writeln!(out, "\nSAMPLE RENDER");
     // No spend text: the SPEND section above already reported what it would
     // draw and why, and the sample's facts are synthetic anyway.

@@ -693,3 +693,63 @@ fn with_no_home_the_caps_hook_stays_silent() {
     assert!(out.status.success());
     assert_eq!(stdout(&out), "", "a directive was injected into the agent's context");
 }
+
+#[test]
+fn debug_reports_a_hostile_repo_config_without_obeying_it() {
+    // `--debug` is the fourth surface contract §4a names, and the widest input
+    // to it is the repo-level config layer — read from whatever repository the
+    // user changed into. These three values land in three *different* sections
+    // of the report (EFFECTIVE LAYOUT, the spend gate table, the VERDICT line),
+    // which is exactly why the filter is one sweep over the assembled report
+    // rather than a call at each write: two of them were missed twice that way.
+    let esc = '\u{1b}';
+    let home = Home::new(&safe_config());
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    // Built with `serde_json` rather than written as raw text: a literal ESC
+    // byte inside a JSON string is **invalid JSON**, so a hand-written fixture
+    // fails to parse, the layer loads as "not found", and the assertions below
+    // pass having exercised nothing. It has to be an escape sequence on disk.
+    std::fs::write(
+        repo.path().join(".config").join("claude-status.json"),
+        serde_json::json!({
+            // `describe_entry` prints a segment's id or name, so that is where
+            // a layout entry can carry one into EFFECTIVE LAYOUT.
+            "lines": [[format!("{esc}]52;c;cGF5bG9hZA=="), { "name": format!("{esc}[41mcost") }]],
+            // Straight into gate 4's row of the spend table.
+            "spend": { "show": format!("{esc}[2J{esc}[H") },
+            "symbols": { "spend": format!("{esc}[41mFAKE") },
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // A git root, so the repo layer is actually loaded.
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+    let out = Command::new(BINARY)
+        .arg("--debug")
+        .env_clear()
+        .env("HOME", home.path())
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
+        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join("spend.json"))
+        .current_dir(repo.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("the binary runs");
+
+    let report = stdout(&out);
+    // SAMPLE RENDER is renderer output and legitimately carries SGR codes, so
+    // assert against everything before it.
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+    // Proof the fixture actually landed. Without it the layer can fail to parse,
+    // load as "not found", and the escape assertion below passes having
+    // exercised nothing — which is exactly what this test did at first.
+    assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
+    assert!(!diagnostics.contains(esc), "an escape reached the report: {}", diagnostics.escape_debug());
+    assert!(diagnostics.contains("EFFECTIVE LAYOUT"), "the report was not produced at all: {report}");
+    assert!(report.contains("SAMPLE RENDER"), "the sample render must still be appended");
+}

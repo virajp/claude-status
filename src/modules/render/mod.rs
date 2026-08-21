@@ -42,15 +42,33 @@ pub mod subagent;
 /// config layer by design, and the line this function draws is between
 /// *theming* the bar and *escaping* out of it.
 pub fn sanitize(text: &str) -> String {
-    text.chars()
-        .filter(|c| {
-            // `is_control` already covers C1 — there is deliberately no
-            // second range check for it here.
-            !c.is_control()
-                && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-                && !matches!(c, '\u{200b}' | '\u{feff}')
-        })
-        .collect()
+    text.chars().filter(|c| safe(*c)).collect()
+}
+
+/// `sanitize`, but a newline survives.
+///
+/// For `--debug`, which is a **terminal write like any other** and so obeys the
+/// same rule — but is deliberately many lines, so the row version would collapse
+/// the whole report onto one.
+///
+/// It exists because `--debug` is the fourth surface [§4a] names, and it earned
+/// its own entry point rather than a scatter of per-write calls: the report
+/// prints the config `lines` entries, the spend gate table, the `settings.json`
+/// command, the endpoint URL and the plan tag, and filtering those one at a
+/// time is how two of them were missed twice. Sanitize the assembled report
+/// once, and anything added to it later is covered without being remembered.
+///
+/// [§4a]: ../../../docs/spec/statusline-behaviour.md
+pub fn sanitize_report(text: &str) -> String {
+    text.chars().filter(|c| *c == '\n' || safe(*c)).collect()
+}
+
+fn safe(c: char) -> bool {
+    // `is_control` already covers C1 — there is deliberately no second range
+    // check for it here.
+    !c.is_control()
+        && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        && !matches!(c, '\u{200b}' | '\u{feff}')
 }
 
 #[cfg(test)]
