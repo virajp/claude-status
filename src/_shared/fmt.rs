@@ -5,6 +5,8 @@
 //! `human_tokens(999_999)` is `"1000k"` rather than `"1M"`, and a `gauge` width
 //! configured as `0` means ten.
 
+use serde_json::Value;
+
 /// JavaScript's `Number.prototype.toFixed`.
 ///
 /// Rust's `{:.N}` rounds half **to even**; JS rounds half **away from zero**,
@@ -144,6 +146,68 @@ pub fn human_reset_in(resets_at_ms: Option<i64>, now_ms: i64) -> Option<String> 
     })
 }
 
+/// The caps hook's reset formatter — **deliberately not [`human_reset_in`]**.
+///
+/// The two differ in three ways, and each is observable in what the hook
+/// injects into the agent's context:
+///
+/// |                   | [`human_reset_in`] (bar)         | this (hook)                   |
+/// | ----------------- | -------------------------------- | ----------------------------- |
+/// | Hours form        | `4h36m` — minutes zero-padded    | `4h6m` — **not** padded       |
+/// | Unparseable       | `None`, the segment half omits   | the string `"soon"`           |
+/// | Non-numeric input | ISO 8601 strings parse           | `Number()` → `NaN` → `"soon"` |
+///
+/// That last row is why the usage mirror writes `resets_at` **raw**: this
+/// consumer coerces numerically and degrades an ISO string to `"soon"`, so
+/// normalising helpfully at the writer would change what the hook prints.
+pub fn human_caps_in(resets_at: Option<&Value>, now_ms: i64) -> String {
+    const SOON: &str = "soon";
+
+    let Some(value) = resets_at.filter(|v| !v.is_null()) else {
+        return SOON.to_string();
+    };
+    let Some(n) = js_number_coerce(value) else {
+        return SOON.to_string();
+    };
+
+    let ms = if n > 1e12 { n } else { n * 1000.0 };
+    let mut s = ((ms - now_ms as f64) / 1000.0).floor();
+    if s <= 0.0 {
+        return "now".to_string();
+    }
+
+    let d = (s / 86_400.0).floor();
+    s -= d * 86_400.0;
+    let h = (s / 3600.0).floor();
+    s -= h * 3600.0;
+    let m = (s / 60.0).floor();
+
+    if d > 0.0 {
+        format!("{d}d{h}h")
+    } else if h > 0.0 {
+        format!("{h}h{m}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
+/// JavaScript `Number(v)` for the shapes a mirrored `resets_at` can carry.
+///
+/// `None` stands for `NaN`. A **numeric string** parses, an ISO 8601 string
+/// does not, and an empty string is `0` — all three matching the coercion the
+/// hook's caller depends on.
+fn js_number_coerce(v: &Value) -> Option<f64> {
+    match v {
+        Value::Number(n) => n.as_f64(),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() { Some(0.0) } else { t.parse::<f64>().ok() }
+        }
+        _ => None,
+    }
+}
+
 /// A fixed-width bar: `filled = round(pct/100 × width)`, clamped to 0..=100.
 ///
 /// A `width` of `0` means ten — the old implementation resolved it with `||`,
@@ -170,7 +234,7 @@ pub fn money(minor: f64, exp: i32) -> String {
 
 /// JavaScript's `Math.round`: halves go toward positive infinity, not away from
 /// zero. Rust's `f64::round` rounds `-0.5` to `-1.0` where JS gives `-0`.
-fn js_round(n: f64) -> f64 {
+pub(crate) fn js_round(n: f64) -> f64 {
     (n + 0.5).floor()
 }
 
@@ -186,7 +250,50 @@ fn js_number_to_string(n: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+
+    /// A clock the caps expectations are pinned to.
+    const NOW: i64 = 1_774_183_440_000;
+
+    #[test]
+    fn the_caps_formatter_does_not_pad_minutes_the_way_the_bar_does() {
+        // 4h06m away. The bar renders `4h06m`; the hook renders `4h6m`, and
+        // reusing the bar's helper here would be a silent behaviour change.
+        let at = json!((NOW + 4 * 3_600_000 + 6 * 60_000) / 1000);
+        assert_eq!(human_caps_in(Some(&at), NOW), "4h6m");
+        assert_eq!(human_reset_in(Some(NOW + 4 * 3_600_000 + 6 * 60_000), NOW).as_deref(), Some("4h06m"));
+    }
+
+    #[test]
+    fn the_caps_formatter_accepts_seconds_millis_and_numeric_strings() {
+        let millis = json!(NOW + 7_200_000i64);
+        let seconds = json!((NOW + 7_200_000) / 1000);
+        let string = json!(((NOW + 7_200_000) / 1000).to_string());
+        for v in [millis, seconds, string] {
+            assert_eq!(human_caps_in(Some(&v), NOW), "2h0m", "{v:?}");
+        }
+    }
+
+    #[test]
+    fn an_iso_string_degrades_to_soon_rather_than_parsing() {
+        // `Number("2026-08-21T00:00:00Z")` is NaN. The bar's helper parses it;
+        // this one must not, which is why the mirror writes `resets_at` raw.
+        assert_eq!(human_caps_in(Some(&json!("2026-08-21T00:00:00Z")), NOW), "soon");
+        assert_eq!(human_caps_in(Some(&json!(null)), NOW), "soon");
+        assert_eq!(human_caps_in(None, NOW), "soon");
+        assert_eq!(human_caps_in(Some(&json!({ "at": 1 })), NOW), "soon");
+    }
+
+    #[test]
+    fn a_past_reset_is_now_and_a_day_away_is_days_and_hours() {
+        assert_eq!(human_caps_in(Some(&json!((NOW - 5_000) / 1000)), NOW), "now");
+        assert_eq!(human_caps_in(Some(&json!(NOW / 1000)), NOW), "now", "exactly now");
+        let two_days = json!((NOW + 2 * 86_400_000 + 3 * 3_600_000) / 1000);
+        assert_eq!(human_caps_in(Some(&two_days), NOW), "2d3h");
+        assert_eq!(human_caps_in(Some(&json!((NOW + 90_000) / 1000)), NOW), "1m");
+    }
 
     #[test]
     fn to_fixed_rounds_half_away_from_zero_like_js() {

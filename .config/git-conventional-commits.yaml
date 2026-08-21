@@ -20,6 +20,7 @@ convention:
     - spend # cache, lock, refresh child, credentials, the four gates
     - git # filesystem-first root/branch, bounded dirty and ahead markers
     - usage # the session usage mirror consumed by ai-plugins
+    - caps # the PostToolUse context/rate-limit hook
     # everything else
     - installer # npm platform packages, install/uninstall, receipts
     - plans # ./docs/plans

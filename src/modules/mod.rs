@@ -1,5 +1,6 @@
 //! One folder or file per domain.
 
+pub mod caps;
 pub mod config;
 pub mod git;
 pub mod payload;

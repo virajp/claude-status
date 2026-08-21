@@ -206,6 +206,170 @@ fn panel_mentions_spend(panel: &str) -> bool {
     panel.contains('\u{f09d}')
 }
 
+/// A usage mirror the caps hook will read, written where the hook looks.
+fn seed_mirror(dir: &Path, session_id: &str, body: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(format!("{session_id}.json")), body).unwrap();
+}
+
+fn caps_run(home: &Home, usage_dir: &Path, stdin: &str, var: &str) -> Output {
+    run(home, &["--caps-hook"], stdin, &[(var, usage_dir.to_str().unwrap())])
+}
+
+#[test]
+fn the_caps_hook_emits_one_directive_when_the_seven_day_cap_is_breached() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":1774600000}"#);
+
+    let out = caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR");
+    assert!(out.status.success());
+
+    let emitted: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("one JSON object");
+    let ctx = emitted["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert_eq!(emitted["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+    assert!(ctx.contains("7-DAY LIMIT CAP") && ctx.contains("85%"), "{ctx}");
+    assert!(ctx.contains("vwf:handoff") && ctx.contains("/vwf:recall next"), "{ctx}");
+    assert!(!ctx.contains("docs/handoffs/"), "the stale path from the JS: {ctx}");
+}
+
+#[test]
+fn the_more_severe_of_two_breaches_is_the_one_reported() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":99,"sevenDayPct":85}"#);
+
+    let panel = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(panel.contains("7-DAY"), "{panel}");
+    assert!(!panel.contains("CONTEXT CAP"), "the lesser breach is not mentioned");
+}
+
+#[test]
+fn the_directive_is_debounced_until_the_breach_escalates() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    let stdin = r#"{"session_id":"s1"}"#;
+
+    let first = stdout(&caps_run(&home, &usage, stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(first.contains("CONTEXT CAP"), "the first breach fires");
+    let second = stdout(&caps_run(&home, &usage, stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert_eq!(second, "", "the same level does not fire again");
+
+    // Escalating to the 7-day cap fires a second time.
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70,"sevenDayPct":85}"#);
+    let third = stdout(&caps_run(&home, &usage, stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(third.contains("7-DAY"), "an escalation fires: {third}");
+
+    // De-escalating back to context does not re-fire.
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    assert_eq!(stdout(&caps_run(&home, &usage, stdin, "CLAUDE_STATUS_USAGE_DIR")), "");
+}
+
+#[test]
+fn the_debounce_state_file_is_the_name_the_js_hook_also_writes() {
+    // Both hooks are installed during the transition. A different name here
+    // would let a machine running both double-fire.
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR");
+
+    let state = usage.join("s1.state.json");
+    assert!(state.exists(), "the state file is <sid>.state.json beside <sid>.json");
+    let recorded: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    assert_eq!(recorded["level"], 1);
+    assert!(recorded["ts"].is_number());
+}
+
+#[test]
+fn a_corrupt_state_file_is_treated_as_no_previous_breach() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    std::fs::write(usage.join("s1.state.json"), "{not json").unwrap();
+
+    let out = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(out.contains("CONTEXT CAP"), "a corrupt state file must not suppress the cap");
+}
+
+#[test]
+fn a_repo_config_may_tighten_a_cap_but_never_loosen_one() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":55}"#);
+
+    // 55% is under the shipped 65% cap, so nothing fires...
+    let repo = home.path().join("repo");
+    std::fs::create_dir_all(repo.join(".config")).unwrap();
+    let stdin = format!(r#"{{"session_id":"s1","cwd":"{}"}}"#, repo.display());
+    assert_eq!(stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR")), "");
+
+    // ...until the repo tightens it to 50.
+    std::fs::write(repo.join(".config").join("vwf.yaml"), "pipeline:\n  execute_caps:\n    context: 50\n").unwrap();
+    let tightened = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(tightened.contains("cap 50%"), "the repo value applied: {tightened}");
+
+    // A value above the shipped default is ignored: 70% still breaches at 65.
+    std::fs::remove_file(usage.join("s1.state.json")).unwrap();
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    std::fs::write(repo.join(".config").join("vwf.yaml"), "pipeline:\n  execute_caps:\n    context: 90\n").unwrap();
+    let ignored = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(ignored.contains("cap 65%"), "config may only tighten: {ignored}");
+}
+
+#[test]
+fn the_caps_hook_is_completely_silent_when_it_has_nothing_to_read() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":99}"#);
+
+    // No usage dir at all.
+    let bare = run(&home, &["--caps-hook"], r#"{"session_id":"s1"}"#, &[]);
+    assert_eq!(stdout(&bare), "", "no usage dir");
+    assert!(bare.status.success());
+
+    // A usage dir but no session id.
+    assert_eq!(stdout(&caps_run(&home, &usage, "{}", "CLAUDE_STATUS_USAGE_DIR")), "", "no session_id");
+
+    // A session with no mirror written yet — the bar has not rendered.
+    assert_eq!(stdout(&caps_run(&home, &usage, r#"{"session_id":"unseen"}"#, "CLAUDE_STATUS_USAGE_DIR")), "");
+
+    // Unparseable stdin.
+    assert_eq!(stdout(&caps_run(&home, &usage, "not json", "CLAUDE_STATUS_USAGE_DIR")), "");
+}
+
+#[test]
+fn an_iso_reset_timestamp_degrades_to_soon_rather_than_parsing() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":"2026-08-21T00:00:00Z"}"#);
+
+    let out = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(out.contains("resets in soon"), "matches the JS numeric-only coercion: {out}");
+}
+
+#[test]
+fn the_usage_dir_variable_migrates_without_breaking_the_old_name() {
+    let home = Home::new(&safe_config());
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+
+    // The legacy name alone still works — a machine still running the JS hook
+    // exports only this one.
+    let legacy = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "AI_PLUGINS_USAGE_DIR"));
+    assert!(legacy.contains("CONTEXT CAP"), "the old name is still honoured: {legacy}");
+
+    // With both set, the new name wins.
+    let other = home.path().join("elsewhere");
+    seed_mirror(&other, "s2", r#"{"sevenDayPct":85}"#);
+    let out = run(&home, &["--caps-hook"], r#"{"session_id":"s2"}"#, &[
+        ("CLAUDE_STATUS_USAGE_DIR", other.to_str().unwrap()),
+        ("AI_PLUGINS_USAGE_DIR", usage.to_str().unwrap()),
+    ]);
+    assert!(stdout(&out).contains("7-DAY"), "the new name won: {}", stdout(&out));
+}
+
 #[test]
 fn version_is_exactly_the_version_with_or_without_debug() {
     let home = Home::new(&safe_config());
