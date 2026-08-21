@@ -101,6 +101,11 @@ silently blank bar and no clue.
    printing `⚡ Claude`. Reproduce that: wrap the render in
    `std::panic::catch_unwind`, print the fallback, and put the real error on
    stderr.
+4. **Only the renderer emits escapes.** **Added 2026-08-21** (`macos-only`
+   cycle), after review found the powerline separators reaching the row
+   unfiltered. Every dynamic value is stripped of control characters before it
+   is written, on **both** surfaces. See
+   [§4a](#4a-what-may-carry-an-escape-and-what-may-not).
 
 ---
 
@@ -434,6 +439,44 @@ Get these exactly right; they are visible on every render.
   clamped to 0..100 first.
 - **Money** — minor units + exponent → `$75.93`, with a whole-dollar amount
   rendering as `$75` (strip a trailing `.00`).
+
+### 4a. What may carry an escape, and what may not
+
+**Added 2026-08-21** (`macos-only` cycle). Before this, nothing said which
+strings on the row were trusted, and the answer in the code turned out to be
+"the ones somebody remembered".
+
+**Treat every dynamic value as hostile.** Not as a worst case — as the normal
+case. A branch name, a directory under a worktree, a session name, a model
+string, and a task's `name` and `description` (written by a model, and therefore
+steerable by indirect prompt injection) all reach the bar unreviewed. So does
+**`<repo-root>/.config/claude-status.json`**, which is read from whatever
+repository the user changes into: cloning a hostile repo is the entire attack,
+with no further interaction.
+
+**Only the renderer emits escape sequences.** Every dynamic value is stripped of
+control characters before it is written. This applies to the main bar *and* the
+subagent panel — the panel's NDJSON `` escaping is **transport encoding, not a
+control**, because Claude Code decodes it before rendering.
+
+Stripped: `Cc` (C0 and DEL), C1 (`U+0080`–`U+009F`, since a terminal in 8-bit
+mode reads `U+009B` as CSI with no `ESC` needed), bidi overrides and isolates
+(`U+202A`–`U+202E`, `U+2066`–`U+2069`), and `U+200B` / `U+FEFF`.
+
+Kept: ZWJ, variation selectors, and the private-use codepoints — the bar is
+built from Nerd Font glyphs, so filtering those would erase it.
+
+**The filter belongs at the point every value passes through**, not in each
+producer. There are three such points, and a fourth surface would need its own:
+`segments::build` for the main bar, the sweep at the end of `task_row` for the
+panel, and `Powerline::from_config` for the separators — which are the widest
+surface of all, being config-supplied and written *outside* any segment's SGR
+bracket.
+
+**Known residual.** A dynamic value may still contain a private-use separator
+glyph and so *look* like a segment boundary. Accepted: the same config layer can
+already set the row's colours by design, and the line drawn here is between
+theming the bar and escaping out of it.
 
 ---
 

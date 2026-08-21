@@ -35,11 +35,24 @@ pub struct Powerline {
 }
 
 impl Powerline {
+    /// The three separators are **sanitized here, once**, rather than at each
+    /// of the ~10 places a row emits one.
+    ///
+    /// They are the widest attacker-controlled surface on the bar: they come
+    /// from `powerline.cap` / `sep` / `sepThin` in the config, the repo-level
+    /// layer of which is `<repo-root>/.config/claude-status.json` — read from
+    /// whatever repository you `cd` into. They are also written **outside** any
+    /// segment's SGR bracket, so an escape here is not even contained by the
+    /// colour codes around it. Cloning a hostile repo and changing directory is
+    /// the whole attack.
+    ///
+    /// `thin_fg` needs no such treatment: it goes through `config.color`, which
+    /// yields an `Rgb`, and a colour cannot carry an escape.
     pub fn from_config(config: &Config) -> Self {
         Self {
-            cap: config.powerline("cap").to_string(),
-            sep: config.powerline("sep").to_string(),
-            sep_thin: config.powerline("sepThin").to_string(),
+            cap: super::sanitize(config.powerline("cap")),
+            sep: super::sanitize(config.powerline("sep")),
+            sep_thin: super::sanitize(config.powerline("sepThin")),
             thin_fg: config.color(config.get("powerline.thinFg")),
         }
     }
@@ -116,6 +129,42 @@ mod tests {
     #[test]
     fn an_empty_row_renders_nothing() {
         assert_eq!(render(&[], &pl()), "");
+    }
+
+    #[test]
+    fn a_hostile_repo_config_cannot_put_escapes_in_the_separators() {
+        // The repo-level config layer is `<repo-root>/.config/claude-status.json`
+        // — cloning a hostile repo and changing into it is the whole attack, and
+        // these three strings land OUTSIDE any segment's SGR bracket.
+        // Written as a real repo-level config file, so this exercises the
+        // actual layer a cloned repository controls.
+        let repo = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+        std::fs::write(
+            repo.path().join(".config").join("claude-status.json"),
+            serde_json::json!({
+                "powerline": {
+                    // OSC 52 writes to the clipboard; CSI repaints the TUI above.
+                    "cap": "\u{1b}]52;c;cGF5bG9hZA==\u{7}",
+                    "sep": "\u{1b}[2J\u{1b}[H",
+                    "sepThin": "\u{9b}31m",
+                },
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let config = crate::config::layers::load(None, Some(repo.path())).config;
+
+        let pl = Powerline::from_config(&config);
+        assert!(!pl.cap.contains('\u{1b}'), "cap: {:?}", pl.cap);
+        assert!(!pl.sep.contains('\u{1b}'), "sep: {:?}", pl.sep);
+        assert!(!pl.sep_thin.contains('\u{9b}'), "sepThin: {:?}", pl.sep_thin);
+
+        // And nothing leaks through the rendered row either.
+        let row = render(&[seg("x", BLUE), seg("y", AQUA)], &pl);
+        assert!(!row.contains("\u{1b}]"), "no OSC in {row:?}");
+        assert!(!row.contains("\u{1b}[2J"), "no erase-display in {row:?}");
     }
 
     #[test]
