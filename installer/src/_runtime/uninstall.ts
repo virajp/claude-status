@@ -21,6 +21,7 @@ import {
   sha256,
   step,
   warn,
+  wouldStep,
 } from "../_shared/io.js";
 import {
   resolvePaths,
@@ -33,16 +34,26 @@ import type {
 } from "../modules/receipt.js";
 import * as receipt from "../modules/receipt.js";
 import * as settings from "../modules/settings.js";
+import type { Options } from "./cli.js";
 
-export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
+export function uninstall(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: Options = { dryRun: false, yes: false, force: false },
+): number {
   const paths = resolvePaths(env);
+  const did = (message: string) =>
+    opts.dryRun ? wouldStep(message) : step(message);
   const found = receipt.read(paths);
 
   if (!found) {
     return withoutReceipt(paths);
   }
 
-  say(`Uninstalling claude-status ${found.version}`);
+  say(
+    opts.dryRun
+      ? `Dry run — uninstalling claude-status ${found.version}. Nothing will be changed.`
+      : `Uninstalling claude-status ${found.version}`,
+  );
 
   // 1. Config keys first — see the note above.
   for (
@@ -54,13 +65,15 @@ export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
     if (entry.previous === null) {
       // It was absent before we ran, so absent is what "restored" means.
       delete current[entry.key];
-      step(`removed  ${entry.key}`);
+      did(`removed  ${entry.key}`);
     }
     else {
       current[entry.key] = entry.previous;
-      step(`restored ${entry.key}`);
+      did(`restored ${entry.key}`);
     }
-    settings.writeSettings(entry.file, current);
+    if (!opts.dryRun) {
+      settings.writeSettings(entry.file, current);
+    }
   }
 
   // 2. Files.
@@ -73,8 +86,10 @@ export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
       // Migrated in, so move it back under its old name rather than deleting a
       // file that carries the user's theming.
       if (existsSync(entry.path)) {
-        renameSync(entry.path, entry.movedFrom);
-        step(`restored ${tilde(entry.movedFrom, paths)}`);
+        if (!opts.dryRun) {
+          renameSync(entry.path, entry.movedFrom);
+        }
+        did(`restored ${tilde(entry.movedFrom, paths)}`);
       }
       continue;
     }
@@ -95,13 +110,17 @@ export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
       continue;
     }
 
-    rmSync(entry.path, { force: true });
-    step(`removed  ${tilde(entry.path, paths)}`);
+    if (!opts.dryRun) {
+      rmSync(entry.path, { force: true });
+    }
+    did(`removed  ${tilde(entry.path, paths)}`);
   }
 
   // The receipt goes before the directories are considered, or the very
   // directory holding it would always look non-empty and always be kept.
-  rmSync(paths.receipt, { force: true });
+  if (!opts.dryRun) {
+    rmSync(paths.receipt, { force: true });
+  }
 
   // 3. Directories, only when empty — the user shares `~/.claude/bin`.
   //    Deepest first, so a parent is considered only after its children have
@@ -117,8 +136,10 @@ export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
     }
     try {
       if (readdirSync(entry.path).length === 0) {
-        rmdirSync(entry.path);
-        step(`removed  ${tilde(entry.path, paths)}`);
+        if (!opts.dryRun) {
+          rmdirSync(entry.path);
+        }
+        did(`removed  ${tilde(entry.path, paths)}`);
       }
       else {
         step(`kept     ${tilde(entry.path, paths)} (not empty)`);
@@ -130,7 +151,7 @@ export function uninstall(env: NodeJS.ProcessEnv = process.env): number {
   }
 
   say("");
-  say("Done.");
+  say(opts.dryRun ? "Dry run complete. Nothing was changed." : "Done.");
   return 0;
 }
 

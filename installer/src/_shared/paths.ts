@@ -26,6 +26,12 @@ export interface Paths {
   /** `~/.config/claude-status/` — this installer's own state. */
   stateDir: string;
   receipt: string;
+  /** `~/.claude/scripts/statusline` — the JS bar the `ai-plugins` CLI installed. */
+  legacyStatusline: string;
+  /** `~/.config/ai-plugins/receipts/statusline.json` — that install's receipt. */
+  legacyReceipt: string;
+  /** `~/.claude/hooks/context-caps.js` — the Node hook `--caps-hook` replaces. */
+  legacyHook: string;
 }
 
 /** The binary's filename, which carries an extension only on Windows. */
@@ -81,6 +87,9 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): Paths {
     legacyConfig: join(configDir, "statusline.json"),
     stateDir,
     receipt: join(stateDir, "receipt.json"),
+    legacyStatusline: join(claudeDir, "scripts", "statusline"),
+    legacyReceipt: join(configDir, "ai-plugins", "receipts", "statusline.json"),
+    legacyHook: join(claudeDir, "hooks", "context-caps.js"),
   };
 }
 

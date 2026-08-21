@@ -167,6 +167,234 @@ describe("the argument surface", () => {
   });
 });
 
+describe("the caps hook", () => {
+  const postToolUse = home =>
+    json(join(home, ".claude", "settings.json")).hooks?.PostToolUse ?? [];
+  const commands = home =>
+    postToolUse(home).flatMap(group => (group.hooks ?? []).map(h => h.command));
+
+  it("wires --caps-hook as a third key", () => {
+    const home = newHome();
+    run(home, ["--install"]);
+    assert.ok(
+      commands(home).some(c => /claude-status.*--caps-hook/.test(c)),
+      `got ${JSON.stringify(commands(home))}`,
+    );
+  });
+
+  it("replaces the node hook in place rather than adding a second one", () => {
+    // Two entries for the same actuator would fire it twice per tool call.
+    const home = newHome();
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [{
+            hooks: [{
+              type: "command",
+              command: "node ${HOME}/.claude/hooks/context-caps.js",
+            }],
+          }],
+        },
+      }),
+    );
+
+    run(home, ["--install"]);
+    const found = commands(home);
+    assert.equal(found.length, 1, `got ${JSON.stringify(found)}`);
+    assert.match(found[0], /--caps-hook/);
+    assert.ok(!found[0].includes("context-caps.js"));
+  });
+
+  it("preserves a genuinely foreign PostToolUse hook alongside", () => {
+    const home = newHome();
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [{
+            matcher: "Write",
+            hooks: [{ type: "command", command: "somebody-elses-hook" }],
+          }],
+        },
+      }),
+    );
+
+    run(home, ["--install"]);
+    const found = commands(home);
+    assert.ok(
+      found.includes("somebody-elses-hook"),
+      `got ${JSON.stringify(found)}`,
+    );
+    assert.ok(found.some(c => c.includes("--caps-hook")));
+    assert.equal(postToolUse(home)[0].matcher, "Write", "the matcher survives");
+  });
+
+  it("restores the original hook block verbatim on uninstall", () => {
+    const home = newHome();
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    const original = {
+      hooks: {
+        PostToolUse: [{
+          hooks: [{ type: "command", command: "somebody-elses-hook" }],
+        }],
+      },
+    };
+    writeFileSync(settings, JSON.stringify(original));
+
+    run(home, ["--install"]);
+    run(home, ["--uninstall"]);
+    assert.deepEqual(json(settings).hooks, original.hooks);
+  });
+
+  it("leaves hooks absent after uninstalling onto a home that had none", () => {
+    const home = newHome();
+    run(home, ["--install"]);
+    run(home, ["--uninstall"]);
+    const settings = join(home, ".claude", "settings.json");
+    assert.equal(
+      json(settings).hooks,
+      undefined,
+      "absent before means absent after, not an empty block",
+    );
+  });
+});
+
+describe("--dry-run", () => {
+  it("reports an install and changes nothing", () => {
+    const home = newHome();
+    const before = snapshot(home);
+    const { code, stdout } = run(home, ["--install", "--dry-run"]);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /would/, "the report says what it would have done");
+    assert.match(stdout, /Nothing was changed/);
+    assert.deepEqual(snapshot(home), before);
+  });
+
+  it("reports an uninstall and changes nothing", () => {
+    const home = newHome();
+    run(home, ["--install"]);
+    const installed = snapshot(home);
+
+    const { code, stdout } = run(home, ["--uninstall", "--dry-run"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /would/);
+    assert.deepEqual(snapshot(home), installed);
+  });
+});
+
+describe("--yes and --force", () => {
+  const foreign = home => {
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        statusLine: { type: "command", command: "my-own-bar" },
+      }),
+    );
+    return settings;
+  };
+
+  it("--force replaces a foreign status line without a terminal", () => {
+    const home = newHome();
+    const settings = foreign(home);
+    const { code } = run(home, ["--install", "--force"]);
+    assert.equal(code, 0);
+    assert.match(json(settings).statusLine.command, /--statusline/);
+  });
+
+  it("--yes answers the prompt instead of failing without a terminal", () => {
+    const home = newHome();
+    const settings = foreign(home);
+    const { code, stdout } = run(home, ["--install", "--yes"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /--yes/, "the answer is reported, not silent");
+    assert.match(json(settings).statusLine.command, /--statusline/);
+  });
+
+  it("still restores the foreign line on uninstall", () => {
+    const home = newHome();
+    const settings = foreign(home);
+    run(home, ["--install", "--force"]);
+    run(home, ["--uninstall"]);
+    assert.deepEqual(json(settings).statusLine, {
+      type: "command",
+      command: "my-own-bar",
+    });
+  });
+});
+
+describe("the ai-plugins leftovers", () => {
+  const seedOrphans = home => {
+    const paths = [
+      join(home, ".claude", "scripts", "statusline"),
+      join(home, ".config", "ai-plugins", "receipts", "statusline.json"),
+      join(home, ".claude", "hooks", "context-caps.js"),
+    ];
+    for (const path of paths) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "leftover");
+    }
+    return paths;
+  };
+
+  it("reports them and removes them when asked", () => {
+    const home = newHome();
+    const paths = seedOrphans(home);
+    const { stdout } = run(home, ["--install", "--yes"]);
+
+    assert.match(stdout, /previous ai-plugins statusline install/);
+    for (const path of paths) {
+      assert.ok(!existsSync(path), `${path} should be gone`);
+    }
+  });
+
+  it("keeps them when declined, and does not ask a second time", () => {
+    const home = newHome();
+    const paths = seedOrphans(home);
+
+    // No TTY and no --yes is a decline.
+    const first = run(home, ["--install"]);
+    assert.match(first.stdout, /previous ai-plugins statusline install/);
+    for (const path of paths) {
+      assert.ok(existsSync(path), `${path} should still be there`);
+    }
+    assert.equal(
+      json(join(home, ".config", "claude-status", "receipt.json"))
+        .declinedOrphans,
+      true,
+    );
+
+    const second = run(home, ["--install"]);
+    assert.ok(
+      !/previous ai-plugins statusline install/.test(second.stdout),
+      "a declined offer is remembered rather than re-asked",
+    );
+  });
+
+  it("says nothing when there is nothing left behind", () => {
+    const home = newHome();
+    assert.ok(!/ai-plugins/.test(run(home, ["--install"]).stdout));
+  });
+});
+
+describe("--version", () => {
+  it("prints the installer's own version and nothing else", () => {
+    const home = newHome();
+    const { code, stdout } = run(home, ["--version"]);
+    assert.equal(code, 0);
+    assert.match(stdout.trim(), /^\d+\.\d+\.\d+/);
+    assert.deepEqual(snapshot(home), {}, "--version mutates nothing");
+  });
+});
+
 describe("--install", () => {
   it("places the binary, seeds the config and wires both keys", () => {
     const home = newHome();

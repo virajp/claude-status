@@ -52,9 +52,22 @@ export function defaultsPath(): string {
  * - Only the legacy name there → **moved**, so the theming survives the rename.
  * - Neither → seeded from the shipped defaults.
  */
-export function seedOrMigrate(paths: Paths): ConfigAction {
+export function seedOrMigrate(paths: Paths, dryRun = false): ConfigAction {
   if (existsSync(paths.config)) {
     return { action: "kept" };
+  }
+
+  // A dry run answers the same question without touching anything. The digests
+  // are the ones the real run would record, read from the source rather than
+  // from a file that was never written.
+  if (dryRun) {
+    return existsSync(paths.legacyConfig)
+      ? {
+        action: "migrated",
+        from: paths.legacyConfig,
+        sha256: sha256(paths.legacyConfig),
+      }
+      : { action: "seeded", sha256: sha256(defaultsPath()) };
   }
 
   // `~/.config` need not exist yet — this may be the first tool to want it.

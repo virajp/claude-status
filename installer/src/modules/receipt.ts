@@ -46,6 +46,12 @@ export interface Receipt {
   version: string;
   installedAt: string;
   entries: Entry[];
+  /**
+   * The user said no to removing the `ai-plugins` leftovers. Remembered so a
+   * second `--install` does not re-ask — a prompt asked on every upgrade is a
+   * prompt that stops being read.
+   */
+  declinedOrphans?: boolean;
 }
 
 export function read(paths: Paths): Receipt | null {
@@ -61,7 +67,11 @@ export function write(
   version: string,
   entries: Entry[],
   now: string,
+  declinedOrphans = false,
 ): void {
   const receipt: Receipt = { version, installedAt: now, entries };
+  if (declinedOrphans) {
+    receipt.declinedOrphans = true;
+  }
   writeJson(paths.receipt, receipt);
 }

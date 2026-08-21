@@ -21,6 +21,16 @@ export function say(message: string): void {
   process.stdout.write(`${message}\n`);
 }
 
+/**
+ * A step that did not happen because `--dry-run` was passed.
+ *
+ * Marked rather than silent: a dry run whose output is indistinguishable from
+ * a real one teaches the user nothing about which it was.
+ */
+export function wouldStep(message: string): void {
+  process.stdout.write(`  would ${message}\n`);
+}
+
 export function step(message: string): void {
   process.stdout.write(`  ${message}\n`);
 }
@@ -42,7 +52,16 @@ export function fail(message: string): never {
  * status line is the one unforgivable failure mode here, and silently skipping
  * the install is not much better.
  */
-export async function confirm(question: string): Promise<boolean> {
+export async function confirm(
+  question: string,
+  yes = false,
+): Promise<boolean> {
+  // `--yes` is the non-interactive answer: a setup script or CI has said in
+  // advance what it would have said at the prompt.
+  if (yes) {
+    say(`${question} [y/N] y (--yes)`);
+    return true;
+  }
   if (!process.stdin.isTTY) {
     return false;
   }
