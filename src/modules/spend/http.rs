@@ -46,6 +46,16 @@ pub fn url() -> String {
 }
 
 pub fn fetch(url: &str, token: &str) -> Response {
+    // **A test must never reach the real endpoint.** The macOS keychain is not
+    // scoped by `$HOME`, so a test with a fake home still finds a real token —
+    // making a stray fetch a privacy leak and a 429 the user wears for half an
+    // hour. Every layer that could reach here is supposed to pin the endpoint,
+    // and one of them silently stopped doing so; this turns that class of
+    // mistake into a failing test instead of a live request. Panicking is
+    // correct here: there is no safe way to continue.
+    #[cfg(test)]
+    assert_ne!(url, DEFAULT_URL, "a test reached the real spend endpoint — pin ${URL_ENV}");
+
     // `http_status_as_error(false)`: ureq defaults to returning 4xx/5xx as
     // `Err(StatusCode)`, and this logic branches on 401 and 429, so a linear
     // match over statuses is clearer than unwrapping an error back into one.

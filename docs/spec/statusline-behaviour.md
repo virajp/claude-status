@@ -128,12 +128,26 @@ applied in one place.
 
    Concretely, the spend cache path ([§7](#7-the-spend-subsystem)), the usage
    mirror directory ([§8](#8-the-usage-mirror--a-contract-with-ai-plugins)) and
-   the credentials file are each absent without a home. Invariant 3 still
+   the credentials **file** are each absent without a home. Invariant 3 still
    outranks this: the render succeeds, the segment omits like any other, and
    `--debug` names the missing `$HOME` rather than reporting an empty result.
 
    A path that never asked for the home directory is unaffected — an absolute
    `$CLAUDE_STATUS_SPEND_CACHE` works with no `$HOME` at all.
+
+   **The macOS keychain is the exception, and the ordering is deliberate.** The
+   keychain is *not* scoped by `$HOME`, so "no home" does not mean "no
+   credentials": the fallback in [§7](#7-the-spend-subsystem) can still return a
+   real token. The rule is that **the cache path is resolved first, and no fetch
+   is made when it is absent** — with nowhere to write the result, a request
+   would spend the account's rate limit to produce nothing, on every render.
+   This is stated because it is the one case where a `$HOME`-derived absence has
+   to gate something that is not itself `$HOME`-derived, and it was previously
+   only implied by the order the code happened to run in.
+
+   The same asymmetry is why a test with a fake `$HOME` is **not** protected
+   from reaching the live endpoint, and why every test that can fetch pins
+   `$CLAUDE_STATUS_SPEND_URL` itself rather than trusting its runner.
 
 ---
 

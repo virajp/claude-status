@@ -217,7 +217,13 @@ fn verdict_of(
             "a refresh is already running — its lock is {holder_age_secs}s old. No fetch was made; re-run once it finishes."
         ),
         Outcome::LockUnavailable => {
-            format!("the lock at {} could not be read, so no fetch was made.", cache_path.display())
+            // The **lock**, not the cache beside it: they differ by a `.lock`
+            // suffix, and naming the healthy file sends the reader to the wrong
+            // one in the only situation where this line is printed.
+            format!(
+                "the lock at {} could not be read, so no fetch was made.",
+                crate::modules::spend::lock::lock_path(cache_path).display(),
+            )
         }
         Outcome::NoCredentials => format!(
             "no credentials — neither {} nor {} yielded a token. Log in with Claude Code, then re-run.",

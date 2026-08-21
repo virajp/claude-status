@@ -278,7 +278,17 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
 
     let _ = writeln!(out, "\nCONFIG LAYERS (low to high)");
     for source in &sources {
-        let path = source.path.as_ref().map_or_else(|| "<embedded>".to_string(), |p| p.display().to_string());
+        // A `None` path means two different things: the **embedded** layer has
+        // no file by definition, while the user or repo layer has none because
+        // there was no home or no git root to build one from. Printing
+        // `<embedded>` for the second is how `--debug` outside a repo came to
+        // report `repo  not found  <embedded>`.
+        let path = match (&source.path, source.label) {
+            (Some(path), _) => path.display().to_string(),
+            (None, "embedded") => "<embedded>".to_string(),
+            (None, "repo") => "<no git root>".to_string(),
+            (None, _) => "<no $HOME>".to_string(),
+        };
         let state = if source.loaded { "loaded" } else { "not found" };
         let _ = writeln!(out, "  {:8} {state:10} {path}", source.label);
     }

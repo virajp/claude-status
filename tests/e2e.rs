@@ -87,24 +87,7 @@ impl Home {
 
 /// Runs the binary with stdin piped, returning both streams separately.
 fn run(home: &Home, args: &[&str], stdin: &str, extra_env: &[(&str, &str)]) -> Output {
-    let mut cmd = Command::new(BINARY);
-    cmd.args(args)
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        // See the module docs on the spend hazard.
-        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
-        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in extra_env {
-        cmd.env(k, v);
-    }
-
-    let mut child = cmd.spawn().expect("the binary runs");
-    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
-    child.wait_with_output().unwrap()
+    run_in(args, stdin, Some(home.path()), None, extra_env)
 }
 
 /// The shipped defaults, with spend refresh disabled.
@@ -619,15 +602,32 @@ fn stdout_never_carries_a_diagnostic_whatever_the_input() {
 /// A separate process, so this needs none of the in-process env locking the
 /// unit tests do — `env_clear()` simply never sets it.
 fn run_without_home(args: &[&str], stdin: &str, cwd: &Path, extra_env: &[(&str, &str)]) -> Output {
+    run_in(args, stdin, None, Some(cwd), extra_env)
+}
+
+/// The one place this file builds a command.
+///
+/// `run` and `run_without_home` are the two shapes tests actually want; both go
+/// through here so the spend hazard the module docs describe is neutralised in
+/// exactly **one** place. Three near-identical hand-rolled builders is how a
+/// `CLAUDE_STATUS_SPEND_URL` goes missing from the fourth.
+fn run_in(args: &[&str], stdin: &str, home: Option<&Path>, cwd: Option<&Path>, extra_env: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(BINARY);
     cmd.args(args)
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
+        // Never optional. See the module docs on the spend hazard.
         .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
-        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(home) = home {
+        cmd.env("HOME", home)
+            .env("CLAUDE_STATUS_SPEND_CACHE", home.join(".cache").join("claude-status").join("spend.json"));
+    }
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -650,19 +650,22 @@ fn with_no_home_the_bar_still_renders() {
 
 #[test]
 fn with_no_home_nothing_is_written_relative_to_the_cwd() {
-    // The point of the clause. Before it, the spend cache fell back to a bare
-    // `spend.json` and the usage mirror to an unexpanded `~/usage`, both of
-    // which land right here.
+    // The point of the clause, and the exact paths the old code produced:
+    // `cache::path()` fell back to a bare `spend.json`, and `expand_home`
+    // returned the literal `~/usage` — so the mirror landed in a directory
+    // *named* `~`, not in one called `usage`. Naming both precisely is what
+    // stops this passing for the wrong reason.
     let dir = TempDir::new().unwrap();
-    let before: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let marker = dir.path().join("only-this-should-be-here");
+    std::fs::write(&marker, "").unwrap();
 
     run_without_home(&["--statusline"], FIXTURE, dir.path(), &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")]);
     run_without_home(&["--refresh-spend"], "", dir.path(), &[]);
 
     let after: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
-    assert_eq!(before, after, "the working directory must be untouched");
+    assert_eq!(after, vec![marker.file_name().unwrap()], "something was written: {after:?}");
     assert!(!dir.path().join("spend.json").exists(), "the spend cache went relative");
-    assert!(!dir.path().join("usage").exists(), "the usage mirror went relative");
+    assert!(!dir.path().join("~").exists(), "the usage mirror wrote into a directory named `~`");
 }
 
 #[test]
@@ -683,6 +686,14 @@ fn with_no_home_the_caps_hook_stays_silent() {
     // — the same rule the writer follows, rather than reading from a directory
     // relative to wherever the hook happened to run.
     let dir = TempDir::new().unwrap();
+
+    // **Seeded at the path the OLD code would have read.** `expand_home` used
+    // to return the literal `~/usage`, which resolves relative to the cwd — so
+    // a breach-level mirror here is exactly what it would have found and acted
+    // on. Without this the test proves nothing: an absent file produces silence
+    // either way, which is how it passed before this seeding was added.
+    seed_mirror(&dir.path().join("~").join("usage"), "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":1774600000}"#);
+
     let out = run_without_home(
         &["--caps-hook"],
         r#"{"session_id":"s1"}"#,
@@ -698,10 +709,17 @@ fn with_no_home_the_caps_hook_stays_silent() {
 fn debug_reports_a_hostile_repo_config_without_obeying_it() {
     // `--debug` is the fourth surface contract §4a names, and the widest input
     // to it is the repo-level config layer — read from whatever repository the
-    // user changed into. These three values land in three *different* sections
-    // of the report (EFFECTIVE LAYOUT, the spend gate table, the VERDICT line),
-    // which is exactly why the filter is one sweep over the assembled report
-    // rather than a call at each write: two of them were missed twice that way.
+    // user changed into. Two of the values below land in two *different*
+    // sections of the report (EFFECTIVE LAYOUT and the spend gate table), which
+    // is exactly why the filter is one sweep over the assembled report rather
+    // than a call at each write: both were missed that way.
+    //
+    // The third, `symbols.spend`, reaches the VERDICT line only through
+    // `hidden_verdict`, which needs `Outcome::Updated` — a successful fetch,
+    // which a closed port never produces. It is planted anyway, so that if this
+    // test is ever pointed at a stub server the value is already in place; it
+    // is **not** load-bearing here, and this comment says so rather than
+    // letting a future reader assume it is covered.
     let esc = '\u{1b}';
     let home = Home::new(&safe_config());
     let repo = TempDir::new().unwrap();
@@ -727,19 +745,10 @@ fn debug_reports_a_hostile_repo_config_without_obeying_it() {
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
     std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
 
-    let out = Command::new(BINARY)
-        .arg("--debug")
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
-        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join("spend.json"))
-        .current_dir(repo.path())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("the binary runs");
+    // `run_in` rather than a fourth hand-rolled builder: the cwd has to be the
+    // hostile repo so its config layer loads, and the home has to be the
+    // seeded one so the spend section still runs.
+    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
 
     let report = stdout(&out);
     // SAMPLE RENDER is renderer output and legitimately carries SGR codes, so
