@@ -4,7 +4,6 @@
 
 #USAGE flag "--debug" help="emit debug logs"
 #USAGE flag "--target <target>" help="build one Rust target triple instead of every one"
-#USAGE flag "--host-only" help="skip targets this machine has no toolchain for, rather than failing"
 
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
@@ -15,27 +14,24 @@ cd "$MISE_PROJECT_ROOT"
 [[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
 
 # CI builds each target on a runner that natively matches it, so this task is
-# the local path. Cross-compiling Linux from macOS needs a linker for the target
-# libc; cargo-zigbuild supplies one without a per-target cross toolchain, and —
-# the reason it is worth pinning now — it also handles the C dependency that
-# arrives with the spend subsystem's TLS stack in plan 3. A pure-Rust tree
-# builds fine today; picking the tool that survives that change avoids
-# rediscovering this later.
-ZIGBUILD="cargo-zigbuild"
-
-# Targets this machine has no toolchain for. Under --host-only they are
-# skipped and named; otherwise the first one is fatal, because a silent
-# partial build is how an incomplete release gets staged.
-SKIPPED=()
-unreachable() {
-  if [[ "${usage_host_only:-false}" != "true" ]]; then
-    exit 1
-  fi
-  SKIPPED+=("$1")
-}
+# the local path. Both published targets are macOS, and Apple ships both slices
+# of the system libraries — so on a Mac each one is either the host or a plain
+# `rustup target add` away, with no cross toolchain, no linker to arrange and no
+# C archiver to hunt down. That is the whole reason the supported set is what it
+# is; see `supported_targets` in `_scripts/_rust`.
+#
+# On any other host this task cannot build anything, and says so rather than
+# emitting a partial set.
 host_target() {
   rustc -vV | awk '/^host:/ {print $2}'
 }
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  print_error "claude-status ships macOS binaries only, and they need a Mac to build."
+  print_warn  "Cross-compiling to Apple targets needs the macOS SDK, which is not redistributable."
+  print_warn  "CI builds each target on a native macOS runner; see .github/workflows/release.yml."
+  exit 1
+fi
 
 build_one() {
   local target="$1"
@@ -44,57 +40,14 @@ build_one() {
 
   if [[ "${target}" == "$(host_target)" ]]; then
     print_wait "  ${target} (native) ... "
-    cargo build --release --target "${target}" ${VERBOSE} >/dev/null
-  elif [[ "${target}" == *-apple-darwin && "$(uname -s)" == "Darwin" ]]; then
+  else
     # The other macOS arch cross-compiles with nothing but the rustup target —
     # Apple ships both slices of the system libraries.
     print_wait "  ${target} (apple cross) ... "
-    cargo build --release --target "${target}" ${VERBOSE} >/dev/null
-  elif [[ "${target}" == *-pc-windows-msvc ]]; then
-    # MSVC targets need the Windows SDK headers and import libraries.
-    # cargo-xwin fetches them; CI never gets here, because it builds each
-    # Windows target on a native Windows runner.
-    if ! command -v cargo-xwin >/dev/null 2>&1; then
-      print_newline
-      print_error "${target} needs cargo-xwin, which is not installed."
-      print_warn  "Install it with:  mise use -g cargo:cargo-xwin"
-      print_warn  "Or let CI build it: the release workflow uses a native Windows runner."
-      unreachable "${target}"
-      return 0
-    fi
-    # cargo-xwin fetches the Windows SDK headers and import libraries, but not
-    # an archiver. `ring`'s C code needs one, and cc-rs looks for `llvm-lib` on
-    # PATH — without it the build dies thirty `ring` warnings deep in a raw
-    # cc-rs error that names neither the cause nor the fix.
-    if ! command -v llvm-lib >/dev/null 2>&1; then
-      print_newline
-      print_error "${target} needs llvm-lib, which is not installed."
-      print_warn  "cargo-xwin supplies the SDK; ring's C code still needs an archiver."
-      print_warn  "Install it with:  brew install llvm   (then add its bin/ to PATH)"
-      print_warn  "Or skip it: mise run build:cross --host-only builds what this machine can reach."
-      print_warn  "CI never needs this — the release workflow builds each Windows"
-      print_warn  "target on a native Windows runner, where MSVC supplies lib.exe."
-      unreachable "${target}"
-      return 0
-    fi
-    print_wait "  ${target} (xwin) ... "
-    cargo-xwin xwin build --release --target "${target}" ${VERBOSE} >/dev/null
-  else
-    if ! command -v "${ZIGBUILD}" >/dev/null 2>&1; then
-      print_newline
-      print_error "${target} needs ${ZIGBUILD}, which is not installed."
-      print_warn  "Install it with:  mise use -g cargo:cargo-zigbuild zig"
-      print_warn  "Or build only the targets this host can reach: mise run build:cross --host-only"
-      unreachable "${target}"
-      return 0
-    fi
-    print_wait "  ${target} (zigbuild) ... "
-    "${ZIGBUILD}" zigbuild --release --target "${target}" ${VERBOSE} >/dev/null
   fi
+  cargo build --release --target "${target}" ${VERBOSE} >/dev/null
 
-  local exe="claude-status"
-  [[ "${target}" == *-pc-windows-* ]] && exe="claude-status.exe"
-  local bin="target/${target}/release/${exe}"
+  local bin="target/${target}/release/claude-status"
   if [[ ! -f "${bin}" ]]; then
     print_newline
     print_error "no binary at ${bin}"
@@ -114,14 +67,6 @@ else
     [[ -z "${target}" ]] && continue
     build_one "${target}"
   done < <(supported_targets)
-fi
-
-if [[ ${#SKIPPED[@]} -gt 0 ]]; then
-  print_warn "Skipped ${#SKIPPED[@]} target(s) this machine has no toolchain for:"
-  for target in "${SKIPPED[@]}"; do
-    print_warn "  ${target}"
-  done
-  print_warn "This is NOT a complete build — build:npm will refuse to stage a partial set."
 fi
 
 print_header "Cross build done."

@@ -12,24 +12,26 @@ crate_version() {
 }
 
 # The supported targets, as `<rust-triple> <npm-os> <npm-cpu> <binary-name>`
-# rows — every platform Claude Code itself runs on.
+# rows.
 #
-# gnu rather than musl on Linux: the bar shells out to git and reads the user's
-# config, so it lives on a normal desktop libc, and a musl build buys nothing.
+# **macOS only, both architectures.** Claude Code also runs on Linux and
+# Windows, and this table used to carry all six targets — the `macos-only`
+# cycle cut it to two. Four of those six had never had a binary *executed* on
+# them by anyone: `build:cross` proved architecture, not execution. Shipping
+# them was shipping a claim nobody checked, and each one cost a cross-toolchain
+# pin, a preflight, a filename branch and a CI runner to keep unchecked. See
+# contract §9, whose six-target paragraph is struck through and annotated.
 #
-# msvc rather than gnu on Windows: it is the default Rust toolchain there and
-# needs no runtime DLLs beside the binary.
+# Adding a platform back is a row here plus its `PACKAGES` entry in
+# `installer/src/modules/binary.ts` and a `build` matrix entry in
+# `.github/workflows/release.yml`. Everything else derives from this function.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
 supported_targets() {
   printf '%s\n' \
     'aarch64-apple-darwin darwin arm64 claude-status' \
-    'x86_64-apple-darwin darwin x64 claude-status' \
-    'x86_64-unknown-linux-gnu linux x64 claude-status' \
-    'aarch64-unknown-linux-gnu linux arm64 claude-status' \
-    'x86_64-pc-windows-msvc win32 x64 claude-status.exe' \
-    'aarch64-pc-windows-msvc win32 arm64 claude-status.exe'
+    'x86_64-apple-darwin darwin x64 claude-status'
 }
 
 # How many platform packages a complete release carries.
