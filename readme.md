@@ -37,12 +37,13 @@ cargo build --release
 
 That is a normal native build with no cross-compilation, and it is the only
 route anyone has a reason to try. Two things to know before you do. **Windows
-will not compile**: the crate calls a Unix API to put the detached refresh child
-in its own process group, and putting that back behind a `cfg` is a small change
-nobody has made. And on Linux the TLS stack pulls in `ring`, whose C code needs
-a working C toolchain — so the first failure you hit is likely a missing
-compiler rather than anything Rust. Nothing outside macOS is built, tested or
-checked in CI, so treat any of it as your own.
+will not compile** — the crate reaches for Unix APIs in three places (a
+process-group call, the process-runner's test fixtures, and a `chmod` in the e2e
+suite), so this is a small piece of work rather than a one-line `cfg`, and
+fixing only the first still fails to build. And on Linux the TLS stack pulls in
+`ring`, whose C code needs a working C toolchain — so the first failure you hit
+is likely a missing compiler rather than anything Rust. Nothing outside macOS is
+built, tested or checked in CI, so treat any of it as your own.
 
 `supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
 list lives, and its comment names everything a new platform has to touch.

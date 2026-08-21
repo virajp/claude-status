@@ -25,13 +25,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn home_prefers_the_posix_variable() {
-        // Set by the harness on every platform this runs on.
-        assert!(home().is_some(), "a test process always has a home");
+    fn home_reads_the_environment() {
+        assert!(home().is_some(), "a test process always has $HOME");
+    }
+
+    #[test]
+    fn an_unset_variable_is_not_a_home() {
+        assert_eq!(non_empty("CLAUDE_STATUS_DEFINITELY_UNSET_12345"), None);
     }
 
     #[test]
     fn an_empty_variable_is_not_a_home() {
-        assert_eq!(non_empty("CLAUDE_STATUS_DEFINITELY_UNSET_12345"), None);
+        // The `.filter(!is_empty)` is the only branch left in this file, and an
+        // *unset* variable short-circuits on `.ok()` without ever reaching it —
+        // so that test alone would stay green if the filter were deleted, while
+        // `HOME=""` resolved to `Some("")` and every caller joined its paths
+        // onto nothing.
+        //
+        // `set_var`/`remove_var` are unsafe and process-global; this test owns
+        // a variable no other test touches, so there is nothing to race with.
+        const KEY: &str = "CLAUDE_STATUS_EMPTY_HOME_PROBE";
+        unsafe { std::env::set_var(KEY, "") };
+        assert_eq!(non_empty(KEY), None, "an empty value is not a value");
+        unsafe { std::env::set_var(KEY, "/somewhere") };
+        assert_eq!(non_empty(KEY).as_deref(), Some("/somewhere"));
+        unsafe { std::env::remove_var(KEY) };
     }
 }

@@ -33,9 +33,14 @@ crate_version() {
 #      cannot be installed on the platform it now claims to serve.
 #   3. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
 #      runner each, so no artifact reaches npm untested on its own architecture.
-#   4. The crate itself. `spawn_detached` in `src/_shared/proc.rs` calls a Unix
-#      API unconditionally, so **Windows will not compile** until that goes back
-#      behind a `cfg`.
+#   4. The crate itself, in three places — **Windows will not compile** until
+#      every one of them goes back behind a `cfg`, and restoring only the first
+#      still fails, after a full CI matrix has run:
+#        - `spawn_detached` in `src/_shared/proc.rs` calls a Unix API
+#          (`process_group`) unconditionally;
+#        - that file's `mod shell` test fixtures are now plain `echo`/`false`/
+#          `sleep`, their `cmd /C` twin deleted;
+#        - `tests/e2e.rs` chmods a `#!/bin/sh` shim through `PermissionsExt`.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
