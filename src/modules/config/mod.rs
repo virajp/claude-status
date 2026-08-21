@@ -117,7 +117,9 @@ impl Config {
         match Matcher::compile(pattern) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("claude-status: worktreePattern {pattern:?} is not a valid regex ({e}); using {DEFAULT:?}");
+                crate::_shared::diag(&format!(
+                    "claude-status: worktreePattern {pattern:?} is not a valid regex ({e}); using {DEFAULT:?}"
+                ));
                 Matcher::compile(DEFAULT).expect("the default pattern is a literal")
             }
         }

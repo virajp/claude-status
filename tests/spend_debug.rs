@@ -61,6 +61,20 @@ fn config_with(show: &str) -> String {
 
 /// Runs `--debug`, returning both streams separately.
 fn debug(home: &TempDir, url: &str) -> Output {
+    debug_with_path(home, url, &std::env::var("PATH").unwrap_or_default())
+}
+
+/// The same, with `PATH` under the caller's control.
+///
+/// Pointing it at a directory that does not exist is how a test makes "no
+/// credentials" **true** rather than merely likely: redirecting `$HOME` removes
+/// the credentials *file*, but the macOS keychain arm shells out to `security`,
+/// which is not `$HOME`-scoped and on a logged-in machine returns a real token.
+/// Without this the invariant could not be asserted at all, only hoped for.
+///
+/// Not `PATH=""` — that is one empty entry, which resolves as the current
+/// directory. See `tests/spend_refresh.rs`'s `PathGuard` for the experiment.
+fn debug_with_path(home: &TempDir, url: &str, path: &str) -> Output {
     // The endpoint is passed in, so assert it here rather than trusting each
     // caller to have remembered. `http::fetch`'s own `#[cfg(test)]` check does
     // not apply to a subprocess, and the macOS keychain is not `$HOME`-scoped —
@@ -72,7 +86,7 @@ fn debug(home: &TempDir, url: &str) -> Output {
         .env_clear()
         .env("HOME", home.path())
         .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("PATH", path)
         .env("CLAUDE_STATUS_SPEND_URL", url)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -225,18 +239,26 @@ fn a_refused_connection_reports_the_transport_error() {
 
 #[test]
 fn no_credentials_names_both_places_it_looked() {
-    // A home with a config but no credentials file. On macOS the keychain is
-    // still reached and may hold a real token, so this asserts only on the
-    // shape of the answer, never that the fetch failed.
+    // A home with a config and no credentials file, **and** a `PATH` with no
+    // `security` on it — so both arms of `creds::load` fail on every machine.
+    //
+    // This used to assert only the shape of the answer, because the keychain
+    // arm was live and might hold a real token: the invariant in the test's own
+    // name went unverified precisely on the machines where it mattered, and a
+    // real OAuth token was read into the test process on every developer run.
     let dir = TempDir::new().unwrap();
     let config_dir = dir.path().join(".config");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::write(config_dir.join("claude-status.json"), config_with("always")).unwrap();
 
-    let out = debug(&dir, CLOSED_PORT_URL);
+    let out = debug_with_path(&dir, CLOSED_PORT_URL, "/nonexistent/claude-status-test-path");
     let (stdout, _) = streams(&out);
 
-    assert!(stdout.contains("creds"), "the credential stage is reported:\n{stdout}");
+    assert!(stdout.contains("creds    NONE"), "both sources must have failed:\n{stdout}");
+    // The point of the test's name: it says *where* it looked, both places.
+    assert!(stdout.contains(".credentials.json"), "it names the file:\n{stdout}");
+    assert!(stdout.contains("keychain"), "it names the keychain:\n{stdout}");
+    assert!(stdout.contains("not attempted"), "no credentials means no fetch:\n{stdout}");
     assert!(stdout.contains("VERDICT"), "it still ends in a verdict:\n{stdout}");
     assert_no_token(&out, "no-credentials");
 }

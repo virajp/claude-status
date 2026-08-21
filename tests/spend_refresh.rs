@@ -116,29 +116,52 @@ fn run_reported_against(url: &str, cache_path: &Path, with_credentials: bool) ->
     // broken test rather than a slow one.
     let _serialised = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let saved_path = std::env::var("PATH").ok();
+    // RAII, not trailing statements: `run_reported` below can panic, and a
+    // stranded `PATH` would make every later case in this binary pass for the
+    // wrong reason — still finding no credentials, but because the environment
+    // was broken rather than because the test arranged it.
+    let _path = PathGuard::new(with_credentials);
 
     // SAFETY: every writer of these variables in this binary holds ENV_LOCK.
     unsafe {
         std::env::set_var("HOME", home.path());
         std::env::set_var("CLAUDE_STATUS_SPEND_URL", url);
+    }
+
+    refresh::run_reported(cache_path, 15.0, 1_000_000, true)
+}
+
+/// Points `PATH` at a directory that does not exist, so `security` cannot be
+/// found — and puts the real one back on drop.
+///
+/// **Not `PATH=""`.** An empty `PATH` is one *empty entry*, which POSIX resolves
+/// as the **current directory** — verified by experiment: a `security`
+/// executable in the spawning process's cwd (for `cargo test`, the package
+/// root) is found, run, and its stdout parsed as an OAuth document. A
+/// kill-switch that instead executes an arbitrary local binary is worse than
+/// the hazard it replaces. `remove_var` is no good either: the C library then
+/// falls back to `_PATH_DEFPATH`, which contains `/usr/bin`.
+struct PathGuard(Option<String>);
+
+impl PathGuard {
+    fn new(with_credentials: bool) -> Self {
+        let saved = std::env::var("PATH").ok();
         if !with_credentials {
-            std::env::set_var("PATH", "");
+            // SAFETY: the caller holds ENV_LOCK for this guard's whole life.
+            unsafe { std::env::set_var("PATH", "/nonexistent/claude-status-test-path") };
+        }
+        Self(saved)
+    }
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        // SAFETY: as above — the lock outlives this guard.
+        match self.0.take() {
+            Some(path) => unsafe { std::env::set_var("PATH", path) },
+            None => unsafe { std::env::remove_var("PATH") },
         }
     }
-
-    let report = refresh::run_reported(cache_path, 15.0, 1_000_000, true);
-
-    // Restored before the lock is released — other tests spawn `git`.
-    // SAFETY: as above.
-    unsafe {
-        match saved_path {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-    }
-
-    report
 }
 
 /// Serialises the process-global environment these tests depend on.

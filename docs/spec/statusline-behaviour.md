@@ -146,8 +146,25 @@ applied in one place.
    only implied by the order the code happened to run in.
 
    The same asymmetry is why a test with a fake `$HOME` is **not** protected
-   from reaching the live endpoint, and why every test that can fetch pins
-   `$CLAUDE_STATUS_SPEND_URL` itself rather than trusting its runner.
+   from reaching the live endpoint. Two rules follow, and they are separate —
+   stating only the first is how three harnesses came to invent three different
+   answers to the second:
+
+   1. **Pin the endpoint.** Every test that can reach `http::fetch` sets
+      `$CLAUDE_STATUS_SPEND_URL` itself rather than trusting its runner to have
+      exported it.
+   2. **Neutralise *both* credential arms.** A fake `$HOME` removes the
+      credentials *file*. The keychain arm is not `$HOME`-scoped: it shells out
+      to `security`, so it is neutralised by pointing `PATH` at a directory that
+      does not exist. A test that wants credentials seeds the file instead; a
+      test that wants *none* must do both, or it is asserting whatever happens
+      to be true of the machine it ran on.
+
+   **`PATH=""` is not the way to do the second.** An empty `PATH` is a single
+   empty entry, which POSIX resolves as the **current directory** — so a
+   `security` binary sitting in the package root would be run and its stdout
+   parsed as an OAuth document. Unsetting `PATH` is no better: the C library
+   falls back to `_PATH_DEFPATH`, which includes `/usr/bin`.
 
 ---
 
@@ -518,19 +535,20 @@ built from Nerd Font glyphs, so filtering those would erase it.
 producer. There are **five** such points, one per surface, and a sixth surface
 would need its own:
 
-| Surface             | Chokepoint                                                                | Why there                                                                                   |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Main bar            | `segments::build`                                                         | Every segment's text is assembled through it                                                |
-| Subagent panel      | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering           |
-| Powerline seams     | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest of the five |
-| `--debug` report    | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                       |
-| `--debug` narration | `proc::narrate`                                                           | stderr is a terminal too, and it carries the cwd, the program name and its argv             |
+| Surface            | Chokepoint                                                                | Why there                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main bar           | `segments::build`                                                         | Every segment's text is assembled through it                                                                                                                |
+| Subagent panel     | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering                                                                           |
+| Powerline seams    | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest of the five                                                                 |
+| `--debug` report   | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                                                                                       |
+| stderr (all of it) | `_shared::diag`                                                           | stderr is a terminal too. `narrate` is the `--debug`-gated caller; the panic reporter, the unknown-segment warning and the bad-regex warning are the others |
 
-The narration surface was the last to be found, and for the usual reason:
-`narrate` writes to stderr rather than stdout, so it did not look like a
-rendering surface. It is one. It was reached by two `{}` writes of a path that
-were patched by hand — the per-write pattern this section exists to reject — and
-the rule now lives inside `narrate` itself.
+The stderr surface was the last to be found, and for the usual reason: it is not
+stdout, so it did not look like a rendering surface. It is one. It was first
+patched at two `{}` writes by hand — the per-write pattern this section exists
+to reject — then narrowed to `narrate`, which turned out to be **one of six**
+writers. `_shared::diag` is now the only `eprintln!` in the crate, which makes
+the rule checkable with a grep rather than by reading every call site.
 
 `--debug` earned a chokepoint rather than a call per write, and the reason is
 the cycle that added it: filtering the paths first missed the layout entries and

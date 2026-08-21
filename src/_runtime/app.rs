@@ -70,7 +70,7 @@ fn refresh_spend() -> String {
 fn render_statusline(debug: bool) -> String {
     let narrate = |msg: &str| {
         if debug {
-            eprintln!("claude-status: {msg}");
+            crate::_shared::diag(&format!("claude-status: {msg}"));
         }
     };
 
@@ -78,7 +78,7 @@ fn render_statusline(debug: bool) -> String {
         Ok(bar) => bar,
         Err(payload) => {
             // The real error goes to stderr; stdout still gets a usable line.
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             FALLBACK_LINE.to_string()
         }
     }
@@ -92,7 +92,7 @@ fn caps_hook() -> String {
     match catch_unwind(AssertUnwindSafe(build_caps_directive)) {
         Ok(out) => out,
         Err(payload) => {
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }
@@ -152,7 +152,7 @@ fn render_subagent() -> String {
     match catch_unwind(AssertUnwindSafe(build_panel)) {
         Ok(panel) => panel,
         Err(payload) => {
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }

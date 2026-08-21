@@ -6,6 +6,22 @@ pub mod paths;
 pub mod proc;
 pub mod time;
 
+/// **The stderr chokepoint** — contract §4a's fifth surface.
+///
+/// Everything this binary writes to stderr goes through here, sanitized. stderr
+/// is a terminal like stdout, and the diagnostics carry exactly the things most
+/// likely to be hostile: a cwd, a branch, a config value, a regex out of a
+/// config file, a segment id, or a panic message quoting any of them.
+///
+/// `narrate` in [`proc`] is the `--debug`-gated caller; this is the one that
+/// always writes. Callers pass the whole line, prefix included — the prefixes
+/// are static, so filtering them costs nothing and leaves one rule instead of
+/// two. §4a exists because the per-write alternative was tried and missed
+/// writers three times.
+pub fn diag(line: &str) {
+    eprintln!("{}", crate::render::sanitize(line));
+}
+
 /// Serialises the tests that mutate the process environment, and puts back
 /// whatever they changed.
 ///

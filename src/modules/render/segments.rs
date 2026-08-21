@@ -39,7 +39,7 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
 
     if !KNOWN.contains(&id) {
         // Warn and omit. Never fail the render, and never touch stdout.
-        eprintln!("statusline: unknown segment {id:?}");
+        crate::_shared::diag(&format!("statusline: unknown segment {id:?}"));
         return None;
     }
 
