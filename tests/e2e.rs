@@ -559,7 +559,6 @@ fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
         ),
     )
     .unwrap();
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();

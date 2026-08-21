@@ -145,7 +145,8 @@ pub fn spawn_detached(args: &[&str]) -> bool {
     let mut command = Command::new(exe);
     command.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
 
-    #[cfg(unix)]
+    // Its own process group, so a signal to this process's group — a Ctrl-C in
+    // the terminal Claude Code runs in — does not reach the refresh child.
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
@@ -164,25 +165,12 @@ mod tests {
         Path::new(".")
     }
 
-    /// The same trivial behaviours, spelled for whichever shell is present.
-    /// Windows gets real coverage here rather than a skip: this is the module
-    /// whose process handling is most likely to differ between platforms.
-    #[cfg(unix)]
+    /// The trivial behaviours this module's bounded runner has to get right.
     mod shell {
         pub const ECHO: (&str, &[&str]) = ("echo", &["hello"]);
         pub const ECHO_STDOUT: &str = "hello\n";
         pub const FAILS: (&str, &[&str]) = ("false", &[]);
         pub const NEVER_ENDS: (&str, &[&str]) = ("sleep", &["30"]);
-    }
-
-    #[cfg(windows)]
-    mod shell {
-        pub const ECHO: (&str, &[&str]) = ("cmd", &["/C", "echo hello"]);
-        pub const ECHO_STDOUT: &str = "hello\r\n";
-        pub const FAILS: (&str, &[&str]) = ("cmd", &["/C", "exit 1"]);
-        // `ping` is the portable way to make a Windows child wait while also
-        // producing output, so this exercises draining as well as the kill.
-        pub const NEVER_ENDS: (&str, &[&str]) = ("cmd", &["/C", "ping -n 60 127.0.0.1"]);
     }
 
     #[test]
@@ -216,18 +204,15 @@ mod tests {
         assert_eq!(run_bounded(shell::ECHO.0, shell::ECHO.1, cwd(), deadline), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_large_output_does_not_deadlock_on_a_full_pipe() {
         // Far more than a pipe buffer, which is where a non-draining wait would
-        // hang forever instead of timing out. `yes` has no Windows counterpart
-        // that floods a pipe as reliably; the kill path above covers the rest.
+        // hang forever instead of timing out.
         let out = run_bounded("yes", &["padding-line"], cwd(), Deadline::in_ms(200));
         // `yes` never exits, so it is killed: the point is that we get here.
         assert_eq!(out, None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn the_deadline_is_shared_not_per_command() {
         let deadline = Deadline::in_ms(300);
