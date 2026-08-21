@@ -3,3 +3,4 @@
 pub mod main_bar;
 pub mod powerline;
 pub mod segments;
+pub mod subagent;

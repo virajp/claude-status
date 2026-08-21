@@ -70,7 +70,7 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
 
 /// JavaScript truthiness, because `bold` was coerced with `!!` — a config
 /// carrying `"bold": 1` meant bold.
-fn truthy(v: &Value) -> bool {
+pub(crate) fn truthy(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Null => false,

@@ -125,6 +125,87 @@ fn the_fixture_renders_a_bar_on_stdout_and_nothing_on_stderr() {
     assert_eq!(stderr(&out), "", "a clean render says nothing");
 }
 
+/// The reference subagent payload from contract §12.
+const SUBAGENT_FIXTURE: &str = r#"{"columns":120,"tasks":[{"id":"t1","name":"reviewer",
+"type":"review","status":"running","description":"Auditing auth flow","tokenCount":18234}]}"#;
+
+#[test]
+fn the_subagent_fixture_renders_ndjson_that_survives_a_json_parser() {
+    let home = Home::new(&safe_config());
+    let out = run(&home, &["--subagent"], SUBAGENT_FIXTURE, &[]);
+
+    assert!(out.status.success(), "exit code {:?}", out.status.code());
+    let panel = stdout(&out);
+    assert_eq!(panel.lines().count(), 1);
+    assert!(!panel.ends_with('\n'), "no trailing newline");
+    assert_eq!(stderr(&out), "", "a clean panel says nothing");
+
+    // What `jq -r .content` does, which is how the contract says to read it.
+    let row: serde_json::Value = serde_json::from_str(&panel).expect("each line is a JSON object");
+    let content = row["content"].as_str().expect("content is a string");
+    assert_eq!(row["id"], "t1");
+    assert!(content.contains("reviewer"), "got: {}", content.escape_debug());
+    assert!(content.contains("Auditing auth flow"));
+    assert!(content.contains("18k"));
+    assert!(content.contains('\u{1b}'), "the row carries ANSI colour");
+}
+
+#[test]
+fn a_subagent_payload_with_no_tasks_renders_nothing_and_never_the_main_bar() {
+    let home = Home::new(&safe_config());
+    // The same fixture the main bar renders — under `--subagent` it must not.
+    for payload in ["{}", FIXTURE, r#"{"tasks":[]}"#] {
+        let out = run(&home, &["--subagent"], payload, &[]);
+        assert!(out.status.success());
+        assert_eq!(stdout(&out), "", "payload {payload:.20} produced output");
+    }
+}
+
+#[test]
+fn a_subagent_task_without_an_id_is_skipped_and_its_siblings_still_render() {
+    let home = Home::new(&safe_config());
+    let payload = r#"{"tasks":[{"name":"orphan","status":"done"},{"id":"kept","name":"sibling","status":"done"}]}"#;
+    let panel = stdout(&run(&home, &["--subagent"], payload, &[]));
+
+    assert_eq!(panel.lines().count(), 1, "got: {}", panel.escape_debug());
+    assert!(panel.contains("sibling"));
+    assert!(!panel.contains("orphan"));
+}
+
+#[test]
+fn a_generic_type_appears_as_a_glyph_and_never_as_text() {
+    let home = Home::new(&safe_config());
+    let payload = r#"{"tasks":[{"id":1,"type":"local_agent","status":"running"}]}"#;
+    let panel = stdout(&run(&home, &["--subagent"], payload, &[]));
+
+    assert!(!panel.contains("local_agent"), "the raw type leaked: {}", panel.escape_debug());
+    assert!(panel.contains('\u{f109}'), "the local_agent glyph is there: {}", panel.escape_debug());
+}
+
+#[test]
+fn a_subagent_render_writes_no_usage_mirror_and_leaves_the_spend_cache_alone() {
+    let home = Home::new(&safe_config());
+    let usage_dir = home.path().join("usage-mirror");
+    std::fs::create_dir_all(&usage_dir).unwrap();
+    let cache = home.path().join(".cache").join("claude-status").join("spend.json");
+    let before = std::fs::read(&cache).unwrap();
+
+    let payload = r#"{"session_id":"abc123","tasks":[{"id":1,"status":"running"}]}"#;
+    let out = run(&home, &["--subagent"], payload, &[("AI_PLUGINS_USAGE_DIR", usage_dir.to_str().unwrap())]);
+
+    assert!(out.status.success());
+    assert_eq!(std::fs::read_dir(&usage_dir).unwrap().count(), 0, "the mirror is the main bar's job");
+    assert_eq!(std::fs::read(&cache).unwrap(), before, "the panel never writes the spend cache");
+    // The structural guarantee is stronger than this assertion can be: the
+    // panel's pipeline never calls the spend resolver at all, so there is no
+    // gate to pass and no child to spawn.
+    assert!(!panel_mentions_spend(&stdout(&out)), "the panel renders no spend segment");
+}
+
+fn panel_mentions_spend(panel: &str) -> bool {
+    panel.contains('\u{f09d}')
+}
+
 #[test]
 fn version_is_exactly_the_version_with_or_without_debug() {
     let home = Home::new(&safe_config());
@@ -250,15 +331,16 @@ fn nothing_is_written_when_the_usage_env_var_is_unset() {
 }
 
 #[test]
-fn the_non_rendering_surfaces_are_recognised_and_silent() {
-    // `--refresh-spend` now does real work, but it is spawned with its stdio
-    // at /dev/null, so writing anything would be pointless — it stays silent.
+fn the_refresh_child_is_recognised_and_silent() {
+    // It does real work, but it is spawned with its stdio at /dev/null, so
+    // writing anything would be pointless — it stays silent.
+    //
+    // `--subagent` used to be tested here too, back when it was a recognised
+    // no-op. It renders now, and its own cases above cover it.
     let home = Home::new(&safe_config());
-    for flag in ["--subagent", "--refresh-spend"] {
-        let out = run(&home, &[flag], FIXTURE, &[]);
-        assert_eq!(stdout(&out), "", "{flag} writes nothing to stdout");
-        assert!(out.status.success(), "{flag} exits 0");
-    }
+    let out = run(&home, &["--refresh-spend"], FIXTURE, &[]);
+    assert_eq!(stdout(&out), "", "--refresh-spend writes nothing to stdout");
+    assert!(out.status.success(), "--refresh-spend exits 0");
 }
 
 #[test]

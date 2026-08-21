@@ -144,34 +144,34 @@ Two traps the contract calls out and one it gets wrong:
 Derived from [the behaviour contract](../spec/statusline-behaviour.md) §§2–3 and
 its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 
-- [ ] Given `--subagent` and a payload with **no** `tasks` array, when the
+- [x] Given `--subagent` and a payload with **no** `tasks` array, when the
       binary runs, then stdout is empty and the exit code is 0 — it never falls
       back to the main bar — this plan's decision
-- [ ] Given `--subagent` and a payload with a `tasks` array, when the binary
+- [x] Given `--subagent` and a payload with a `tasks` array, when the binary
       renders, then stdout is NDJSON — one JSON object per line, each with `id`
       and `content` — and not a single blob — from
       [contract §2](../spec/statusline-behaviour.md)
-- [ ] Given the §12 subagent fixture, when the output is piped through
+- [x] Given the §12 subagent fixture, when the output is piped through
       `jq -r .content`, then a sane single powerline row is printed — from
       [contract §10, Phase 2](../spec/statusline-behaviour.md)
-- [ ] Given a task with no `id`, when the binary renders, then that task is
+- [x] Given a task with no `id`, when the binary renders, then that task is
       skipped and the remaining tasks still render — from
       [contract §10, Phase 2](../spec/statusline-behaviour.md)
-- [ ] Given a task whose `type` is `"local_agent"`, when the binary renders,
+- [x] Given a task whose `type` is `"local_agent"`, when the binary renders,
       then the type appears as a glyph and the string `local_agent` appears
       nowhere in the output — from
       [contract §2](../spec/statusline-behaviour.md)
-- [ ] Given a task with no per-task `model` and a panel-wide `model`, when the
+- [x] Given a task with no per-task `model` and a panel-wide `model`, when the
       binary renders, then the panel-wide value is used; and given neither, the
       model segment is omitted — from
       [contract §2](../spec/statusline-behaviour.md)
-- [ ] Given `columns: 120` and a description longer than 54 characters, when the
+- [x] Given `columns: 120` and a description longer than 54 characters, when the
       binary renders, then the description is truncated to 53 units plus `…` —
       from [contract §3](../spec/statusline-behaviour.md)
-- [ ] Given statuses declared in a non-alphabetical order in a user config, when
+- [x] Given statuses declared in a non-alphabetical order in a user config, when
       the binary matches, then the first matching entry in **config order** wins
       — from [contract §3](../spec/statusline-behaviour.md)
-- [ ] Given a subagent payload, when the binary renders, then no spend cache is
+- [x] Given a subagent payload, when the binary renders, then no spend cache is
       read, no refresh child is spawned, and no usage mirror is written — from
       [contract §§7–8](../spec/statusline-behaviour.md)
 
@@ -208,4 +208,49 @@ its §10 Phase-2 verification clause; it carries no `Acceptance` blocks.
 
 ## Gaps surfaced during execution
 
-<!-- Appended by `execute`. Do not fill at plan time. -->
+- **The §3 amendment this plan promised was not owed.** The risk list says the
+  contract's §3 table claims `name` falls back to the task's `type`. It does
+  not: §2 already says "Do not fall back to showing it as the name", and §3
+  carries only the styling. The stale wording is in the **upstream**
+  `statusline.md` in `ai-plugins`, which is not this repo's to fix — it goes
+  with the Phase 5 cutover. Amended the two things that *were* missing instead:
+  the description budget, which §3 omitted entirely, and §12's fixture command.
+- **§12's subagent recipe was stale in a second way.** It piped the fixture into
+  a bare `claude-status`, which since the `main-bar` cycle made the flag choose
+  the surface renders the **main bar** — so the documented way to look at the
+  panel never showed the panel. Now spelled with `--subagent`, with a note
+  saying why the flag is not optional.
+- **A panic on this surface yields empty output, not `⚡ Claude`.** The JS entry
+  point printed the fallback line whichever surface was rendering. Here that
+  would be a line of NDJSON that is not JSON, and the consumer parses every
+  line. Deliberate divergence, recorded because it is the one place the panel
+  breaks the third invariant's *letter* while keeping its intent.
+- **The "no refresh child" criterion is proven structurally, not by assertion.**
+  `tests/e2e.rs` compares the spend cache bytes immediately after the process
+  exits, which a detached child could in principle beat. The real guarantee is
+  that `build_panel` never calls the spend resolver, so there is no gate to pass
+  and no child to spawn — but that is an argument about the code, not a test.
+  **Resolving step:** if the panel ever grows a reason to touch the cache, this
+  needs a real probe (a sentinel the child would overwrite), not a tightened
+  race.
+- **Two tests stopped meaning what their names said, and this cycle is why.**
+  `app::the_unbuilt_surfaces_are_silent` asserted `dispatch(Subagent) == ""`;
+  once the surface renders, that unit test inherits the real process's stdin,
+  `$HOME` and git root — the same hazard the `spend` cycle recorded when two of
+  its tests quietly became live-fetch tests. Removed, with the coverage moved to
+  `tests/e2e.rs`. `e2e::the_non_rendering_surfaces_are_recognised_and_silent`
+  was narrowed to `--refresh-spend` and renamed. **Worth generalising:** a cycle
+  that makes an inert surface live owes a pass over every test that asserted it
+  was inert — those tests keep passing and stop testing anything.
+- **The panel is still untested against a real Claude Code subagent payload.**
+  The plan's own risk, unchanged: every fixture here is hand-written from the
+  contract, including the three goldens. The `type`-is-always-generic trap was
+  learned the hard way once. **Resolving step:** capture a real payload the next
+  time subagents run and add it as a fourth golden.
+- **UTF-16 truncation shipped as planned, and the flaw is still there.** The
+  budget counts code units, so a CJK-heavy description occupies twice its
+  measured width and may wrap. Unchanged from the JS, and `unicode-width` would
+  break byte-fidelity with it, so it stays a decision rather than a quiet fix.
+- **One divergence not in the plan: a non-numeric `descBudgetFraction`.** In the
+  JS it produced a `NaN` budget, and `length > NaN` is false, so a hand-broken
+  config silently disabled truncation altogether. Here it falls back to `0.45`.

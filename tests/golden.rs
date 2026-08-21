@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use claude_status::config::{Config, layers};
 use claude_status::git::GitFacts;
 use claude_status::payload::{MainFacts, RateLimit};
+use claude_status::render::subagent::render_panel;
 use claude_status::render_bar;
 use serde_json::json;
 
@@ -124,6 +125,46 @@ fn the_spend_segment_renders_when_every_gate_passes() {
     assert_golden("spend", &render_bar(&fixture_facts(), &GitFacts::default(), &config, Some(spend)));
 }
 
+/// The reference subagent payload from contract §12, with the panel-wide model
+/// and effort the schema documents.
+fn subagent_fixture() -> serde_json::Value {
+    json!({
+        "columns": 120,
+        "model": { "display_name": "Opus 4.8" },
+        "effort": { "level": "high" },
+        "tasks": [{
+            "id": "t1",
+            "name": "reviewer",
+            "type": "review",
+            "status": "running",
+            "description": "Auditing auth flow",
+            "tokenCount": 18234,
+        }],
+    })
+}
+
+#[test]
+fn the_subagent_fixture_renders_one_ndjson_row() {
+    assert_golden("subagent", &render_panel(&subagent_fixture(), &config(), PINNED_NOW, None));
+}
+
+#[test]
+fn a_subagent_row_with_every_optional_segment_omitted_is_the_head_alone() {
+    // The other end of the range the row builder covers: no name, no model, no
+    // description, no tokens, no start time.
+    let payload = json!({ "tasks": [{ "id": 1, "status": "queued", "type": "local_agent" }] });
+    assert_golden("subagent_bare", &render_panel(&payload, &config(), PINNED_NOW, None));
+}
+
+#[test]
+fn a_subagent_panel_renders_one_row_per_task() {
+    let payload = json!({ "columns": 120, "tasks": [
+        { "id": "a", "name": "builder", "type": "task", "status": "done", "tokenCount": 1_200_000 },
+        { "id": "b", "name": "tester", "type": "test", "status": "error", "startTime": PINNED_NOW - 3_725_000i64 },
+    ] });
+    assert_golden("subagent_multi", &render_panel(&payload, &config(), PINNED_NOW, None));
+}
+
 #[test]
 fn every_golden_is_free_of_stray_control_characters() {
     // A golden should hold ANSI SGR sequences and text, and nothing else — no
@@ -131,7 +172,7 @@ fn every_golden_is_free_of_stray_control_characters() {
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         return; // the goldens are being written by sibling tests right now
     }
-    for name in ["fixture", "cold_start", "worktree", "thin_seam"] {
+    for name in ["fixture", "cold_start", "worktree", "thin_seam", "subagent", "subagent_bare", "subagent_multi"] {
         let body = std::fs::read_to_string(golden_path(name)).expect("golden exists");
         for ch in body.chars() {
             let ok = ch == '\u{1b}' || ch == '\n' || !ch.is_control();
