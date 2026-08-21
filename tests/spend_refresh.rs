@@ -73,6 +73,17 @@ fn stub(status: u16, reason: &str, body: &'static str) -> Stub {
 /// `HOME` is redirected too, so the credentials file is the fake one and the
 /// macOS keychain fallback is never reached.
 fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outcome {
+    // **The guard for this harness.** `http::fetch`'s own `#[cfg(test)]`
+    // assertion does not apply here: `cfg(test)` is false when the library is
+    // linked by an integration test, so the lib code these tests call is
+    // compiled without it. This is the only in-process harness that can reach
+    // the network, so the check has to live here.
+    assert_ne!(
+        url,
+        claude_status::spend::http::DEFAULT_URL,
+        "a test would have reached the real spend endpoint with a real token",
+    );
+
     let home = tempfile::TempDir::new().unwrap();
     if with_credentials {
         let claude = home.path().join(".claude");
@@ -108,6 +119,10 @@ fn temp_cache() -> (tempfile::TempDir, std::path::PathBuf) {
     let path = dir.path().join("spend.json");
     (dir, path)
 }
+
+/// Port 1 is reserved and nothing listens on it. Used where a test must reach
+/// the fetch path but must **not** be able to deliver a token to anything.
+const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/never";
 
 const MODERN: &str = r#"{"spend":{"used":{"amount_minor":7593},"limit":{"amount_minor":15000,"exponent":2},"percent":50.62,"enabled":true}}"#;
 const LEGACY: &str = r#"{"extra_usage":{"used_credits":7593,"monthly_limit":15000,"decimal_places":2,"utilization":50.62,"is_enabled":true}}"#;
@@ -215,14 +230,31 @@ fn a_connection_refusal_is_a_failure_not_a_panic() {
 #[test]
 fn without_credentials_nothing_is_fetched() {
     let (_dir, path) = temp_cache();
-    let server = stub(200, "OK", MODERN);
 
-    // On macOS the keychain is the fallback, and it is not scoped by $HOME —
-    // so this asserts on the request count rather than the outcome, which is
-    // the part that must hold on every machine.
-    let outcome = refresh_against(&server.url, &path, false);
-    if outcome == Outcome::NoCredentials {
-        assert_eq!(server.hits.load(Ordering::SeqCst), 0, "no credentials means no request");
-        assert_eq!(cache::read_from(&path).unwrap().failures, 1);
+    // **The closed port, not a live stub.** On macOS the keychain is the
+    // credential fallback and it is **not** scoped by `$HOME`, so on a machine
+    // where the user is logged into Claude Code this path finds a real token
+    // even with a fake home. Pointed at a listening stub, that token was sent
+    // to it as an `Authorization` header and captured — and the old `if
+    // outcome == NoCredentials` guard skipped every assertion in exactly the
+    // case where that happened, so the leak was invisible and the test proved
+    // nothing on the machines it mattered on.
+    //
+    // Against a closed port nothing can receive it. The two outcomes below are
+    // the two real machines this runs on: a CI box with no keychain item, and
+    // a developer's laptop with one.
+    let outcome = refresh_against(CLOSED_PORT_URL, &path, false);
+
+    match outcome {
+        // No keychain item: the fetch was never attempted.
+        Outcome::NoCredentials => {
+            assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure must still be recorded");
+        }
+        // A keychain item exists, so credentials resolved and the fetch was
+        // attempted against a port nothing listens on.
+        Outcome::Failed { .. } => {
+            assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure must still be recorded");
+        }
+        other => panic!("expected NoCredentials or Failed, got {other:?}"),
     }
 }

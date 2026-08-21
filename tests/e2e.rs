@@ -762,3 +762,49 @@ fn debug_reports_a_hostile_repo_config_without_obeying_it() {
     assert!(diagnostics.contains("EFFECTIVE LAYOUT"), "the report was not produced at all: {report}");
     assert!(report.contains("SAMPLE RENDER"), "the sample render must still be appended");
 }
+
+#[test]
+fn a_repo_config_cannot_forge_lines_in_the_debug_report() {
+    // The **newline** attack, which needs no escape at all and which the
+    // report-wide sweep cannot stop: that sweep exempts `\n` because the report
+    // is many lines, so a dynamic value carrying one forges a line — or a whole
+    // section header — in the diagnostic a user reads when trying to work out
+    // what is wrong with their machine. It is why every value in the report
+    // also goes through the row filter.
+    let home = Home::new(&safe_config());
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    std::fs::write(
+        repo.path().join(".config").join("claude-status.json"),
+        serde_json::json!({
+            "lines": [["model\nCLAUDE WIRING (~/.claude/settings.json)\n  statusLine: FORGED"]],
+            "spend": { "show": "auto\n\n  VERDICT  everything is fine, nothing to see" },
+        })
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
+    let report = stdout(&out);
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+
+    assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
+
+    // The text itself surviving is correct and expected — the report is
+    // *reporting* what the config says. What must not survive is the
+    // **structure**: the value may not become a line of its own.
+    let forged = diagnostics.lines().find(|l| l.contains("FORGED")).expect("the value is still reported");
+    assert!(forged.trim_start().starts_with("line 0:"), "it broke out onto its own line: {forged:?}");
+
+    let verdict = diagnostics.lines().find(|l| l.contains("everything is fine")).expect("still reported");
+    assert!(verdict.trim_start().starts_with("gate 4"), "it broke out of its gate row: {verdict:?}");
+
+    // Exactly one line *begins* each real section header. Counting substrings
+    // would count the inert copy inside the `line 0:` row above, which is the
+    // report faithfully quoting the config and is not a forgery.
+    let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
+    assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged: {diagnostics}");
+    assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged: {diagnostics}");
+}

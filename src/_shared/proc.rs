@@ -69,7 +69,10 @@ pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline
         narrate(&format!("skip {program} {args:?}: the budget was already spent"));
         return None;
     }
-    narrate(&format!("run {program} {args:?} in {}", cwd.display()));
+    // `{:?}` on the path, not `{}`: this is a stderr write like any other, and
+    // a directory name carrying an escape would repaint the terminal the
+    // narration is being read in. `Debug` escapes it; `Display` does not.
+    narrate(&format!("run {program} {args:?} in {:?}", cwd.display().to_string()));
 
     // A spawn failure and a command that ran and said nothing are both `None`
     // to the caller, and they mean completely different things: the first is a
@@ -86,8 +89,8 @@ pub fn run_bounded(program: &str, args: &[&str], cwd: &std::path::Path, deadline
         Ok(child) => child,
         Err(error) => {
             narrate(&format!(
-                "spawn {program} {args:?} in {} failed: {error} ({:?})",
-                cwd.display(),
+                "spawn {program} {args:?} in {:?} failed: {error} ({:?})",
+                cwd.display().to_string(),
                 error.kind(),
             ));
             return None;

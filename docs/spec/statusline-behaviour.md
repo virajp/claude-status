@@ -540,6 +540,18 @@ load-bearing:
   inside it already passed through `segments::build`. Sweeping it would strip
   the colours the section exists to show.
 
+**A dynamic value may never contribute a newline.** This is a rule, not a
+consequence of the one above, and it is why `--debug`'s report-wide sweep is
+**not** its only defence: that sweep exempts `\n` so the report can be many
+lines, and a value carrying one would forge a line, a section header, or a whole
+`CLAUDE WIRING` block in the diagnostic a user reads *because* they are trying
+to work out what is wrong. No escape is needed for that attack. Every value in
+the report therefore also goes through the row filter, which strips newlines;
+only the report's own structure may add them.
+
+The report may still *quote* a hostile value — that is it doing its job. What it
+may not do is let the value stop being a quoted value.
+
 **Known residual.** A dynamic value may still contain a private-use separator
 glyph and so *look* like a segment boundary. Accepted: the same config layer can
 already set the row's colours by design, and the line drawn here is between
@@ -782,6 +794,27 @@ Reproduce the verdict. It is the single most useful line the tool prints.
 >
 > As a *modifier* (`--statusline --debug`) this does not apply: a render still
 > never fetches, and stdout stays byte-identical.
+
+> **Amended 2026-08-21** (`macos-only` cycle), after review pointed out the
+> ordering was real in the code and unwritten here.
+>
+> **`--debug` fetches even when the user's own gates hide the segment.** The
+> four gates in §7 decide whether the figure is *drawn*; they do not decide
+> whether it is *fetched*. So `--debug` on a config with `spend` absent from
+> `lines` still performs the authenticated request, and then reports
+> `gate 1 ✗ HIDDEN`. That is deliberate and is the whole point of the mode: "you
+> have it switched off" and "your token is rejected" are different answers, and
+> a passive `--debug` could not tell them apart.
+>
+> **One thing does stop it, and the order matters:** the cache path is resolved
+> **first**, and no fetch happens when it is absent (invariant 5). With nowhere
+> to write the result there is nothing to diagnose and nothing to keep, so a
+> request would spend the account's rate limit to produce nothing.
+>
+> The corollary for tests: a fake `$HOME` does **not** make `--debug` or the
+> refresh path safe, because the macOS keychain is not `$HOME`-scoped. Anything
+> that can reach the fetch must pin `$CLAUDE_STATUS_SPEND_URL` **and** seed a
+> credentials file, so the file arm answers before the keychain is ever asked.
 
 ---
 

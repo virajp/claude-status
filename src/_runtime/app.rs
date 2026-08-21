@@ -264,6 +264,19 @@ fn debug_report() -> String {
     debug_report_with(&|config| crate::_runtime::debug::spend_report(config, time::now_ms()))
 }
 
+/// One dynamic value in the `--debug` report.
+///
+/// `render::sanitize` — the **row** filter, which strips newlines too. The
+/// report's own sweep exempts `\n` because the report is many lines, so a value
+/// that carried one could forge a line, a section header, or a whole
+/// `CLAUDE WIRING` block in a diagnostic the user is reading precisely because
+/// they are trying to work out what is wrong. Only the report's own structure
+/// may contribute newlines; nothing that came from a config, a path or a
+/// payload may.
+fn field(value: &str) -> String {
+    crate::render::sanitize(value)
+}
+
 fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
@@ -290,24 +303,24 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
             (None, _) => "<no $HOME>".to_string(),
         };
         let state = if source.loaded { "loaded" } else { "not found" };
-        let _ = writeln!(out, "  {:8} {state:10} {path}", source.label);
+        let _ = writeln!(out, "  {:8} {state:10} {}", source.label, field(&path));
     }
 
     let _ = writeln!(out, "\nCLAUDE WIRING (~/.claude/settings.json)");
     for line in claude_wiring() {
-        let _ = writeln!(out, "  {line}");
+        let _ = writeln!(out, "  {}", field(&line));
     }
 
     let _ = writeln!(out, "\nEFFECTIVE LAYOUT");
     for (i, line) in config.lines().iter().enumerate() {
-        let ids: Vec<String> = line.iter().map(describe_entry).collect();
+        let ids: Vec<String> = line.iter().map(describe_entry).map(|e| field(&e)).collect();
         let _ = writeln!(out, "  line {i}: {}", ids.join(", "));
     }
 
     let _ = writeln!(out, "\nGIT");
-    let _ = writeln!(out, "  cwd:      {}", cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string()));
-    let _ = writeln!(out, "  root:     {}", root.as_ref().map_or("<none>".into(), |r| r.display().to_string()));
-    let _ = writeln!(out, "  branch:   {}", branch.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "  cwd:      {}", field(&cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string())));
+    let _ = writeln!(out, "  root:     {}", field(&root.as_ref().map_or("<none>".into(), |r| r.display().to_string())));
+    let _ = writeln!(out, "  branch:   {}", field(branch.as_deref().unwrap_or("<none>")));
 
     let mut git_facts = GitFacts {
         worktree_subpath: cwd.as_deref().and_then(|c| git::worktree_subpath(c, &config.worktree_matcher())),
@@ -316,7 +329,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         ..Default::default()
     };
     git::resolve_markers(&mut git_facts);
-    let _ = writeln!(out, "  worktree: {}", git_facts.worktree_subpath.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "  worktree: {}", field(git_facts.worktree_subpath.as_deref().unwrap_or("<none>")));
     let _ = writeln!(out, "  ahead:    {}", git_facts.ahead);
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
@@ -330,7 +343,12 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     // and every path — and filtering those one write at a time is how several
     // of them were missed. One sweep covers whatever is added here later.
     //
-    // Newlines survive: the report is deliberately many lines.
+    // Newlines survive: the report is deliberately many lines. That exemption
+    // is why every dynamic value above ALSO goes through `field`, which strips
+    // them — a value carrying a `\n` would otherwise forge whole lines and
+    // section headers in a report the user reads to diagnose their machine.
+    // The sweep is the backstop for what a `field` call misses; it is not the
+    // only defence, because on its own it cannot be one.
     let mut out = crate::render::sanitize_report(&out);
 
     // Appended AFTER the sweep, because it is the one part whose escapes are

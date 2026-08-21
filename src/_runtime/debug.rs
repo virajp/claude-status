@@ -21,6 +21,13 @@ use crate::fmt::human_duration;
 use crate::modules::spend::refresh::{self, Outcome};
 use crate::modules::spend::{self, Gate, SpendConfig, Verdict, cache, extract};
 
+/// One dynamic value in the report. See `app.rs`'s `field` for why the row
+/// filter is used here rather than the report one: nothing that came from a
+/// config, a credential or the environment may contribute a newline.
+fn field(value: &str) -> String {
+    crate::render::sanitize(value)
+}
+
 /// Builds the `SPEND` section, fetching as it goes.
 pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let mut out = String::new();
@@ -34,7 +41,7 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
         return out;
     };
 
-    let _ = writeln!(out, "  cache    {}", path.display());
+    let _ = writeln!(out, "  cache    {}", field(&path.display().to_string()));
     let before = cache::read_from(&path);
     match before.as_ref() {
         None => {
@@ -79,10 +86,13 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let verdict = spend::verdict(after.as_ref(), &spend_config, &lines, config.symbol("spend"));
     write_gates(&mut out, after.as_ref(), &spend_config, &verdict);
 
+    // Filtered as one value rather than inside each branch: `verdict_of`
+    // returns a single line, and its arms interpolate the cached plan tag, the
+    // rendered figure and `spend.show` — all config- or credential-derived.
     let _ = writeln!(
         out,
         "\n  VERDICT  {}",
-        verdict_of(&report, &verdict, after.as_ref(), &spend_config, config, &path),
+        field(&verdict_of(&report, &verdict, after.as_ref(), &spend_config, config, &path)),
     );
 
     out
@@ -95,18 +105,18 @@ fn write_credentials(out: &mut String, report: &refresh::Report) {
     };
 
     let _ = writeln!(out, "  creds    {} ✓", source.describe());
-    let _ = writeln!(out, "           token ✓ (not shown)  plan={}", report.plan.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "           token ✓ (not shown)  plan={}", field(report.plan.as_deref().unwrap_or("<none>")));
 }
 
 fn write_fetch(out: &mut String, report: &refresh::Report) {
-    let _ = writeln!(out, "  fetch    GET {}", report.url);
+    let _ = writeln!(out, "  fetch    GET {}", field(&report.url));
     match report.status {
         Some(status) => {
             let _ = writeln!(out, "           {status} in {}ms", report.elapsed_ms);
         }
         None => match &report.outcome {
             Outcome::Failed { reason } => {
-                let _ = writeln!(out, "           FAILED after {}ms — {reason}", report.elapsed_ms);
+                let _ = writeln!(out, "           FAILED after {}ms — {}", report.elapsed_ms, field(reason));
             }
             _ => {
                 let _ = writeln!(out, "           not attempted");
@@ -187,7 +197,7 @@ fn write_gates(
         (3, gate_3, Gate::Disabled),
         (4, format!("show={}, plan={plan}", config.show), Gate::NotATeamPlan),
     ] {
-        let _ = writeln!(out, "  gate {n}   {label:<38}{}", mark(gate));
+        let _ = writeln!(out, "  gate {n}   {:<38}{}", field(&label), mark(gate));
     }
 }
 

@@ -320,6 +320,21 @@ mod tests {
         // warn about; a test must not depend on the runner to honour them.
         let mut env = crate::_shared::env_lock();
         env.set(crate::modules::spend::http::URL_ENV, "http://127.0.0.1:1/never");
+
+        // `$HOME` too, with a **seeded** credentials file. Pinning the endpoint
+        // alone still let this read the real `~/.claude/.credentials.json`, and
+        // failing that, prompt the macOS keychain — which is not `$HOME`-scoped
+        // and can block for seconds on a dialog. A fake home with a fake token
+        // means the file arm answers first and the keychain is never asked.
+        let fake_home = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(fake_home.path().join(".claude")).unwrap();
+        std::fs::write(
+            fake_home.path().join(".claude").join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"unit-test-stub","subscriptionType":"team"}}"#,
+        )
+        .unwrap();
+        env.set("HOME", fake_home.path().to_str().unwrap());
+
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("spend.json");
         cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None })
