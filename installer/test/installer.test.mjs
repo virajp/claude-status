@@ -49,7 +49,6 @@ before(() => {
   // The installer resolves `@askviraj/claude-status-<os>-<cpu>` relative to
   // itself, so stand one up beside the bundle.
   const pkg = `@askviraj/claude-status-${process.platform}-${process.arch}`;
-  const exe = BINARY_NAME;
   fakeModules = join(ROOT, "npm", "claude-status", "node_modules", pkg);
   mkdirSync(join(fakeModules, "bin"), { recursive: true });
   writeFileSync(
@@ -57,7 +56,7 @@ before(() => {
     JSON.stringify({ name: pkg, version: "6.0.0" }),
   );
   writeFileSync(
-    join(fakeModules, "bin", exe),
+    join(fakeModules, "bin", BINARY_NAME),
     "#!/bin/sh\necho 6.0.0\n",
     { mode: 0o755 },
   );
@@ -168,7 +167,13 @@ describe("unsupported platforms", () => {
   // this package does not ship to — which is the only way to test it from a
   // Mac.
   function runAs(home, platform, arch, args) {
-    const shim = join(home, "as-host.mjs");
+    // The shim lives OUTSIDE the home under test, so `snapshot(home)` can be
+    // asserted empty with no exclusions — an assertion that has to skip a file
+    // is an assertion with a hole in it.
+    const shim = join(
+      mkdtempSync(join(tmpdir(), "claude-status-shim-")),
+      "as-host.mjs",
+    );
     writeFileSync(
       shim,
       `Object.defineProperty(process, "platform", { value: ${
@@ -216,16 +221,18 @@ describe("unsupported platforms", () => {
         stderr,
         new RegExp(`unsupported platform ${platform}:${arch}`),
       );
-      assert.match(stderr, /darwin:arm64/);
-      assert.match(stderr, /darwin:x64/);
+      // The exact line, not two substring matches — this is the only place
+      // `supportedPlatforms()` is observable from outside, so it is where a
+      // silently re-added platform would show up.
+      assert.match(stderr, /^ {2}supported: darwin:arm64, darwin:x64$/m);
       assert.doesNotMatch(
         stderr,
         new RegExp(`claude-status-${platform}`),
         "an unsupported host must not be told to reinstall a package that does not exist",
       );
       assert.deepEqual(
-        Object.keys(snapshot(home)).filter(name => name !== "as-host.mjs"),
-        [],
+        snapshot(home),
+        {},
         "an unsupported platform must fail having touched nothing",
       );
     });

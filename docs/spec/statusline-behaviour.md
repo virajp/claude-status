@@ -772,10 +772,16 @@ npm refuse the install, the installer names the host it will not serve before
 writing anything, and the readme leads with it.
 
 `supported_targets()` in `.config/mise/tasks/_scripts/_rust` remains the single
-source; nothing else should hard-code the list or its length. Two lists are kept
-deliberately in step with it and named where they live: `PACKAGES` in
-`installer/src/modules/binary.ts` and the `build` matrix in
-`.github/workflows/release.yml`.
+source; nothing that can *derive* the list or its length may hard-code it. Four
+things cannot derive it, and each is kept in step by hand:
+
+1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
+2. `"os": ["darwin"]` in `npm/claude-status/package.json`.
+3. The `build` **and** `test` matrices in `.github/workflows/release.yml`. One
+   runner per published target in each: a build matrix that skips a target does
+   not ship it, and a test matrix that skips one ships it untested on its own
+   architecture. Both are failures, and only the first is currently caught.
+4. The crate, where a platform may need a `cfg` that macOS does not.
 
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the

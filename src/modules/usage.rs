@@ -88,20 +88,18 @@ fn number(v: Option<f64>) -> Value {
     }
 }
 
-/// Expands a leading `~`, `$HOME`, `${HOME}` or `%USERPROFILE%`.
+/// Expands a leading `~`, `$HOME` or `${HOME}`.
 ///
 /// Deliberately loose, matching the old implementation: `${HOME` and `$HOME}`
 /// expand too. Claude Code may or may not have expanded the value before
-/// exporting it, so every spelling arrives in the wild — and on Windows the
-/// unexpanded form is `%USERPROFILE%`, which no POSIX-shaped matcher would
-/// catch.
+/// exporting it, so every spelling arrives in the wild.
 pub(crate) fn expand_home(dir: &str) -> PathBuf {
     let Some(home) = crate::_shared::paths::home() else {
         return PathBuf::from(dir);
     };
     let home = home.to_string_lossy();
 
-    for prefix in ["${HOME}", "${HOME", "$HOME}", "$HOME", "%USERPROFILE%", "~"] {
+    for prefix in ["${HOME}", "${HOME", "$HOME}", "$HOME", "~"] {
         if let Some(rest) = dir.strip_prefix(prefix) {
             return PathBuf::from(format!("{home}{rest}"));
         }

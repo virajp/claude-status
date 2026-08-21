@@ -61,6 +61,17 @@ VERSION="$(crate_version)"
 print_header "Building claude-status ${VERSION} ..."
 
 if [[ -n "${usage_target:-}" ]]; then
+  # Validated against the table rather than passed straight to cargo. The
+  # removed Windows and Linux branches used to name the cause and the fix when
+  # a target could not be built; without them an unsupported triple would print
+  # "(apple cross)" and die in a raw linker error that explains nothing.
+  if ! supported_targets | awk '{print $1}' | grep -qx -- "${usage_target}"; then
+    print_error "${usage_target} is not a published target."
+    print_warn  "claude-status ships macOS only. Published targets:"
+    supported_targets | awk '{print "    " $1}'
+    print_warn  "The list lives in .config/mise/tasks/_scripts/_rust; see contract §9."
+    exit 1
+  fi
   build_one "${usage_target}"
 else
   while read -r target _os _cpu _exe; do

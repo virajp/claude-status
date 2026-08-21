@@ -1,34 +1,19 @@
-//! Locating the user's home directory, on every platform Claude Code runs on.
+//! Locating the user's home directory.
 
 use std::path::PathBuf;
 
 /// The user's home directory.
 ///
-/// `HOME` first, because it is what Unix uses and it is also what Git Bash and
-/// most POSIX-flavoured Windows shells set — and because honouring it lets a
-/// test point the whole binary at a throwaway directory. Then the native
-/// Windows variables.
+/// `$HOME` and nothing else. It is what macOS uses, and honouring it is what
+/// lets a test point the whole binary at a throwaway directory. This used to
+/// fall through to `USERPROFILE` and `HOMEDRIVE`+`HOMEPATH` behind a
+/// `cfg!(windows)`; the `macos-only` cycle removed the platform and the branch
+/// with it.
 ///
 /// Deliberately **not** a platform config directory: on macOS that resolves to
-/// `~/Library/Application Support` and would miss every existing install, and
-/// on Windows it would resolve to `%APPDATA%`, which is not where the installer
-/// writes.
+/// `~/Library/Application Support`, which would miss every existing install.
 pub fn home() -> Option<PathBuf> {
-    if let Some(home) = non_empty("HOME") {
-        return Some(PathBuf::from(home));
-    }
-
-    if cfg!(windows) {
-        if let Some(profile) = non_empty("USERPROFILE") {
-            return Some(PathBuf::from(profile));
-        }
-        // The last resort on a domain-joined machine with no USERPROFILE.
-        if let (Some(drive), Some(path)) = (non_empty("HOMEDRIVE"), non_empty("HOMEPATH")) {
-            return Some(PathBuf::from(format!("{drive}{path}")));
-        }
-    }
-
-    None
+    non_empty("HOME").map(PathBuf::from)
 }
 
 fn non_empty(key: &str) -> Option<String> {

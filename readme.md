@@ -28,14 +28,24 @@ something that cannot work, and the installer names the platform it will not
 serve before touching anything.
 
 Building from source is the only escape hatch, and it is genuinely unsupported —
-not a soft "we'd rather you didn't". Nothing outside macOS is built, tested or
-checked in CI, and two things are known to stand in the way: the crate calls a
-Unix API to put the detached refresh child in its own process group, so
-**Windows will not compile** without putting that back behind a `cfg`; and the
-TLS stack pulls in `ring`, whose C code needs a working target C toolchain, so
-even a Linux build is a toolchain problem before it is a Rust one. If you take
-that on, `supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the
-platform list lives.
+not a soft "we'd rather you didn't". On Linux, natively:
+
+```sh
+cargo build --release
+# then point Claude Code's statusLine at target/release/claude-status
+```
+
+That is a normal native build with no cross-compilation, and it is the only
+route anyone has a reason to try. Two things to know before you do. **Windows
+will not compile**: the crate calls a Unix API to put the detached refresh child
+in its own process group, and putting that back behind a `cfg` is a small change
+nobody has made. And on Linux the TLS stack pulls in `ring`, whose C code needs
+a working C toolchain — so the first failure you hit is likely a missing
+compiler rather than anything Rust. Nothing outside macOS is built, tested or
+checked in CI, so treat any of it as your own.
+
+`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
+list lives, and its comment names everything a new platform has to touch.
 
 ## Install
 

@@ -22,9 +22,20 @@ crate_version() {
 # pin, a preflight, a filename branch and a CI runner to keep unchecked. See
 # contract §9, whose six-target paragraph is struck through and annotated.
 #
-# Adding a platform back is a row here plus its `PACKAGES` entry in
-# `installer/src/modules/binary.ts` and a `build` matrix entry in
-# `.github/workflows/release.yml`. Everything else derives from this function.
+# Everything that COUNTS targets derives from this function — `target_count`,
+# `build:npm`'s staging and pin checks, `_rust_reassemble`, the release
+# workflow's staged-package check. Four things do NOT, and adding a platform
+# back means editing every one of them; nothing here catches a miss:
+#
+#   1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
+#   2. `"os": ["darwin"]` in `npm/claude-status/package.json` — npm refuses the
+#      install off macOS, so re-adding a row without this ships a wrapper that
+#      cannot be installed on the platform it now claims to serve.
+#   3. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
+#      runner each, so no artifact reaches npm untested on its own architecture.
+#   4. The crate itself. `spawn_detached` in `src/_shared/proc.rs` calls a Unix
+#      API unconditionally, so **Windows will not compile** until that goes back
+#      behind a `cfg`.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
