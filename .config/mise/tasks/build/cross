@@ -4,6 +4,7 @@
 
 #USAGE flag "--debug" help="emit debug logs"
 #USAGE flag "--target <target>" help="build one Rust target triple instead of every one"
+#USAGE flag "--host-only" help="skip targets this machine has no toolchain for, rather than failing"
 
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
@@ -21,6 +22,17 @@ cd "$MISE_PROJECT_ROOT"
 # builds fine today; picking the tool that survives that change avoids
 # rediscovering this later.
 ZIGBUILD="cargo-zigbuild"
+
+# Targets this machine has no toolchain for. Under --host-only they are
+# skipped and named; otherwise the first one is fatal, because a silent
+# partial build is how an incomplete release gets staged.
+SKIPPED=()
+unreachable() {
+  if [[ "${usage_host_only:-false}" != "true" ]]; then
+    exit 1
+  fi
+  SKIPPED+=("$1")
+}
 host_target() {
   rustc -vV | awk '/^host:/ {print $2}'
 }
@@ -47,7 +59,23 @@ build_one() {
       print_error "${target} needs cargo-xwin, which is not installed."
       print_warn  "Install it with:  mise use -g cargo:cargo-xwin"
       print_warn  "Or let CI build it: the release workflow uses a native Windows runner."
-      exit 1
+      unreachable "${target}"
+      return 0
+    fi
+    # cargo-xwin fetches the Windows SDK headers and import libraries, but not
+    # an archiver. `ring`'s C code needs one, and cc-rs looks for `llvm-lib` on
+    # PATH — without it the build dies thirty `ring` warnings deep in a raw
+    # cc-rs error that names neither the cause nor the fix.
+    if ! command -v llvm-lib >/dev/null 2>&1; then
+      print_newline
+      print_error "${target} needs llvm-lib, which is not installed."
+      print_warn  "cargo-xwin supplies the SDK; ring's C code still needs an archiver."
+      print_warn  "Install it with:  brew install llvm   (then add its bin/ to PATH)"
+      print_warn  "Or skip it: mise run build:cross --host-only builds what this machine can reach."
+      print_warn  "CI never needs this — the release workflow builds each Windows"
+      print_warn  "target on a native Windows runner, where MSVC supplies lib.exe."
+      unreachable "${target}"
+      return 0
     fi
     print_wait "  ${target} (xwin) ... "
     cargo-xwin xwin build --release --target "${target}" ${VERBOSE} >/dev/null
@@ -56,8 +84,9 @@ build_one() {
       print_newline
       print_error "${target} needs ${ZIGBUILD}, which is not installed."
       print_warn  "Install it with:  mise use -g cargo:cargo-zigbuild zig"
-      print_warn  "Or build only the targets this host can reach: mise run build:cross --target <triple>"
-      exit 1
+      print_warn  "Or build only the targets this host can reach: mise run build:cross --host-only"
+      unreachable "${target}"
+      return 0
     fi
     print_wait "  ${target} (zigbuild) ... "
     "${ZIGBUILD}" zigbuild --release --target "${target}" ${VERBOSE} >/dev/null
@@ -85,6 +114,14 @@ else
     [[ -z "${target}" ]] && continue
     build_one "${target}"
   done < <(supported_targets)
+fi
+
+if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+  print_warn "Skipped ${#SKIPPED[@]} target(s) this machine has no toolchain for:"
+  for target in "${SKIPPED[@]}"; do
+    print_warn "  ${target}"
+  done
+  print_warn "This is NOT a complete build — build:npm will refuse to stage a partial set."
 fi
 
 print_header "Cross build done."

@@ -65,6 +65,7 @@ fn debug(home: &TempDir, url: &str) -> Output {
         .arg("--debug")
         .env_clear()
         .env("HOME", home.path())
+        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("CLAUDE_STATUS_SPEND_URL", url)
         .stdin(Stdio::null())

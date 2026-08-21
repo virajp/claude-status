@@ -18,6 +18,14 @@
 //! The fourth was added when `--refresh-spend` and `--debug` stopped being
 //! inert: the first three were written while nothing in this binary could
 //! fetch, and a fake home alone was never enough once something could.
+//!
+//! The **fifth** is `CLAUDE_STATUS_SPEND_CACHE`, pinned into the fake home
+//! rather than left to `$HOME` redirection alone. `cache::path()` falls back to
+//! `paths::home()`, which reads the process environment — so a future in-process
+//! caller would land on the developer's real cache with nothing to stop it. The
+//! endpoint has had a two-deep guard since the spend cycle; the cache had one,
+//! and that asymmetry is the shape of the unexplained write that cycle
+//! recorded and could not attribute.
 
 use std::io::Write;
 use std::path::Path;
@@ -86,6 +94,7 @@ fn run(home: &Home, args: &[&str], stdin: &str, extra_env: &[(&str, &str)]) -> O
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         // See the module docs on the spend hazard.
         .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
+        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
