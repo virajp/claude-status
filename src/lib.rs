@@ -29,4 +29,4 @@ mod modules;
 pub use _runtime::app::{render_bar, run};
 pub use _runtime::cli;
 pub use _shared::{fmt, json, proc, time};
-pub use modules::{config, git, payload, render, spend, usage};
+pub use modules::{caps, config, git, payload, render, spend, usage};
