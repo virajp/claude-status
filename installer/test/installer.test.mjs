@@ -560,10 +560,12 @@ describe("--install", () => {
 });
 
 describe("config migration", () => {
-  it("moves statusline.json to the new name, keeping its bytes", () => {
+  it("moves statusline.json to the new name, keeping its bytes when nothing changed", () => {
     const home = newHome();
     mkdirSync(join(home, ".config"), { recursive: true });
     const legacy = join(home, ".config", "statusline.json");
+    // The template already carries this repo's $schema and every key, so this
+    // migration has nothing to rewrite and must not reformat the file.
     cpSync(ASSET, legacy);
     const original = sha(legacy);
 
@@ -575,6 +577,138 @@ describe("config migration", () => {
       original,
       "the theming survives verbatim",
     );
+  });
+
+  it("repoints a migrated config's $schema at this repo", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "statusline.json"),
+      JSON.stringify({
+        $schema:
+          "https://raw.githubusercontent.com/virajp/ai-plugins/main/schemas/statusline.schema.json",
+        defaultFg: "aqua",
+      }),
+    );
+
+    run(home, ["--install"]);
+
+    const config = json(join(home, ".config", "claude-status.json"));
+    assert.match(
+      config.$schema,
+      /virajp\/claude-status\/main\/schemas\/claude-status\.schema\.json$/,
+      "a file kept under the JS bar's schema URL validates against the wrong schema forever",
+    );
+    assert.equal(config.defaultFg, "aqua", "every other key is carried across");
+  });
+
+  it("tops a migrated config up with the template's missing top-level keys", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "statusline.json"),
+      JSON.stringify({ defaultFg: "aqua" }),
+    );
+
+    const { stdout } = run(home, ["--install"]);
+
+    const config = json(join(home, ".config", "claude-status.json"));
+    assert.equal(
+      config.defaultFg,
+      "aqua",
+      "the user's value is never replaced",
+    );
+    const template = json(ASSET);
+    for (const key of Object.keys(template)) {
+      if (key === "projectName") {
+        continue;
+      }
+      assert.ok(
+        key in config,
+        `\`${key}\` should have been added from the template`,
+      );
+    }
+    assert.match(stdout, /added \d+ missing keys? from the template/);
+  });
+
+  it("the template carries no projectName, so a migration cannot gain one", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "statusline.json"),
+      JSON.stringify({ defaultFg: "aqua" }),
+    );
+
+    run(home, ["--install"]);
+
+    assert.ok(
+      !("projectName" in json(ASSET)),
+      "projectName is repo-level only and must not ship in the defaults",
+    );
+    assert.ok(
+      !("projectName" in json(join(home, ".config", "claude-status.json"))),
+      "the user layer must not gain a name the repo layer owns",
+    );
+  });
+
+  it("adds whole top-level keys without reaching inside one the user owns", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "statusline.json"),
+      JSON.stringify({ segments: { cost: { bg: "red" } } }),
+    );
+
+    run(home, ["--install"]);
+
+    assert.deepEqual(
+      json(join(home, ".config", "claude-status.json")).segments,
+      { cost: { bg: "red" } },
+      "a customised object is left exactly as written",
+    );
+  });
+
+  it("does not top up a claude-status.json that was already there", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    const config = join(home, ".config", "claude-status.json");
+    writeFileSync(config, JSON.stringify({ defaultFg: "aqua" }));
+    const before = sha(config);
+
+    run(home, ["--install"]);
+
+    assert.equal(sha(config), before, "an existing config is still left alone");
+  });
+
+  it("still seeds a fresh install as a byte copy of the template", () => {
+    const home = newHome();
+
+    run(home, ["--install"]);
+
+    assert.equal(
+      sha(join(home, ".config", "claude-status.json")),
+      sha(ASSET),
+      "the seed path must stay a byte copy — the glyphs do not survive a re-encode",
+    );
+  });
+
+  it("discards a legacy file that is not a JSON object and seeds instead", () => {
+    for (const body of ["[1, 2, 3]", "null", "0", "\"x\"", "{ not json"]) {
+      const home = newHome();
+      mkdirSync(join(home, ".config"), { recursive: true });
+      const legacy = join(home, ".config", "statusline.json");
+      writeFileSync(legacy, body);
+
+      const { stdout } = run(home, ["--install"]);
+
+      assert.equal(
+        sha(join(home, ".config", "claude-status.json")),
+        sha(ASSET),
+        `${body} should have been replaced by the seeded defaults`,
+      );
+      assert.ok(!existsSync(legacy), `${body} should have been removed`);
+      assert.match(stdout, /discarded .*statusline\.json/);
+    }
   });
 
   it("leaves the old file alone when both names exist", () => {
@@ -835,20 +969,33 @@ describe("--configure", () => {
     });
   });
 
-  it("migrates statusline.json to the new name, keeping its bytes", () => {
+  it("migrates statusline.json, keeping its keys and repointing $schema", () => {
     const home = newHome();
     const root = newRepo();
     mkdirSync(dirname(legacyConfig(root)), { recursive: true });
-    const body =
-      "{\n  \"projectName\": \"from-legacy\",\n  \"defaultFg\": \"aqua\"\n}\n";
-    writeFileSync(legacyConfig(root), body);
+    writeFileSync(
+      legacyConfig(root),
+      JSON.stringify({
+        $schema:
+          "https://raw.githubusercontent.com/virajp/ai-plugins/main/schemas/statusline.schema.json",
+        projectName: "from-legacy",
+        defaultFg: "aqua",
+      }),
+    );
 
     run(home, ["--configure"], { cwd: root });
 
+    const config = json(repoConfig(root));
     assert.equal(
-      readFileSync(repoConfig(root), "utf8"),
-      body,
-      "a migration is a rename, not a re-encode",
+      config.projectName,
+      "from-legacy",
+      "a name the user set is kept",
+    );
+    assert.equal(config.defaultFg, "aqua", "the theming survives");
+    assert.match(
+      config.$schema,
+      /claude-status\/main\/schemas\/claude-status\.schema\.json$/,
+      "this is why a migration cannot be a plain rename",
     );
     assert.ok(!existsSync(legacyConfig(root)), "the old name is gone");
   });
@@ -861,10 +1008,10 @@ describe("--configure", () => {
 
     run(home, ["--configure"], { cwd: root });
 
-    assert.deepEqual(json(repoConfig(root)), {
-      defaultFg: "aqua",
-      projectName: "named-by-dir",
-    });
+    const config = json(repoConfig(root));
+    assert.equal(config.defaultFg, "aqua");
+    assert.equal(config.projectName, "named-by-dir");
+    assert.match(config.$schema, /claude-status\.schema\.json$/);
   });
 
   it("leaves the legacy file alone when both names exist", () => {
@@ -878,6 +1025,20 @@ describe("--configure", () => {
 
     assert.equal(json(repoConfig(root)).projectName, "current");
     assert.equal(json(legacyConfig(root)).projectName, "old");
+  });
+
+  it("discards a legacy repo config that is not a JSON object", () => {
+    const home = newHome();
+    const root = newRepo("discarded-repo");
+    mkdirSync(dirname(legacyConfig(root)), { recursive: true });
+    writeFileSync(legacyConfig(root), "[1, 2, 3]");
+
+    run(home, ["--configure"], { cwd: root });
+
+    const config = json(repoConfig(root));
+    assert.equal(config.projectName, "discarded-repo");
+    assert.match(config.$schema, /claude-status\.schema\.json$/);
+    assert.ok(!existsSync(legacyConfig(root)), "the unusable file is removed");
   });
 
   it("refuses a repo config that is not a JSON object", () => {

@@ -111,6 +111,30 @@ overriding `lines` replaces the layout rather than appending to it.
 Styling resolves **inline override → `segments.<id>` → hard fallback**. A colour
 is a palette name, a `#rrggbb` string, or an `[r, g, b]` triple.
 
+### Getting a repo layer
+
+`npx @askviraj/claude-status --configure`, run from inside a repo, writes layer
+3: it migrates a repo-level `statusline.json` if it finds one, and otherwise
+seeds `projectName` from the repo's directory name. An existing file is kept and
+only gains `projectName` if that key was missing.
+
+You usually do not have to. `autoConfigureRepo` is **true by default**, so a
+`--statusline` render in a repo with no layer 3 creates it by the same rules.
+Set `"autoConfigureRepo": false` in layer 2 to opt out. Only `--statusline` ever
+writes; `--subagent` and the caps hook stay read-only, and every failure is
+silent, because stdout is the bar.
+
+`projectName` is **repo-level only**. It ships in neither the embedded defaults
+nor the seeded user config, so a repo that has not been configured omits the
+`project` segment rather than inheriting a name that was never about it.
+
+Migrating a `statusline.json` — at either level — rewrites rather than renames:
+the old file points `$schema` at the `ai-plugins` repo, and a file kept under
+that URL is validated against the wrong schema forever. Every other key is
+carried across untouched, and the old file is deleted once the new one is on
+disk. A legacy file that is not a JSON object has no key to set `$schema` on, so
+it is discarded for a fresh config rather than carried across.
+
 ### Segments
 
 | id         | Shows                            | Omitted when                           |
@@ -172,8 +196,9 @@ leaves stdout byte-identical.
 `$AI_PLUGINS_SPEND_URL` are **gone**, replaced by the `CLAUDE_STATUS_` names
 above. `$AI_PLUGINS_USAGE_DIR` still works — it is read after
 `$CLAUDE_STATUS_USAGE_DIR` and will be dropped once the JS bar is retired. The
-installer moves `~/.config/statusline.json` to the new name, keeping your
-theming, and offers to remove what the old install left behind.
+installer migrates `~/.config/statusline.json` to the new name, keeping your
+theming and repointing `$schema`, then adds any top-level keys the template has
+and your file lacks. It also offers to remove what the old install left behind.
 
 ## Building
 

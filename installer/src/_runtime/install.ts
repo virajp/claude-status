@@ -120,6 +120,16 @@ export async function install(
         sha256: outcome.sha256,
       });
       did(`config   ${tilde(paths.config, paths)} (seeded)`);
+      // Said out loud, because it is the one path that removes a file without
+      // carrying anything out of it. Not recorded as `movedFrom`: the bytes are
+      // gone, so an uninstall could not put them back and must not claim to.
+      if (outcome.discarded) {
+        did(
+          `config   discarded ${
+            tilde(outcome.discarded, paths)
+          } — it was not a JSON object`,
+        );
+      }
       break;
     case "migrated":
       entries.push({
@@ -134,6 +144,15 @@ export async function install(
           tilde(paths.config, paths)
         } (migrated)`,
       );
+      // Named, not counted. A user who theming-edited that file deserves to
+      // see which keys the installer put back into it.
+      if (outcome.added.length > 0) {
+        did(
+          `config   added ${outcome.added.length} missing key${
+            outcome.added.length === 1 ? "" : "s"
+          } from the template: ${outcome.added.join(", ")}`,
+        );
+      }
       break;
   }
 

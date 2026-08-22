@@ -18,7 +18,7 @@ import {
   fail,
   mkdirSync,
   readJson,
-  renameSync,
+  rmSync,
   say,
   step,
   warn,
@@ -109,28 +109,45 @@ export function configure(
     return report(paths.config, opts);
   }
 
-  // 2. Only the legacy name — move it, so whatever theming it carries survives
-  //    the rename. Same bytes, new name, exactly as the user-level migration.
+  // 2. Only the legacy name — migrate it. **Not** a rename: the file carries
+  //    the JS bar's `$schema`, and one kept under that URL is validated against
+  //    the wrong schema for the rest of its life. Every other key is carried
+  //    across untouched, so the theming survives.
   if (existsSync(paths.legacyConfig)) {
+    const carried = readJson<Record<string, unknown>>(paths.legacyConfig);
+    const isObject = carried !== null
+      && typeof carried === "object"
+      && !Array.isArray(carried);
+
+    // Not an object: there is no key to set `$schema` on, so nothing here can
+    // be made to conform. It is discarded for the seed — the JS bar could not
+    // parse this file either, so it was never configuring anything.
+    const migrated: Record<string, unknown> = isObject
+      ? { ...carried, $schema: repo.SCHEMA_URL }
+      : { $schema: repo.SCHEMA_URL };
+    if (!isObject) {
+      did(
+        `config   ${paths.legacyConfig} is not a JSON object — discarded for a fresh config`,
+      );
+    }
+    const named = hasProjectName(migrated);
+    if (!named) {
+      migrated["projectName"] = name;
+    }
+
     if (!opts.dryRun) {
       mkdirSync(dirname(paths.config), { recursive: true });
-      renameSync(paths.legacyConfig, paths.config);
+      writeJson(paths.config, migrated);
+      // Removed only once the new file is on disk, so an interrupted migration
+      // leaves the old file rather than neither.
+      rmSync(paths.legacyConfig, { force: true });
     }
-    did(`config   ${paths.legacyConfig} → ${paths.config} (migrated)`);
-
-    // A migrated file need not have carried a name; the dry run reads the file
-    // still sitting under its old name, which holds the same keys.
-    const migrated = readJson<Record<string, unknown>>(
-      opts.dryRun ? paths.legacyConfig : paths.config,
+    did(
+      isObject
+        ? `config   ${paths.legacyConfig} → ${paths.config} (migrated, $schema repointed)`
+        : `config   ${paths.config} (seeded)`,
     );
-    if (
-      migrated && typeof migrated === "object" && !Array
-        .isArray(migrated) && !hasProjectName(migrated)
-    ) {
-      migrated["projectName"] = name;
-      if (!opts.dryRun) {
-        writeJson(paths.config, migrated);
-      }
+    if (!named) {
       did(`config   projectName → ${name}`);
     }
     return report(paths.config, opts);

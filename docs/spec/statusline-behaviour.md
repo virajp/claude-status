@@ -276,6 +276,55 @@ Two traps here, both learned the hard way:
 > Until the Phase 5 cutover **both files exist on purpose** — the JS bar is
 > still live and still reads the old name. Neither is stale.
 
+> **Amended 2026-08-22** (`repo-autoconfig` cycle). Layer 3 may now be
+> **created** by a render, and `projectName` leaves layers 1 and 2 entirely.
+>
+> `autoConfigureRepo` — a boolean, **default `true`** — lets a `--statusline`
+> render that finds no layer 3 write one: a repo-level `statusline.json` is
+> migrated if present, otherwise `projectName` is seeded from the repo
+> directory's name. Writing `false` into layer 2 opts out.
+> `npx @askviraj/claude-status --configure` applies the identical rules
+> explicitly, for anyone who would rather it never happen on the render path.
+>
+> **`projectName` is repo-level only.** It ships in neither the embedded
+> defaults nor the seeded user config, and the shipped schema describes it
+> *without* the asset carrying it — the one deliberate asymmetry between the
+> two, pinned by name in `defaults_integrity`. A key that identifies one repo
+> has no meaningful value at a layer shared by all of them: embedding the old
+> `"Project-Name"` placeholder meant every unconfigured repo rendered the same
+> fictional name. A cold start now omits the segment, which is why the
+> `cold_start` golden is one line rather than two.
+>
+> **A migration rewrites; it does not rename.** The legacy file points `$schema`
+> at the `ai-plugins` repo, and one kept under that URL is validated against the
+> wrong document for the rest of its life. So `$schema` is repointed and the
+> file written under the new name, the old one removed only once the new one is
+> on disk. Every other key is carried across untouched. A legacy file that is
+> **not a JSON object** has nothing to set `$schema` on and is moved as-is. This
+> applies at both levels and in both writers — the binary and the installer.
+>
+> Four constraints make the render-path write safe:
+>
+> - **Read from layers 1 and 2 only.** The flag is resolved before layer 3
+>   exists, so a repo cannot enable its own creation. The accessor's fallback is
+>   `true`, matching the shipped default, so a config that failed to parse
+>   behaves like one that was never written.
+> - **`--statusline` only.** `--subagent` and the caps hook resolve a repo root
+>   too and stay strictly read-only, so there is exactly one writer.
+> - **Silent on every failure.** A read-only checkout, a `.config` that is a
+>   file, a full disk: the render proceeds. Invariant 3 outranks seeding a
+>   convenience file, and invariant 1 leaves nowhere to complain to. An existing
+>   layer-3 file that does not parse is never overwritten — the create path
+>   re-checks for the *file*, not for a successful parse.
+> - **Costs one stat when off or already done.** `layers::load` already stats
+>   layer 3; the create path is reached only when that stat came back empty. The
+>   render that writes re-reads the layers, so the name appears on that render
+>   rather than the next.
+>
+> The write is atomic (temp file, then rename), because two sessions can render
+> in the same repo at once, and indented rather than compact, because unlike the
+> spend cache this is a file a person opens.
+
 A layer that is missing, unreadable, malformed, or **not a JSON object** is
 ignored rather than fatal; the render proceeds on the layers below it.
 

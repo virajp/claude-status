@@ -20,10 +20,12 @@ export const LEGACY_CONFIG_FILE_NAME = "statusline.json";
 
 /**
  * The published schema, so an editor gives completions on a freshly written
- * repo config. The same URL the shipped defaults and the user config carry.
+ * repo config, and so a migrated one stops pointing at the JS bar's.
+ *
+ * Re-exported from the config module rather than restated: two copies of a URL
+ * is one copy that gets updated.
  */
-export const SCHEMA_URL =
-  "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json";
+export { SCHEMA_URL } from "./config.js";
 
 export type RepoResult =
   | { ok: true; root: string; }
