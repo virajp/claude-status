@@ -57,19 +57,19 @@ Three passages are repo-developer content on a package listing:
   is "genuinely unsupported — not a soft *we'd rather you didn't*" is an
   argument aimed at contributors.
 
-There is no `CONTRIBUTING.md` and no `docs/development.md`, so today the readme
-is the only home this content has. That is why it is there, and it is why this
-plan has to give it somewhere to go rather than just deleting it.
+There is no `CONTRIBUTING.md`, so today the readme is the only home this content
+has. That is why it is there, and it is why this plan has to give it somewhere
+to go rather than just deleting it.
 
 ## Target state (per contract)
 
 `readme.md` reads as a package page: what it is, what it looks like, what it
 needs, how to install, how to configure, how to diagnose, how to remove.
 
-Developer content moves to **`docs/development.md`** — building, the task
-library, the target table, and the from-source notes — linked once from the
-readme in a single line near the end, so a contributor arriving via GitHub is
-not stranded.
+Developer content moves to **`CONTRIBUTING.md`** at the repo root — building,
+the task library, the target table, and the from-source notes — linked once from
+the readme in a single line near the end, so a contributor arriving via GitHub
+is not stranded.
 
 The readme keeps a short Requirements section, because "Apple Silicon Mac only"
 is exactly the kind of thing a prospective user must learn *before* installing,
@@ -77,7 +77,7 @@ not after `EBADPLATFORM`.
 
 ## Delta — ordered steps
 
-### 1. Create `docs/development.md`
+### 1. Create `CONTRIBUTING.md`
 
 Move `Building` and `Running it elsewhere` there verbatim first, then edit in
 place. Moving and rewriting in one step is how the reasoning in those paragraphs
@@ -91,7 +91,7 @@ file; `mise run` commands there still exist in `mise tasks`.
 
 Three facts: Apple Silicon Mac only; Node 18+ to run the installer once, nothing
 after; npm refuses other platforms with `EBADPLATFORM` rather than installing
-something broken. The from-source argument goes to `docs/development.md`.
+something broken. The from-source argument goes to `CONTRIBUTING.md`.
 
 → **verify:** the section is short enough to read before the fold, and states
 the Intel exclusion explicitly — after plan 1, npm's terse error is the only
@@ -99,8 +99,8 @@ other place a user learns it.
 
 ### 3. Drop `Building` from the readme
 
-Replaced by one line: a pointer to `docs/development.md` for anyone wanting to
-build or contribute.
+Replaced by one line: a pointer to `CONTRIBUTING.md` for anyone wanting to build
+or contribute.
 
 → **verify:** no `mise run` invocation remains in `readme.md`.
 
@@ -112,7 +112,7 @@ assumptions: links that resolve only on GitHub, references to files by path,
 "see the contract" pointers that a package reader cannot follow.
 
 Relative links are the concrete hazard. npm does not reliably rewrite them, and
-a `docs/development.md` link that 404s on npmjs.com is worse than no link. Use
+a `CONTRIBUTING.md` link that 404s on npmjs.com is worse than no link. Use
 absolute `https://github.com/virajp/claude-status/blob/main/…` URLs for anything
 outside the package, exactly as the screenshot already does and for the same
 reason.
@@ -121,12 +121,17 @@ reason.
 
 ### 5. Keep the two audiences from diverging
 
+`CONTRIBUTING.md` at the repo root is not just a filename: GitHub surfaces it in
+the new-issue and pull-request flows, so a contributor is pointed at it without
+having to go looking. That is a better outcome than `docs/development.md`, which
+nothing links to automatically.
+
 `readme.md` is now the package page **and** the repository landing page — GitHub
 renders it too. That is fine; the two audiences want the same first 80% and
 diverge only at "how do I work on this", which is now one link.
 
-Note it in `docs/development.md` so the next person editing the readme knows
-they are editing an npm page.
+Note it in `CONTRIBUTING.md` so the next person editing the readme knows they
+are editing an npm page.
 
 → **verify:** the note exists; `/vwf:docs-sync` over the cycle's commit range.
 
@@ -134,8 +139,8 @@ they are editing an npm page.
 
 1. `readme.md` contains no `cargo` invocation and no `mise run` invocation.
 2. Every link in `readme.md` is absolute or an in-page anchor.
-3. `docs/development.md` exists and carries the build instructions, the task
-   library and the from-source notes, with their reasoning intact.
+3. `CONTRIBUTING.md` exists and carries the build instructions, the task library
+   and the from-source notes, with their reasoning intact.
 4. `Requirements` states Apple Silicon only, in the first screen of the page.
 5. The staged `README.md` is byte-identical to `readme.md`.
 
@@ -143,19 +148,20 @@ they are editing an npm page.
 
 **Content moved is content that stops being read.** The Windows and Linux
 compile notes are genuinely useful to the next person who considers adding a
-target, and burying them in `docs/development.md` makes them easier to miss.
-Contract §9 is the durable home for the *decision*; `docs/development.md` should
+target, and burying them in `CONTRIBUTING.md` makes them easier to miss.
+Contract §9 is the durable home for the *decision*; `CONTRIBUTING.md` should
 carry the mechanics and point at §9.
 
 **Two files can now disagree** about what the supported platforms are. The
-readme states them for users, `docs/development.md` for builders, and
+readme states them for users, `CONTRIBUTING.md` for builders, and
 `supported_targets()` is the truth. Neither doc derives from it, and nothing
 checks them — worth a follow-up, out of scope here.
 
 ## Out of scope for this cycle
 
-- **A `CONTRIBUTING.md`.** `docs/development.md` covers the mechanics; a
-  contribution policy is a separate document and a separate decision.
+- **A contribution *policy*.** `CONTRIBUTING.md` gets the build mechanics this
+  cycle. How to propose a change, what review looks like, what a PR needs — that
+  is a separate document's worth of decisions and is not being invented here.
 - **Restructuring `Configuration`.** It is long, but it is the part of the page
   a user actually needs; length there is earned.
 

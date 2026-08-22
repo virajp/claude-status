@@ -114,17 +114,32 @@ architecture, not execution."* Meeting that bar means a native runner that
 builds **and runs the suite** per target. That is the right bar, and it is more
 than this tool needs today.
 
-## Version lines
+## Version lines — rejoined
 
-The npm package version stays hand-set and separate from `Cargo.toml` for now,
-per the standing instruction to test the installer at `0.x` before matching
-them.
+**The two version lines are merged back into one, at `0.1.0`.** The crate drops
+from `1.0.0` to `0.1.0`, the npm package is stamped from it again, and the two
+stay in sync from here on. `1.0.0` is released once — both together — when the
+installer has been tested.
 
-Worth flagging as this lands: embedding weakens the original reason for the
-split. That reason was to republish a `0.x` installer freely while the *fetch
-path* was proven, without burning binary versions on installer bugs. With the
-binary inside the package, a published version is a specific binary, and a
-package claiming `0.1.0` while carrying a `1.0.0` binary is a small standing
-confusion. Plan 2 keeps the split because the instruction stands; matching them
-is a one-line change whenever you want it, and `crate_version()` goes back to
-being the single source it describes itself as.
+The split existed to republish a `0.x` installer freely while the *fetch path*
+was proven, without burning binary versions on installer bugs. Plan 2 deletes
+the fetch path, so the reason goes with it. Embedding makes the split actively
+misleading besides: a package claiming `0.1.0` while carrying a `1.0.0` binary
+is one artifact making two version claims about itself.
+
+Rejoining restores `crate_version()` to what its own comment already says it is:
+*"the single source of truth for everything published: the binary self-reports
+it, the npm packages carry it, and the release workflow checks the tag against
+it. Deliberately NOT duplicated into a package.json that could drift."* That
+comment stopped being true for one cycle. It is true again, and the hand-set
+version in `npm/claude-status/package.json` reverts to the
+`0.0.0-managed-by-cargo` placeholder that `build:installer` substitutes — along
+with the stamp check that fails a manifest disagreeing with the crate.
+
+**The existing `v1.0.0` tag and release are deleted.** Going 1.0.0 → 0.1.0 →
+1.0.0 with a release sitting at the first is a version history that reads as a
+mistake. Nothing consumes it — npm was never published — so deleting the tag and
+its release costs nothing and leaves one clean `v1.0.0` when the real one lands.
+This is the only step in the cycle that removes something already public, and it
+is safe only because the publish never happened; if anything had installed from
+it, the answer would be different.

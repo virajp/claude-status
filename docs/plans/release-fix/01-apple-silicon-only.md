@@ -97,14 +97,14 @@ unsupported host like any other, and that is worth pinning rather than assuming.
 
 → **verify:** the suite fails if a target is silently re-added.
 
-### 5. Remove the x64 asset from the `v1.0.0` release
+### 5. Leave the `v1.0.0` release alone
 
-The release carries a binary for a target that is no longer served. Nothing
-consumes it — npm was never published — so removing it costs nothing and leaves
-the release honest.
+It carries an x64 binary for a target no longer served, so it wants attention —
+but plan 2 deletes the tag and the release outright when it rejoins the version
+lines at `0.1.0`. Trimming an asset here would be work undone two plans later.
 
-→ **verify:** `gh release view v1.0.0` lists one binary and a `SHA256SUMS`
-regenerated to match.
+→ **verify:** nothing to do; noted so the inconsistency is not mistaken for an
+oversight between plans 1 and 2.
 
 ### 6. Docs
 
@@ -129,7 +129,7 @@ regenerated to match.
 3. The npm manifest declares `os: ["darwin"]` **and** `cpu: ["arm64"]`.
 4. The suite asserts `supported: darwin:arm64` and covers `darwin:x64` as an
    unsupported host.
-5. `v1.0.0` carries one binary, with `SHA256SUMS` agreeing.
+5. The `v1.0.0` release is untouched — plan 2 removes it.
 
 ## Risks / drift
 

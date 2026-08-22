@@ -124,7 +124,34 @@ bearing for npm.
 → **verify:** a tag push produces a release with the binary and `SHA256SUMS`,
 and publishes an npm package that works whether or not that release exists.
 
-### 5. Docs
+### 5. Rejoin the version lines at `0.1.0`
+
+`Cargo.toml` goes to `0.1.0`. `npm/claude-status/package.json` reverts to the
+`0.0.0-managed-by-cargo` placeholder, and `build:installer` substitutes the
+crate version into it again and re-asserts they agree — the stamp check that was
+removed when the lines were split.
+
+The reason for splitting them was to iterate on the *fetch path* without burning
+binary versions; step 2 deletes that path. Keeping the split would leave one
+artifact making two version claims about itself.
+
+→ **verify:** `--version` reports `0.1.0`; the staged binary reports `0.1.0`;
+`build:installer` fails if the manifest is hand-edited away from the crate
+version.
+
+### 6. Delete the `v1.0.0` tag and release
+
+Going `1.0.0` → `0.1.0` → `1.0.0` with a release parked at the first reads as a
+mistake in the tag history. Nothing consumes it — npm was never published — so
+both the release and the tag go, leaving one clean `v1.0.0` for the real one.
+
+Safe **only** because nothing installed from it. If it had been consumed the
+answer would be to leave it and move forward instead.
+
+→ **verify:** `gh release list` shows no `v1.0.0`; `git ls-remote --tags`
+agrees.
+
+### 7. Docs
 
 - `readme.md` — the download paragraph, the network requirement and the proxy
   note all go. Plan 4 rewrites this file wholesale for npm; this step only has
@@ -145,6 +172,8 @@ and publishes an npm package that works whether or not that release exists.
 4. `--dry-run` still reports the digest and changes nothing.
 5. No `fetch`, no `checksums.json`, no release-base seam under `installer/src`.
 6. A tag push still produces a GitHub Release carrying the binary.
+7. `--version`, the staged binary and `Cargo.toml` all report `0.1.0`, and
+   `build:installer` fails if they disagree.
 
 ## Risks / drift
 
@@ -162,9 +191,9 @@ the line can survive as `(1.0.0)`.
 
 ## Out of scope for this cycle
 
-- **Matching the npm and binary version lines.** Embedding makes matching more
-  natural, but the standing instruction is to test at `0.x` first. One line to
-  change when wanted.
+- **Releasing `1.0.0`.** That happens once the installer has been tested, with
+  the crate and the package bumped together. This cycle only rejoins the two
+  lines at `0.1.0`.
 - **Signing and notarization.** Unchanged by where the binary travels.
 
 ## Gaps surfaced during execution
