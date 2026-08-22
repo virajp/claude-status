@@ -3,7 +3,7 @@ type: vwf-plan
 title: apple-silicon-only — 2026-08-22
 description: Cut the published target set to aarch64-apple-darwin alone —
   Intel Mac out, and the Linux set surveyed and declined.
-status: active
+status: executed
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

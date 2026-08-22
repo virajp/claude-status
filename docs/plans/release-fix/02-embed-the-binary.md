@@ -3,7 +3,7 @@ type: vwf-plan
 title: embed-the-binary — 2026-08-22
 description: Put the binary back inside the one npm package and unwind the
   download-and-verify path, which bought nothing once the target set became one.
-status: active
+status: executed
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

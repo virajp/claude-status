@@ -3,7 +3,7 @@ type: vwf-plan
 title: readme-for-npm — 2026-08-22
 description: Rewrite readme.md for the npm listing page — the audience is
   someone deciding whether to install, not someone working on this repo.
-status: active
+status: executed
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

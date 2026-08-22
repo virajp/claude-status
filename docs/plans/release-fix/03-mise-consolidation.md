@@ -3,7 +3,7 @@ type: vwf-plan
 title: mise-consolidation — 2026-08-22
 description: Move every tool dev and CI share into mise.toml, with one rust
   profile for both, so a toolchain that works locally cannot be missing in CI.
-status: active
+status: executed
 covers: [
   docs/blueprint/conventions.md,
 ]

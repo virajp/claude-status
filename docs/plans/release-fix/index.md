@@ -4,7 +4,7 @@ title: release-fix — 2026-08-22
 description: Three ordered plans that cut the published set to Apple Silicon
   alone, put the binary back inside the one npm package, and collapse the mise
   tool split so dev and CI resolve the same toolchain.
-status: active
+status: executed
 covers: [
   docs/spec/statusline-behaviour.md,
 ]
