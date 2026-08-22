@@ -12,11 +12,46 @@
     "autoConfigureRepo": {
       "type": "boolean",
       "default": true,
-      "description": "When true (the default), a `--statusline` render inside a git repo that has no `<repo-root>/.config/claude-status.json` creates one \u2014 migrating a repo-level `statusline.json` if it finds one, otherwise seeding `projectName` from the repo directory name. Set it to `false` in your user config to opt out. Only ever read from the embedded and user layers, only ever acted on by `--statusline`, and silent on any failure."
+      "description": "When true (the default), a `--statusline` render inside a git repo that has no `<repo-root>/.config/claude-status.json` creates one — migrating a repo-level `statusline.json` if it finds one, otherwise seeding `projectName` from the repo directory name. Set it to `false` in your user config to opt out. Only ever read from the embedded and user layers, only ever acted on by `--statusline`, and silent on any failure."
+    },
+    "caps": {
+      "type": "object",
+      "description": "Thresholds the `--caps-hook` PostToolUse actuator measures usage against, as percentages. When one is exceeded the hook injects a directive telling the agent to hand off and stop, once per escalation. Resolved through all three config layers like any other key, so a repo-level file overrides your user one outright — there is no tighten-only clamp. A key that is absent, negative, non-numeric or above 1000 falls back to its shipped default; `0` is a real cap meaning \"breach on any usage at all\".",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 65,
+          "description": "Percent of the context window. Default 65."
+        },
+        "fiveHour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 90,
+          "description": "Percent of the 5-hour rate-limit window. Default 90."
+        },
+        "sevenDay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 80,
+          "description": "Percent of the 7-day rate-limit window. Default 80."
+        },
+        "spend": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 90,
+          "description": "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer."
+        }
+      }
     },
     "projectName": {
       "type": "string",
-      "description": "Project display name shown in the `project` segment (with the `symbols.project` glyph before it). **Repo-level only** \u2014 it belongs in `<repo-root>/.config/claude-status.json` and is deliberately absent from the shipped defaults, so a repo that has not set one omits the segment rather than inheriting a name from the user layer. When unset, the segment is omitted."
+      "description": "Project display name shown in the `project` segment (with the `symbols.project` glyph before it). **Repo-level only** — it belongs in `<repo-root>/.config/claude-status.json` and is deliberately absent from the shipped defaults, so a repo that has not set one omits the segment rather than inheriting a name from the user layer. When unset, the segment is omitted."
     },
     "palette": {
       "type": "object",

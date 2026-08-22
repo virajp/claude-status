@@ -1148,6 +1148,44 @@ things cannot derive it, and each is kept in step by hand:
 > npm — it is for anyone who wants the binary directly, and for a Homebrew tap
 > later.
 
+> **Amended 2026-08-23** (caps as config). The `--caps-hook` thresholds move
+> into `claude-status.json` under `caps`, and gain a fourth: `spend`, a percent
+> of the account's monthly budget.
+>
+> **Two things changed at once, and both are loosenings.** The caps used to be a
+> constant a repo could only *tighten*, scraped out of `<cwd>/.config/vwf.yaml`
+> by a narrow line scan. Now they resolve through the ordinary three layers —
+> embedded, user, repo — with the repo layer winning **outright**, and the
+> `vwf.yaml` scrape is deleted rather than kept as a second source.
+>
+> The tighten-only rule existed so a repo could not raise its own limits, and
+> the code said so: reversing it *"would let a project silently disable its own
+> safety rail, which is the one failure mode of a config-driven cap that nobody
+> would notice."* That remains true, and the tradeoff was taken anyway: layer 3
+> is a file you commit and review in your own repository, at the same trust
+> level as every other setting it already controls, and a caps key that behaved
+> differently from its neighbours was a surprise of its own. A user who wants
+> the old guarantee gets it by not writing `caps` into a repo config.
+>
+> **`spend` is a percentage, not an amount**, because a budget is denominated in
+> the account's own currency and only a percentage means the same thing on every
+> seat. It is evaluated **before** the other three — level `4`, above the 7-day
+> `3` — because a rate-limit window empties itself on a timer while an exhausted
+> budget needs somebody to act.
+>
+> Its figure does **not** come from the usage mirror, which a render writes from
+> the payload and which carries no spend data. It comes from the spend cache the
+> refresh child maintains, read as a local file. The hook still never fetches,
+> exactly as a render never does. A seat with no budget block yields `None`,
+> which never breaches — not even against a cap of `0`.
+>
+> Defaults are unchanged where they existed (context 65, five-hour 90, seven-day
+> 80) and `spend` ships at 90. A key that is absent, negative, non-numeric or
+> absurd falls back to its shipped default rather than being clamped, so a
+> config that failed to make sense behaves like one that was never written. `0`
+> is a real cap meaning "breach on any usage at all", and is not mistaken for
+> unset.
+
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather

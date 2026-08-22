@@ -30,9 +30,8 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
 - **Guardrails that act, not just inform.** A `PostToolUse` hook watches your
   usage and, when you cross a cap, tells Claude to wrap up and hand off rather
   than letting a session run past the line. It ships at **65%** context, 90% of
-  the 5-hour window and 80% of the 7-day one — and a project can tighten any of
-  them in its own `.config/vwf.yaml`. Only tighten: a repo can lower a cap but
-  never raise one, so it cannot quietly switch off its own safety rail.
+  the 5-hour window, 80% of the 7-day one and 90% of a monthly budget — and all
+  four are yours to change, globally or per repo, like any other setting.
 - **Your subagents, at a glance too.** The same binary draws a second panel for
   subagent sessions — a row each with the agent's name, model, what it's working
   on, tokens and elapsed time, and a status glyph that colours the row: running,
@@ -153,6 +152,33 @@ complaint, because stdout belongs to the bar.
 `projectName` lives **only** at the repo level, by design. It isn't in the
 defaults or your user config, so a repo you haven't configured quietly omits the
 `project` segment instead of wearing a name that was never about it.
+
+### Caps, and what happens when you cross one
+
+The `--caps-hook` watches your usage after each tool call. Cross a threshold and
+it injects a directive telling Claude to finish the current step, write a
+handoff, and stop — once per escalation, so it will not nag.
+
+```jsonc
+{
+  "caps": {
+    "context": 65, // percent of the context window
+    "fiveHour": 90, // percent of the 5-hour rate-limit window
+    "sevenDay": 80, // percent of the 7-day window
+    "spend": 90, // percent of the monthly budget
+  },
+}
+```
+
+Those are the shipped values. Set any of them in your own config to change them
+everywhere, or in a repo's config to change them just there — they resolve
+through the same three layers as everything else, and a repo layer wins. Set one
+key and the others keep their defaults.
+
+`spend` only ever fires on a seat that has a monthly budget, and it is checked
+before the other three: a rate-limit window empties itself, whereas an exhausted
+budget needs somebody to act. The figure comes from the same cache the `spend`
+segment reads, so the hook never fetches — just like a render never does.
 
 ### Segments
 

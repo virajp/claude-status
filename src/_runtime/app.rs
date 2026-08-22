@@ -140,8 +140,19 @@ fn build_caps_directive() -> String {
         return String::new();
     };
 
-    let caps = caps::resolve_caps(json::opt_str(&input, "cwd"));
-    let Some((level, directive)) = caps::level(&caps::Usage::from_mirror(&mirror), &caps, time::now_ms()) else {
+    // Caps come from the same three layers everything else does, so the repo
+    // root has to be resolved here too — the hook stays strictly read-only
+    // while doing it, unlike `--statusline`, which may create layer 3.
+    let cwd = json::opt_str(&input, "cwd");
+    let root = cwd.map(PathBuf::from).and_then(|c| git::find_root_and_branch(&c).0);
+    let caps = caps::resolve_caps(&layers::load(home().as_deref(), root.as_deref()).config);
+
+    // The budget figure is the refresh child's, read from its cache. A seat
+    // without a budget block yields `None`, which never breaches.
+    let usage = caps::Usage::from_mirror(&mirror)
+        .with_spend(spend::cache::path().as_deref().and_then(spend::cache::read_from).as_ref());
+
+    let Some((level, directive)) = caps::level(&usage, &caps, time::now_ms()) else {
         return String::new();
     };
 

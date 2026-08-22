@@ -32,6 +32,13 @@ pub struct Usage {
     pub seven_day_pct: f64,
     pub five_hour_resets_at: Option<Value>,
     pub seven_day_resets_at: Option<Value>,
+    /// Percent of the monthly budget spent, for a seat that has one.
+    ///
+    /// **Not from the mirror.** The mirror is written by a render from the
+    /// payload, which carries no spend figure; this comes from the spend cache
+    /// the refresh child maintains. `None` on any seat without a budget block,
+    /// which is most of them, and `None` never breaches.
+    pub spend_pct: Option<f64>,
 }
 
 impl Usage {
@@ -43,8 +50,30 @@ impl Usage {
             seven_day_pct: opt_f64(doc, "sevenDayPct").unwrap_or(0.0),
             five_hour_resets_at: doc.get("fiveHourResetsAt").cloned(),
             seven_day_resets_at: doc.get("sevenDayResetsAt").cloned(),
+            spend_pct: None,
         }
     }
+
+    /// Attaches the budget percentage from the spend cache, if there is one.
+    ///
+    /// Separate from `from_mirror` because the two come from different files
+    /// written by different things: the mirror is the render's, the cache is
+    /// the refresh child's. Reading the cache is a local file open and no more
+    /// — the hook never fetches, exactly as a render never does.
+    #[must_use]
+    pub fn with_spend(mut self, cache: Option<&crate::spend::cache::SpendCache>) -> Self {
+        self.spend_pct = cache.and_then(|c| c.data.as_ref()).and_then(percent_of);
+        self
+    }
+}
+
+/// The budget percentage: the endpoint's own when it supplies one, else derived
+/// from the amounts. A zero limit yields `None` rather than a division by zero.
+fn percent_of(spend: &crate::spend::extract::Spend) -> Option<f64> {
+    if let Some(pct) = spend.percent {
+        return Some(pct);
+    }
+    (spend.limit_minor > 0.0).then(|| spend.used_minor / spend.limit_minor * 100.0)
 }
 
 /// The breach level and the directive it injects, or `None` for no breach.
@@ -54,8 +83,16 @@ impl Usage {
 /// 7-day one and says nothing about context. Comparison is strictly `>`, so a
 /// figure exactly at its cap does not fire.
 ///
-/// Levels are `3` 7-day, `2` 5-hour, `1` context; the debounce compares them.
+/// Levels are `4` spend, `3` 7-day, `2` 5-hour, `1` context; the debounce
+/// compares them. Spend sits highest because a monthly budget is the one limit
+/// that does not reset on its own — a 7-day window empties itself, an exhausted
+/// budget needs somebody to act.
 pub fn level(usage: &Usage, caps: &Caps, now_ms: i64) -> Option<(u8, String)> {
+    if let Some(pct) = usage.spend_pct
+        && pct > caps.spend as f64
+    {
+        return Some((4, spend_directive(pct, caps.spend)));
+    }
     if usage.seven_day_pct > caps.seven_day as f64 {
         let resets = human_caps_in(usage.seven_day_resets_at.as_ref(), now_ms);
         return Some((3, seven_day_directive(usage.seven_day_pct, caps.seven_day, &resets)));
@@ -100,6 +137,18 @@ fn five_hour_directive(pct: f64, cap: u32, resets: &str) -> String {
     )
 }
 
+fn spend_directive(pct: f64, cap: u32) -> String {
+    let pct = crate::fmt::js_round(pct);
+    format!(
+        "⛔ SPEND CAP — monthly budget at {pct}% (cap {cap}%). This one does not reset on a timer. \
+         Finish ONLY the current step, then: (1) invoke the vwf:handoff skill with NO argument \
+         (it writes the reserved `next` handoff to mempalace and {HANDOFF_PATH}); \
+         (2) STOP and tell the user the account's monthly budget is nearly exhausted, so somebody \
+         has to raise it or wait for the billing period — resume with /vwf:recall next. \
+         Do NOT start a new vwf stage or keep coding."
+    )
+}
+
 fn context_directive(pct: f64, cap: u32) -> String {
     // The context figure is rounded where the two rate-limit ones are not —
     // it arrives as a fraction and the others as whole percentages.
@@ -128,6 +177,52 @@ pub fn envelope(directive: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn usage_at(spend_pct: Option<f64>) -> Usage {
+        Usage { spend_pct, ..Default::default() }
+    }
+
+    #[test]
+    fn a_seat_with_no_budget_never_breaches_the_spend_cap() {
+        // Most seats have no budget block at all. `None` must not read as 0%,
+        // and must not read as breaching either.
+        let caps = Caps { spend: 0, ..DEFAULTS };
+        assert!(level(&usage_at(None), &caps, 0).is_none(), "a cap of 0 with no figure still cannot fire");
+    }
+
+    #[test]
+    fn the_spend_cap_fires_above_its_threshold_and_not_at_it() {
+        let caps = Caps { spend: 90, ..DEFAULTS };
+        assert!(level(&usage_at(Some(90.0)), &caps, 0).is_none(), "exactly at the cap does not fire");
+
+        let (lvl, directive) = level(&usage_at(Some(91.0)), &caps, 0).expect("91% is over 90%");
+        assert_eq!(lvl, 4, "spend is the highest level");
+        assert!(directive.contains("SPEND CAP"), "{directive}");
+        assert!(directive.contains("cap 90%"), "{directive}");
+    }
+
+    #[test]
+    fn spend_outranks_the_windows_that_reset_themselves() {
+        // Both breached; spend wins, because a budget does not empty on a timer.
+        let caps = Caps { context: 65, five_hour: 90, seven_day: 80, spend: 90 };
+        let usage = Usage { seven_day_pct: 99.0, ctx_pct: 99.0, spend_pct: Some(99.0), ..Default::default() };
+        let (lvl, directive) = level(&usage, &caps, 0).expect("something breached");
+        assert_eq!(lvl, 4);
+        assert!(directive.contains("SPEND CAP"), "{directive}");
+    }
+
+    #[test]
+    fn the_budget_percentage_is_derived_when_the_endpoint_omits_one() {
+        use crate::spend::extract::Spend;
+        let derived = Spend { used_minor: 4500.0, limit_minor: 5000.0, exponent: 2, percent: None, enabled: None };
+        assert_eq!(percent_of(&derived), Some(90.0));
+
+        let given = Spend { percent: Some(12.5), ..derived.clone() };
+        assert_eq!(percent_of(&given), Some(12.5), "the endpoint's own figure wins");
+
+        let zero_limit = Spend { limit_minor: 0.0, percent: None, ..derived };
+        assert_eq!(percent_of(&zero_limit), None, "no division by zero");
+    }
 
     const NOW: i64 = 1_774_183_440_000;
 

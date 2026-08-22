@@ -286,28 +286,70 @@ fn a_corrupt_state_file_is_treated_as_no_previous_breach() {
 }
 
 #[test]
-fn a_repo_config_may_tighten_a_cap_but_never_loosen_one() {
+fn a_user_config_may_raise_a_cap_as_well_as_lower_it() {
+    // The tighten-only rule is gone: caps are ordinary config now, so the user
+    // layer may move a cap in either direction.
+    let raised = Home::new(r#"{ "projectName": "e2e", "spend": { "refreshMinutes": 0, "show": "never" }, "caps": { "context": 90 } }"#);
+    let usage = raised.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+    assert_eq!(
+        stdout(&caps_run(&raised, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR")),
+        "",
+        "70% is under a raised cap of 90, so nothing fires",
+    );
+
+    let lowered = Home::new(r#"{ "projectName": "e2e", "spend": { "refreshMinutes": 0, "show": "never" }, "caps": { "context": 50 } }"#);
+    let usage = lowered.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":55}"#);
+    let out = stdout(&caps_run(&lowered, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(out.contains("cap 50%"), "the user cap applied: {out}");
+}
+
+#[test]
+fn a_repo_config_overrides_the_user_one_outright() {
+    let home = Home::new(r#"{ "projectName": "e2e", "spend": { "refreshMinutes": 0, "show": "never" }, "caps": { "context": 50 } }"#);
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+
+    // A repo, which git has to recognise for layer 3 to be read at all.
+    let repo = home.path().join("repo");
+    std::fs::create_dir_all(repo.join(".config")).unwrap();
+    std::process::Command::new("git").args(["init", "-q"]).current_dir(&repo).status().unwrap();
+    let stdin = format!(r#"{{"session_id":"s1","cwd":"{}"}}"#, repo.display());
+
+    // The user cap of 50 is what fires before the repo says anything.
+    let user = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(user.contains("cap 50%"), "the user cap applied: {user}");
+
+    // The repo RAISES it to 90 — which now wins, where the old tighten-only
+    // rule would have ignored it. 70% is under 90, so nothing fires.
+    std::fs::remove_file(usage.join("s1.state.json")).unwrap();
+    std::fs::write(repo.join(".config").join("claude-status.json"), r#"{"caps":{"context":90}}"#).unwrap();
+    assert_eq!(
+        stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR")),
+        "",
+        "a repo may loosen a cap now, and layer 3 wins outright",
+    );
+}
+
+#[test]
+fn a_vwf_yaml_cap_block_is_no_longer_read() {
+    // vwf.yaml was the only source of repo caps and is not consulted any more.
     let home = Home::new(&safe_config());
     let usage = home.path().join("usage");
     seed_mirror(&usage, "s1", r#"{"ctxPct":55}"#);
 
-    // 55% is under the shipped 65% cap, so nothing fires...
     let repo = home.path().join("repo");
     std::fs::create_dir_all(repo.join(".config")).unwrap();
-    let stdin = format!(r#"{{"session_id":"s1","cwd":"{}"}}"#, repo.display());
-    assert_eq!(stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR")), "");
-
-    // ...until the repo tightens it to 50.
+    std::process::Command::new("git").args(["init", "-q"]).current_dir(&repo).status().unwrap();
     std::fs::write(repo.join(".config").join("vwf.yaml"), "pipeline:\n  execute_caps:\n    context: 50\n").unwrap();
-    let tightened = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
-    assert!(tightened.contains("cap 50%"), "the repo value applied: {tightened}");
 
-    // A value above the shipped default is ignored: 70% still breaches at 65.
-    std::fs::remove_file(usage.join("s1.state.json")).unwrap();
-    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
-    std::fs::write(repo.join(".config").join("vwf.yaml"), "pipeline:\n  execute_caps:\n    context: 90\n").unwrap();
-    let ignored = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
-    assert!(ignored.contains("cap 65%"), "config may only tighten: {ignored}");
+    let stdin = format!(r#"{{"session_id":"s1","cwd":"{}"}}"#, repo.display());
+    assert_eq!(
+        stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR")),
+        "",
+        "55% is under the shipped 65 — the vwf.yaml cap of 50 must be ignored",
+    );
 }
 
 #[test]

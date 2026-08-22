@@ -1,6 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "autoConfigureRepo": true,
+  "caps": {
+    "context": 65,
+    "fiveHour": 90,
+    "sevenDay": 80,
+    "spend": 90
+  },
   "defaultFg": "white",
   "gauge": {
     "empty": "▱",
