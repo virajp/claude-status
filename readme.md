@@ -20,13 +20,14 @@ One binary, three surfaces, each chosen by a flag:
 
 ## Requirements
 
-**macOS only** — Apple Silicon and Intel. Node 18+ is needed to run the
-installer once; nothing after that.
+**Apple Silicon Mac only.** Node 18+ is needed to run the installer once;
+nothing after that.
 
-Claude Code also runs on Linux and Windows, and this package does not serve
-them. `npm install` there fails with `EBADPLATFORM` rather than installing
-something that cannot work, and the installer names the platform it will not
-serve before touching anything.
+Intel Macs are **not** served, and neither are Linux and Windows, both of which
+Claude Code itself runs on. `npm install` refuses all three with `EBADPLATFORM`
+rather than installing something that cannot work — the package declares its
+`os` and `cpu` — and an install forced past that is stopped by the installer,
+which names the platform it will not serve before touching anything.
 
 Building from source is the only escape hatch, and it is genuinely unsupported —
 see [Running it elsewhere](#running-it-elsewhere) if that is you.

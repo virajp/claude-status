@@ -1074,6 +1074,37 @@ things cannot derive it, and each is kept in step by hand:
 > release ordering inverts: the GitHub Release must exist **before** the npm
 > publish, or a published installer points at an asset that is not there.
 
+> **Amended 2026-08-22** (`release-fix` cycle). The published set is **one**
+> target: `aarch64-apple-darwin`. Intel macOS is out.
+>
+> The reason is the ecosystem, not a preference. pnpm — which this repo's own
+> task library depends on — publishes `darwin-arm64`, `linux-*` and `win32-*`
+> standalone binaries and **no macOS x64 build at any recent version**. CI could
+> not install its own tooling on an Intel runner, every binary backend failed
+> identically, and no backend swap fixes it. A target whose build tooling has
+> abandoned it is a gap this repo would own indefinitely, and it would be owned
+> to serve an architecture Apple stopped shipping in 2023.
+>
+> **Linux was surveyed before being declined**, so that this reads as a choice
+> rather than an assumption. It came back viable: `from_keychain()` already
+> guards on `cfg!(target_os = "macos")` and falls back to
+> `~/.claude/.credentials.json`, so credentials degrade rather than break; the
+> crate's platform-specific spots are Unix rather than Apple, and are what
+> blocks *Windows*, not Linux; and `ureq` is pinned to rustls with baked roots
+> precisely so no `openssl-sys` is in the way. What it costs is two native
+> runners, a glibc-versus-musl portability floor, and the end of local complete
+> builds — a Mac cross-compiles to another Apple slice with a rustup target and
+> cannot produce a Linux binary at all, so `build:all` would stop being able to
+> make a releasable set on a maintainer's machine.
+>
+> The struck-through six-target paragraph below still sets the bar for adding
+> any target back, and it is the right one: a native runner that **builds and
+> runs the suite** per target. Nothing here lowers it.
+>
+> With one target, `os` and `cpu` in the npm manifest express the supported set
+> **exactly** — no cross product to leak — so npm is the first gate and the
+> installer's unsupported-platform message is the second, rather than the only.
+
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather

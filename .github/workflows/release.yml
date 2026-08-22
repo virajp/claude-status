@@ -85,23 +85,20 @@ jobs:
           fi
           echo "Releasing claude-status $pkg"
 
-  # The full suite once per **published architecture**, not once per OS. It used
-  # to run on ubuntu-24.04 and macos-latest; the `macos-only` cycle removed the
-  # Linux target, and dropping that runner would have left the published
-  # x86_64-apple-darwin artifact with no coverage but `--version` — macos-latest
-  # is arm64. One runner per row of `supported_targets` keeps every artifact
-  # that reaches npm backed by a suite that ran on its own architecture.
+  # The full suite once per **published architecture**, not once per OS. One
+  # runner per row of `supported_targets` keeps every artifact that reaches a
+  # release backed by a suite that ran on its own architecture. There is one row
+  # today, so there is one runner — the rule has not changed, the table has.
   #
-  # `macos-15-intel`, not `macos-13`: the hosted fleet retired the macOS 13
-  # images, and the free x64 labels are now `macos-15-intel` / `macos-26-intel`
-  # (the `-large` ones are billed). An unschedulable job under `fail-fast: true`
-  # aborts the whole release.
+  # Re-adding a target means adding its runner here AND to the build matrix
+  # below. Contract §9 makes that the bar for adding one at all: a target whose
+  # binary is built but never executed is a claim nobody checked.
   test:
     needs: verify
     strategy:
       fail-fast: true
       matrix:
-        os: [ macos-latest, macos-15-intel ]
+        os: [ macos-latest ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -130,8 +127,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

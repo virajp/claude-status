@@ -17,31 +17,43 @@ crate_version() {
 # to remember to ignore it.
 BINARY_NAME="claude-status"
 
-# The supported targets, as `<rust-triple> <npm-os> <npm-cpu>` rows.
+# The supported target, as a `<rust-triple> <npm-os> <npm-cpu>` row.
 #
-# **macOS only, both architectures.** Claude Code also runs on Linux and
-# Windows, and this table used to carry all six targets — the `macos-only`
-# cycle cut it to two. Four of those six had never had a binary *executed* on
-# them by anyone: a local build proved architecture, not execution. Shipping
-# them was shipping a claim nobody checked, and each one cost a cross-toolchain
-# pin, a preflight, a filename branch and a CI runner to keep unchecked. See
-# contract §9, whose six-target paragraph is struck through and annotated.
+# **Apple Silicon macOS, and nothing else.** This table carried six targets
+# once, then two, and now one. Each cut was made on evidence rather than taste:
+#
+#   - six → two (`macos-only`): four of the six had never had a binary
+#     *executed* on them by anyone. A local build proved architecture, not
+#     execution, so shipping them was shipping a claim nobody checked.
+#   - two → one (`release-fix`): the ecosystem stopped serving Intel macOS.
+#     pnpm publishes `darwin-arm64`, `linux-*` and `win32-*` and no macOS x64
+#     build at any recent version, so CI could not even install its own tooling
+#     on an Intel runner — every binary backend fails identically and no backend
+#     swap helps. A target whose build tooling has abandoned it is a gap this
+#     repo would own indefinitely.
+#
+# Linux was surveyed before being declined and came back *viable* — credentials
+# already degrade off macOS, the crate's platform-specific spots are Unix rather
+# than Apple, and TLS pulls in no system library. It costs two native runners, a
+# glibc-versus-musl portability floor, and the end of local complete builds: a
+# Mac cross-compiles to another Apple slice with a rustup target and cannot
+# produce a Linux binary at all. See contract §9.
 #
 # Everything that COUNTS targets derives from this function — `target_count`,
-# `build:installer`'s checksum manifest, `_rust_reassemble`, and the release
-# workflow's asset upload. Three things do NOT, and adding a platform back means
-# editing every one of them; nothing here catches a miss:
+# `build:installer`, `_rust_reassemble`, and the release workflow's asset
+# upload. Three things do NOT, and adding a platform back means editing every
+# one of them; nothing here catches a miss:
 #
-# The host→package map that used to head this list is gone: the binary is no
-# longer an npm package per platform, so `binary.ts` reads the manifest this
-# table generates instead of carrying its own copy.
-#
-#   1. `"os": ["darwin"]` in `npm/claude-status/package.json` — npm refuses the
-#      install off macOS, so re-adding a row without this ships a package that
-#      cannot be installed on the platform it now claims to serve.
+#   1. `"os"` and `"cpu"` in `npm/claude-status/package.json` — npm refuses the
+#      install off Apple Silicon, so re-adding a row without widening these
+#      ships a package that cannot be installed on the platform it now claims to
+#      serve. With one target the two fields express the set exactly; with more
+#      they are independent arrays and cannot, so the installer's own
+#      unsupported-platform message becomes the real gate again.
 #   2. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
 #      runner each, so no artifact reaches a release untested on its own
-#      architecture.
+#      architecture. That rule is why adding a target is expensive, and it is
+#      the rule contract §9 says must be met before any target comes back.
 #   3. The crate itself, in three places — **Windows will not compile** until
 #      every one of them goes back behind a `cfg`, and restoring only the first
 #      still fails, after a full CI matrix has run:
@@ -50,16 +62,16 @@ BINARY_NAME="claude-status"
 #        - that file's `mod shell` test fixtures are now plain `echo`/`false`/
 #          `sleep`, their `cmd /C` twin deleted;
 #        - `tests/e2e.rs` chmods a `#!/bin/sh` shim through `PermissionsExt`.
+#      None of the three blocks Linux; all three block Windows.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
 supported_targets() {
   printf '%s\n' \
-    'aarch64-apple-darwin darwin arm64' \
-    'x86_64-apple-darwin darwin x64'
+    'aarch64-apple-darwin darwin arm64'
 }
 
-# How many binaries a complete release carries.
+# How many binaries a complete release carries. One, today.
 target_count() {
   supported_targets | wc -l | tr -d ' '
 }

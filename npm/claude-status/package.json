@@ -22,8 +22,11 @@
   "os": [
     "darwin"
   ],
+  "cpu": [
+    "arm64"
+  ],
   "engines": {
     "node": ">=18"
   },
-  "//": "macOS only \u2014 `os` makes npm refuse the install elsewhere rather than failing at run time. The BINARY is not in this package: it is a GitHub release asset that `--install` downloads and verifies against bin/checksums.json, which `mise run build:installer` generates from the target table in .config/mise/tasks/_scripts/_rust. `version` here is this PACKAGE's version and is hand-set \u2014 it is deliberately NOT substituted from Cargo.toml while the package and the binary are on separate version lines; the binary release to fetch is named by checksums.json. Adding a platform means that table, this `os` field, and a build matrix entry in .github/workflows/release.yml."
+  "//": "Apple Silicon macOS only. `os` AND `cpu` together express the supported set exactly \u2014 with one target there is no cross product to leak \u2014 so npm refuses the install on an Intel Mac, on Linux and on Windows with EBADPLATFORM rather than failing at run time. The installer's own unsupported-platform message is the second line of defence, for an install forced past npm. The BINARY is not in this package: it is a GitHub release asset that `--install` downloads and verifies against bin/checksums.json, which `mise run build:installer` generates from the target table in .config/mise/tasks/_scripts/_rust. Adding a platform means that table, both fields here, and a build AND test matrix entry in .github/workflows/release.yml."
 }

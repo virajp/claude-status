@@ -135,16 +135,10 @@ before(async () => {
     MANIFEST,
     JSON.stringify({
       version: CRATE_VERSION,
-      // BOTH targets, as a real package pins — the unsupported-platform
-      // message lists them, and a manifest carrying only the host's would make
-      // that assertion pass for the wrong reason.
+      // The one published target, as a real package pins.
       assets: {
         "darwin-arm64": {
           file: "claude-status-darwin-arm64",
-          sha256: digestOf(FAKE_BINARY),
-        },
-        "darwin-x64": {
-          file: "claude-status-darwin-x64",
           sha256: digestOf(FAKE_BINARY),
         },
       },
@@ -306,6 +300,10 @@ describe("unsupported platforms", () => {
 
   for (
     const [platform, arch] of [
+      // darwin:x64 belongs in this list now. An Intel Mac is an unsupported
+      // host like any other, and pinning it here is what stops it being
+      // re-added by accident along with a target row.
+      ["darwin", "x64"],
       ["linux", "x64"],
       ["linux", "arm64"],
       ["win32", "x64"],
@@ -324,7 +322,7 @@ describe("unsupported platforms", () => {
       // The exact line, not two substring matches — this is the only place
       // `supportedPlatforms()` is observable from outside, so it is where a
       // silently re-added platform would show up.
-      assert.match(stderr, /^ {2}supported: darwin:arm64, darwin:x64$/m);
+      assert.match(stderr, /^ {2}supported: darwin:arm64$/m);
       assert.doesNotMatch(
         stderr,
         new RegExp(`claude-status-${platform}`),
