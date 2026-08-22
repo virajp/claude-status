@@ -1,33 +1,33 @@
 # Statusline for Claude Code
 
-A fast powerline status line for Claude Code, in Rust. It renders in **1–2 ms**,
-which matters because the bar redraws every four seconds in every open session.
+Know what your Claude Code session is up to — at a glance, without breaking
+flow.
+
+`claude-status` draws a powerline bar under Claude Code with the things you
+actually keep checking: which model you're on, how much context you've burned,
+how close you are to your rate limits, what the session has cost, and which
+branch you're standing on. It's written in Rust and renders in **1–2 ms**, so a
+bar that redraws every four seconds in every open session never gets in the way.
 
 ![The claude-status bar: two powerline lines. The first shows the model and
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
 4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
 session cost. The second shows the project name and the git branch with a dirty
-marker.](https://raw.githubusercontent.com/virajp/claude-status/main/assets/statusline.png)
+marker.](https://cdn.virajp.me/claude-status/statusline.png)
 
-One binary, three surfaces, each chosen by a flag. Claude Code invokes these —
-you do not run them by hand:
+## Why you might like it
 
-| Flag           | What it renders                                        |
-| -------------- | ------------------------------------------------------ |
-| `--statusline` | the main bar — two powerline lines                     |
-| `--subagent`   | the subagent panel — NDJSON, one row per subagent      |
-| `--caps-hook`  | a `PostToolUse` actuator; silent unless a cap breached |
-
-## Requirements
-
-**Apple Silicon Mac only.** Node 18+ is needed to run the installer once;
-nothing after that.
-
-Intel Macs are **not** served, and neither are Linux and Windows, both of which
-Claude Code itself runs on. `npm install` refuses all three with `EBADPLATFORM`
-rather than installing something that cannot work — the package declares its
-`os` and `cpu` — and an install forced past that is stopped by the installer,
-which names the platform it will not serve before touching anything.
+- **Context you can feel.** A gauge, the token count and the percentage — so you
+  know when you're getting close before Claude tells you.
+- **Rate limits before they bite.** Both the 5-hour and 7-day windows, each with
+  its reset time.
+- **Cost as you go.** What this session has spent, live.
+- **Git-aware.** Branch, worktree and dirty markers, resolved straight from the
+  filesystem.
+- **Make it yours.** Every colour, glyph, segment and row order is config. Per
+  machine, and per repo when a project wants its own look.
+- **Quick, and quiet.** It never phones home on a render, and it only ever
+  writes the bar to stdout.
 
 ## Install
 
@@ -35,59 +35,72 @@ which names the platform it will not serve before touching anything.
 npx @askviraj/claude-status --install
 ```
 
-The installer puts the binary at `~/.claude/bin/claude-status`, seeds
-`~/.config/claude-status.json` if you have no config, and wires three keys into
-`~/.claude/settings.json`. The binary ships inside the package, so `--install`
-needs no network access at all.
+That's it. The binary lands at `~/.claude/bin/claude-status`, you get a starter
+config at `~/.config/claude-status.json`, and Claude Code gets wired up for you.
+The binary ships inside the package, so the install needs no network access at
+all — it works on a plane.
 
-**The npm package is only ever the installer.** Claude Code is wired straight to
-the binary — routing each render through a Node process would cost more in
-startup than the render itself, several times a minute.
+Restart Claude Code and the bar is there.
 
-Everything the installer does, it does through one of these:
+Already have a status line? The installer won't stomp on it without asking, and
+`--uninstall` puts your old one back exactly as it was.
 
-| Command       | Does                                                                    |
-| ------------- | ----------------------------------------------------------------------- |
-| `--install`   | place the binary, seed your config, wire Claude Code                    |
-| `--uninstall` | remove it, restoring the `settings.json` keys it changed                |
-| `--configure` | add a [repo-level config](#getting-a-repo-layer) to the repo you are in |
-| `--help`      | the same list, with detail                                              |
-| `--version`   | print the installed version                                             |
+### Requirements
 
-| Modifier    | Does                                                                    |
-| ----------- | ----------------------------------------------------------------------- |
-| `--dry-run` | report every change and touch nothing                                   |
-| `--yes`     | answer prompts in advance — for a setup script or CI, which have no TTY |
-| `--force`   | replace a status line this installer did not write, without asking      |
+**Apple Silicon Mac.** You'll also need Node 18+ to run the installer once —
+nothing after that, because Claude Code talks to the binary directly rather than
+through Node.
 
-Replacing a status line the installer did not write **needs a yes**. With no
-terminal to ask in and no `--yes`, the run fails rather than guessing in either
-direction.
+Intel Macs, Linux and Windows aren't served today. `npm install` will politely
+refuse rather than leave you with something that can't work.
 
-## Uninstall
+### The commands
+
+| Command       | Does                                                               |
+| ------------- | ------------------------------------------------------------------ |
+| `--install`   | place the binary, seed your config, wire Claude Code               |
+| `--uninstall` | remove it, and restore the `settings.json` keys it changed         |
+| `--configure` | give the repo you're in its own [config layer](#per-repo-settings) |
+| `--help`      | the same list, with detail                                         |
+| `--version`   | print the installed version                                        |
+
+Add these to any of them:
+
+| Modifier    | Does                                                                         |
+| ----------- | ---------------------------------------------------------------------------- |
+| `--dry-run` | show every change and touch nothing                                          |
+| `--yes`     | answer prompts in advance — handy in a setup script or CI, which have no TTY |
+| `--force`   | replace a status line this installer didn't write, without being asked       |
+
+One thing to know if you're scripting it: replacing a status line the installer
+didn't write needs a yes, and with no terminal to ask in it stops rather than
+guessing. Pass `--yes` or `--force` and it'll go ahead.
+
+## Uninstalling
 
 ```sh
 npx @askviraj/claude-status --uninstall
 ```
 
-It removes this installer's own files and restores the `settings.json` keys it
-changed. The receipt at `~/.config/claude-status/receipt.json` records **prior
-state**, so a status line you had before is put back verbatim, a config you
-edited after installing is kept, and a key that was absent before ends up absent
-rather than set to a default.
+It takes back what it added and nothing else. A receipt at
+`~/.config/claude-status/receipt.json` remembers how your machine looked
+**before** the install, so the status line you had returns verbatim, a config
+you've since edited is left alone, and a setting that was absent goes back to
+being absent rather than set to some default.
 
-## Configuration
+## Making it yours
 
-Three layers, deep-merged low to high:
+Configuration is three layers, merged low to high:
 
-1. the defaults **embedded in the binary** — so a machine with no config file
-   still draws a full bar;
-2. `~/.config/claude-status.json` — yours, seeded at install;
-3. `<repo-root>/.config/claude-status.json` — per-repo overrides, which win.
+1. **Defaults baked into the binary** — so a fresh machine draws a full bar with
+   no config file at all.
+2. **`~/.config/claude-status.json`** — yours, created at install.
+3. **`<repo-root>/.config/claude-status.json`** — per-repo overrides, which win.
 
-A layer that is missing, malformed, or not a JSON object is ignored rather than
-fatal. Objects merge key by key; arrays and scalars replace wholesale, so a repo
-overriding `lines` replaces the layout rather than appending to it.
+Nothing here is fragile: a layer that's missing, malformed or not a JSON object
+is simply ignored, and the bar still draws. Objects merge key by key. Arrays and
+scalars replace wholesale, so a repo that overrides `lines` gets the layout it
+asked for rather than yours plus its own.
 
 ```jsonc
 {
@@ -100,28 +113,37 @@ overriding `lines` replaces the layout rather than appending to it.
 }
 ```
 
-Styling resolves **inline override → `segments.<id>` → hard fallback**. A colour
-is a palette name, a `#rrggbb` string, or an `[r, g, b]` triple.
+Styling resolves **inline override → `segments.<id>` → built-in fallback**, and
+a colour can be a palette name, a `#rrggbb` string or an `[r, g, b]` triple.
 
-### Getting a repo layer
+### Per-repo settings
 
-`npx @askviraj/claude-status --configure`, run from inside a repo, writes layer
-3, seeding `projectName` from the repo's directory name. An existing file is
-kept and only gains `projectName` if that key was missing.
+Want one project to look different, or just to be named properly in the bar? Run
+this inside it:
 
-You usually do not have to. `autoConfigureRepo` is **true by default**, so a
-`--statusline` render in a repo with no layer 3 creates it by the same rules.
-Set `"autoConfigureRepo": false` in layer 2 to opt out. Only `--statusline` ever
-writes; `--subagent` and the caps hook stay read-only, and every failure is
-silent, because stdout is the bar.
+```sh
+npx @askviraj/claude-status --configure
+```
 
-`projectName` is **repo-level only**. It ships in neither the embedded defaults
-nor the seeded user config, so a repo that has not been configured omits the
-`project` segment rather than inheriting a name that was never about it.
+That writes layer 3 and names the project after its directory. An existing file
+is kept as-is and only gains `projectName` if it was missing.
+
+Mostly you won't need to. `autoConfigureRepo` is **on by default**, so the first
+render inside a new repo creates that layer for you by the same rules. Set
+`"autoConfigureRepo": false` in layer 2 if you'd rather it never happened. Only
+the main bar ever writes — the subagent panel and the caps hook are strictly
+read-only — and if writing fails for any reason the render carries on without
+complaint, because stdout belongs to the bar.
+
+`projectName` lives **only** at the repo level, by design. It isn't in the
+defaults or your user config, so a repo you haven't configured quietly omits the
+`project` segment instead of wearing a name that was never about it.
 
 ### Segments
 
-| id         | Shows                            | Omitted when                           |
+Mix and match these in `lines`:
+
+| id         | Shows                            | Sits out when                          |
 | ---------- | -------------------------------- | -------------------------------------- |
 | `model`    | model and effort                 | never — falls back to `Claude`         |
 | `context`  | a gauge, tokens used, percentage | never                                  |
@@ -135,39 +157,51 @@ nor the seeded user config, so a repo that has not been configured omits the
 | `worktree` | the worktree sub-path            | not inside a worktree                  |
 | `branch`   | branch, ahead and dirty markers  | no branch resolved                     |
 
-An unknown id in `lines` warns on stderr and omits the segment; the render still
-succeeds. stdout is only ever the bar.
+Typo a segment id and you get a note on stderr and a bar without it — never a
+broken render. stdout is only ever the bar.
 
-### The spend segment, and why it is usually hidden
+### Where's my spend segment?
 
-`spend` shows the account's monthly budget, and it exists for **team and
+`spend` shows an account's monthly budget, and it's built for **team and
 enterprise seats** whose limit is a spend cap rather than the 5-hour and 7-day
-windows. On a Pro or Max seat under the default `show: "auto"` it stays hidden,
-which is correct and is the most common reason it does not appear.
+windows. On a Pro or Max seat it stays hidden under the default `show: "auto"` —
+that's working as intended, and it's much the most common reason you don't see
+it.
 
-Four gates hide it, in order: it is not in your `lines`; there is no usable
-cached figure; the account has no budget block; or the seat is one `auto` hides.
-`claude-status --debug` performs a live fetch and names which gate applied.
+Four gates can hide it, in order: it isn't in your `lines`; there's no usable
+cached figure yet; the account has no budget block; or the seat is one `auto`
+hides. Run `claude-status --debug` and it'll tell you exactly which one applied.
 
-**A render never fetches.** The figure comes from
-`~/.cache/claude-status/spend.json`, refreshed by a detached child that the
-render never waits on.
+**A render never fetches.** The figure comes from a cache at
+`~/.cache/claude-status/spend.json`, refreshed in the background by a child
+process the render never waits on.
 
-## Diagnosing
+## Something not right?
 
 ```sh
 claude-status --debug
 ```
 
-Reports the three config layers and which resolved, how Claude Code is wired,
-the effective layout, the git facts, a sample render — and performs a live spend
-fetch, naming the credential source, the HTTP status, the extraction and each of
-the four gates. The access token appears on neither stream.
+One command tells you the whole story: which config layers were found and which
+won, how Claude Code is wired, the layout in effect, what git reported, a sample
+render — plus a live spend fetch naming the credential source, the HTTP status
+and each of the four gates. Your access token never appears on either stream.
 
-`--debug` is also a modifier: `--statusline --debug` narrates to stderr and
-leaves stdout byte-identical.
+It doubles as a modifier, too: `--statusline --debug` narrates to stderr and
+leaves stdout byte-for-byte unchanged.
 
-## Environment
+### Under the hood
+
+One binary, three surfaces. Claude Code invokes these for you — you won't run
+them by hand:
+
+| Flag           | What it renders                                        |
+| -------------- | ------------------------------------------------------ |
+| `--statusline` | the main bar — two powerline lines                     |
+| `--subagent`   | the subagent panel — NDJSON, one row per subagent      |
+| `--caps-hook`  | a `PostToolUse` actuator; silent unless a cap breached |
+
+And a few environment variables, if you need them:
 
 | Variable                    | Does                                                  |
 | --------------------------- | ----------------------------------------------------- |
@@ -177,7 +211,8 @@ leaves stdout byte-identical.
 
 ## Contributing
 
-Building, testing and releasing are documented in
+Ideas and fixes are welcome — building, testing and releasing are all written up
+in
 [CONTRIBUTING.md](https://github.com/virajp/claude-status/blob/main/CONTRIBUTING.md).
 
 ## Licence
