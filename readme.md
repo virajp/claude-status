@@ -29,9 +29,6 @@ rather than installing something that cannot work — the package declares its
 `os` and `cpu` — and an install forced past that is stopped by the installer,
 which names the platform it will not serve before touching anything.
 
-Building from source is the only escape hatch, and it is genuinely unsupported —
-see [Running it elsewhere](#running-it-elsewhere) if that is you.
-
 ## Install
 
 ```sh
@@ -56,28 +53,6 @@ and give back everything the rewrite bought.
 Replacing a status line the installer did not write **needs a yes**. With no
 terminal to ask in and no `--yes`, the run fails rather than guessing in either
 direction.
-
-### Running it elsewhere
-
-Unsupported, and not a soft "we'd rather you didn't". On Linux, natively:
-
-```sh
-cargo build --release
-# then point Claude Code's statusLine at target/release/claude-status
-```
-
-That is a normal native build with no cross-compilation, and it is the only
-route anyone has a reason to try. Two things to know before you do. **Windows
-will not compile** — the crate reaches for Unix APIs in three places (a
-process-group call, the process-runner's test fixtures, and a `chmod` in the e2e
-suite), so this is a small piece of work rather than a one-line `cfg`, and
-fixing only the first still fails to build. And on Linux the TLS stack pulls in
-`ring`, whose C code needs a working C toolchain — so the first failure you hit
-is likely a missing compiler rather than anything Rust. Nothing outside macOS is
-built, tested or checked in CI, so treat any of it as your own.
-
-`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
-list lives, and its comment names everything a new platform has to touch.
 
 ## Uninstall
 
@@ -219,32 +194,10 @@ and your file lacks. `projectName` is dropped, because it is repo-level here —
 run `--configure` in a repo to set it there. It also offers to remove what the
 old install left behind.
 
-## Building
+## Contributing
 
-```sh
-mise run setup:all         # toolchain
-mise run code:test         # the suite
-mise run build:statusline  # the bar, for both published targets
-mise run build:installer   # the npm packages, staged into target/npm/
-mise run build:all         # both of the above, in order
-```
-
-`build:statusline` builds every published target and smoke-tests the host slice
-— the one this machine can actually execute; the other arch is proven the same
-way on its own CI runner. Pass `--target <triple>` to build just one.
-
-Both published targets are macOS, and Apple ships both slices of the system
-libraries — so `build:all` on any Mac needs nothing but the two `rustup`
-targets. There is no cross toolchain to install and no partial-build case to
-handle. On a non-Mac host `build:statusline` stops and says so rather than
-staging an incomplete set.
-
-`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
-list lives; see [contract §9](docs/spec/statusline-behaviour.md) for why it is
-two rows.
-
-Releases are tag-driven: bump `version` in `Cargo.toml` — the single source for
-every published version — commit, and push a matching `v*` tag.
+Building, testing and releasing are documented in
+[CONTRIBUTING.md](https://github.com/virajp/claude-status/blob/main/CONTRIBUTING.md).
 
 ## Licence
 
