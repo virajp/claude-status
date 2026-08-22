@@ -73,7 +73,11 @@ mkdir -p "${WRAPPER}"
 cp -R npm/claude-status/. "${WRAPPER}/"
 sed -i.bak "s|0\.0\.0-managed-by-cargo|${VERSION}|g" "${WRAPPER}/package.json"
 rm -f "${WRAPPER}/package.json.bak"
-cp readme.md "${WRAPPER}/README.md" 2>/dev/null || true
+# The readme IS the npm listing page, so a silent failure here publishes a
+# package with no description of itself. npm includes README, LICENSE and
+# package.json whatever `files` says, so staging them is all it takes.
+cp readme.md "${WRAPPER}/README.md"
+cp LICENSE "${WRAPPER}/LICENSE"
 chmod 755 "${WRAPPER}/bin/installer.mjs"
 
 # The installer seeds a fresh config from the shipped defaults, so the asset

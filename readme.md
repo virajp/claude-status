@@ -4,10 +4,11 @@ A fast powerline status line for Claude Code, in Rust. It renders in **1–2 ms*
 where the Node script it replaces took 30–50, which matters because the bar
 redraws every four seconds in every open session.
 
-```text
-Opus 5 [high]   ▰▰▰▱▱▱▱▱▱▱ 259k/1M (26%)   7.0%  4h36m   $46.51
-claude-status   main ↑ ±
-```
+![The claude-status bar: two powerline lines. The first shows the model and
+effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
+4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
+session cost. The second shows the project name and the git branch with a dirty
+marker.](https://raw.githubusercontent.com/virajp/claude-status/main/assets/statusline.png)
 
 One binary, three surfaces, each chosen by a flag:
 
@@ -28,25 +29,7 @@ something that cannot work, and the installer names the platform it will not
 serve before touching anything.
 
 Building from source is the only escape hatch, and it is genuinely unsupported —
-not a soft "we'd rather you didn't". On Linux, natively:
-
-```sh
-cargo build --release
-# then point Claude Code's statusLine at target/release/claude-status
-```
-
-That is a normal native build with no cross-compilation, and it is the only
-route anyone has a reason to try. Two things to know before you do. **Windows
-will not compile** — the crate reaches for Unix APIs in three places (a
-process-group call, the process-runner's test fixtures, and a `chmod` in the e2e
-suite), so this is a small piece of work rather than a one-line `cfg`, and
-fixing only the first still fails to build. And on Linux the TLS stack pulls in
-`ring`, whose C code needs a working C toolchain — so the first failure you hit
-is likely a missing compiler rather than anything Rust. Nothing outside macOS is
-built, tested or checked in CI, so treat any of it as your own.
-
-`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
-list lives, and its comment names everything a new platform has to touch.
+see [Running it elsewhere](#running-it-elsewhere) if that is you.
 
 ## Install
 
@@ -72,17 +55,43 @@ Replacing a status line the installer did not write **needs a yes**. With no
 terminal to ask in and no `--yes`, the run fails rather than guessing in either
 direction.
 
+### Running it elsewhere
+
+Unsupported, and not a soft "we'd rather you didn't". On Linux, natively:
+
+```sh
+cargo build --release
+# then point Claude Code's statusLine at target/release/claude-status
+```
+
+That is a normal native build with no cross-compilation, and it is the only
+route anyone has a reason to try. Two things to know before you do. **Windows
+will not compile** — the crate reaches for Unix APIs in three places (a
+process-group call, the process-runner's test fixtures, and a `chmod` in the e2e
+suite), so this is a small piece of work rather than a one-line `cfg`, and
+fixing only the first still fails to build. And on Linux the TLS stack pulls in
+`ring`, whose C code needs a working C toolchain — so the first failure you hit
+is likely a missing compiler rather than anything Rust. Nothing outside macOS is
+built, tested or checked in CI, so treat any of it as your own.
+
+`supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
+list lives, and its comment names everything a new platform has to touch.
+
 ## Uninstall
 
 ```sh
 npx @askviraj/claude-status --uninstall
 ```
 
-It restores what was there before rather than deleting and leaving you with
-nothing. The receipt at `~/.config/claude-status/receipt.json` records **prior
+It removes this installer's own files and restores the `settings.json` keys it
+changed. The receipt at `~/.config/claude-status/receipt.json` records **prior
 state**, so a status line you had before is put back verbatim, a config you
 edited after installing is kept, and a key that was absent before ends up absent
 rather than set to a default.
+
+A `statusline.json` the install migrated is **not** brought back. Uninstall
+removes what belongs to this project and nothing else — reviving the JS bar's
+config would hand you a file for a tool you no longer have.
 
 ## Configuration
 
@@ -134,6 +143,12 @@ that URL is validated against the wrong schema forever. Every other key is
 carried across untouched, and the old file is deleted once the new one is on
 disk. A legacy file that is not a JSON object has no key to set `$schema` on, so
 it is discarded for a fresh config rather than carried across.
+
+The one exception is `projectName`, and only when migrating the **user** layer:
+the JS bar read it from that file, but here it is repo-level only, so keeping it
+would name every repo you open after whichever one you set it in. It is dropped
+rather than moved — the installer cannot know which repo it meant — and
+`--configure` derives the right name from the repo you run it in.
 
 ### Segments
 
@@ -198,7 +213,9 @@ above. `$AI_PLUGINS_USAGE_DIR` still works — it is read after
 `$CLAUDE_STATUS_USAGE_DIR` and will be dropped once the JS bar is retired. The
 installer migrates `~/.config/statusline.json` to the new name, keeping your
 theming and repointing `$schema`, then adds any top-level keys the template has
-and your file lacks. It also offers to remove what the old install left behind.
+and your file lacks. `projectName` is dropped, because it is repo-level here —
+run `--configure` in a repo to set it there. It also offers to remove what the
+old install left behind.
 
 ## Building
 
