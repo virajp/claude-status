@@ -1,6 +1,8 @@
 name: Release
 
-# Publishes @askviraj/claude-status and its two platform packages to npm.
+# Publishes the binaries as GitHub Release assets, then @askviraj/claude-status
+# to npm. ONE npm package: the binary is a release asset the installer fetches
+# and verifies against bin/checksums.json, not a per-platform package.
 # Triggered two ways:
 #   1. a pushed version tag (v*)   — the normal release path
 #   2. workflow_dispatch           — manual re-publish of an existing tag
@@ -11,20 +13,27 @@ name: Release
 # THIS file; `workflow_call` is unusable for that reason.
 #
 # One-time setup: on npmjs.com, register this repo + `release.yml` as the
-# Trusted Publisher for ALL THREE packages — the wrapper and each of the two
-# darwin platform packages. Miss one and that package alone fails with
-# ENEEDAUTH, part-way through the release.
+# Trusted Publisher for @askviraj/claude-status. One package, one registration —
+# the per-platform packages this used to need are gone.
 #
 # THIS WORKFLOW CANNOT PERFORM THE FIRST PUBLISH. A Trusted Publisher is
 # configured on a package's settings page, which does not exist until the
-# package does — so all three have to be created by hand, once, with a granular
-# token, before OIDC can be registered for them. See npm/cli#8544. Publishing a
-# placeholder version to reserve each name is enough; the tag-driven path below
-# then owns every real release, with provenance.
+# package does — so the package has to be created by hand, once, with a granular
+# token, before OIDC can be registered. See npm/cli#8544.
+#
+# TWO VERSION LINES, deliberately and temporarily. The TAG and Cargo.toml are
+# the BINARY's version and must agree, which `verify` enforces. The npm
+# package's version is hand-set in npm/claude-status/package.json and is NOT
+# derived from Cargo.toml, so a `0.x` installer can be republished while the
+# fetch path is proven without burning binary versions. The installer finds its
+# binary through bin/checksums.json, never through its own version.
+#
+# ORDER IS LOAD BEARING: the GitHub Release must exist BEFORE the npm publish.
+# The published installer names a release to download from, so publishing npm
+# first opens a window where every install 404s.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
-# (e.g. v1.0.1). Cargo.toml is the single source of truth for the version — the
-# npm manifests are generated from it by `mise run build:installer`.
+# (e.g. v1.0.1).
 on:
   push:
     tags:
@@ -33,7 +42,8 @@ on:
 
 # id-token: write is required for OIDC trusted publishing.
 permissions:
-  contents: read
+  # `contents: write` creates the release and uploads the binaries to it.
+  contents: write
   id-token: write
 
 concurrency:
@@ -181,50 +191,76 @@ jobs:
       - name: Install build dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Stage the npm packages
+      - name: Stage the npm package
         run: mise run build:installer
 
-      - name: Verify every platform package staged
+      # The binaries are what the release carries, and the manifest inside the
+      # npm package is what vouches for them. Both come from this one staging
+      # step, so they cannot disagree — but assert it anyway, because a silent
+      # disagreement ships a package that 404s or refuses its own download.
+      - name: Collect the release assets
+        id: assets
         run: |
           set -e
           source .config/mise/tasks/_scripts/_rust
-          expected="$(target_count)"
-          count="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
-          if [ "$count" != "$expected" ]; then
-            echo "::error::staged $count platform packages, expected $expected"
+          mkdir -p release-assets
+          manifest="target/npm/claude-status/bin/checksums.json"
+          while read -r target os cpu; do
+            [ -z "$target" ] && continue
+            name="$(asset_name "$os" "$cpu")"
+            cp "target/$target/release/$BINARY_NAME" "release-assets/$name"
+            pinned="$(node -p "require('./$manifest').assets['$os-$cpu'].sha256")"
+            actual="$(shasum -a 256 "release-assets/$name" | cut -d' ' -f1)"
+            if [ "$pinned" != "$actual" ]; then
+              echo "::error::$name is $actual but checksums.json pins $pinned"
+              exit 1
+            fi
+          done < <(supported_targets)
+          ( cd release-assets && shasum -a 256 * > SHA256SUMS )
+          count="$(find release-assets -type f -not -name SHA256SUMS | wc -l | tr -d ' ')"
+          if [ "$count" != "$(target_count)" ]; then
+            echo "::error::collected $count assets, expected $(target_count)"
             exit 1
+          fi
+          echo "Collected $count assets"
+
+      # BEFORE the npm publish — the published installer points at this release,
+      # so it has to be there first. `--clobber` makes a re-run idempotent the
+      # same way the npm publishes below are.
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tag="v${{ needs.verify.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists — uploading assets to it."
+            gh release upload "$tag" release-assets/* --clobber
+          else
+            gh release create "$tag" release-assets/* \
+              --title "$tag" \
+              --generate-notes
           fi
 
       # OIDC trusted publishing needs npm >= 11.5.1; the bundled npm may lag.
       - name: Ensure npm supports OIDC trusted publishing
         run: npm install -g npm@latest
 
-      # Order is load-bearing: the platform packages MUST exist before the
-      # wrapper that depends on them. Publishing the wrapper first would leave
-      # every install in that window unable to resolve a binary.
+      # The npm version is the PACKAGE's, read from the staged manifest — not
+      # `verify.outputs.version`, which is the binary's and may differ while the
+      # two lines are apart.
       #
-      # Each publish is idempotent — an already-published version is skipped,
-      # not failed — so a re-run or a partially-failed release is safe to retry.
-      - name: Publish the platform packages
+      # Idempotent: an already-published version is skipped, not failed, so a
+      # re-run or a partially-failed release is safe to retry. Republishing the
+      # same npm version is impossible on npm, and this is what keeps that from
+      # failing the whole job.
+      - name: Publish the npm package
         run: |
           set -e
-          version="${{ needs.verify.outputs.version }}"
-          for dir in target/npm/claude-status-*; do
-            name="$(node -p "require('./$dir/package.json').name")"
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "$name@$version is already published — skipping."
-              continue
-            fi
-            echo "Publishing $name@$version ..."
-            npm publish --access public "$dir"
-          done
-
-      - name: Publish the wrapper
-        run: |
-          set -e
-          version="${{ needs.verify.outputs.version }}"
+          version="$(node -p "require('./target/npm/claude-status/package.json').version")"
           if npm view "@askviraj/claude-status@$version" version >/dev/null 2>&1; then
             echo "@askviraj/claude-status@$version is already published — skipping."
             exit 0
           fi
+          echo "Publishing @askviraj/claude-status@$version (binary ${{ needs.verify.outputs.version }}) ..."
           npm publish --access public target/npm/claude-status

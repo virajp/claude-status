@@ -28,17 +28,21 @@ BINARY_NAME="claude-status"
 # contract §9, whose six-target paragraph is struck through and annotated.
 #
 # Everything that COUNTS targets derives from this function — `target_count`,
-# `build:installer`'s staging and pin checks, `_rust_reassemble`, the release
-# workflow's staged-package check. Four things do NOT, and adding a platform
-# back means editing every one of them; nothing here catches a miss:
+# `build:installer`'s checksum manifest, `_rust_reassemble`, and the release
+# workflow's asset upload. Three things do NOT, and adding a platform back means
+# editing every one of them; nothing here catches a miss:
 #
-#   1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
-#   2. `"os": ["darwin"]` in `npm/claude-status/package.json` — npm refuses the
-#      install off macOS, so re-adding a row without this ships a wrapper that
+# The host→package map that used to head this list is gone: the binary is no
+# longer an npm package per platform, so `binary.ts` reads the manifest this
+# table generates instead of carrying its own copy.
+#
+#   1. `"os": ["darwin"]` in `npm/claude-status/package.json` — npm refuses the
+#      install off macOS, so re-adding a row without this ships a package that
 #      cannot be installed on the platform it now claims to serve.
-#   3. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
-#      runner each, so no artifact reaches npm untested on its own architecture.
-#   4. The crate itself, in three places — **Windows will not compile** until
+#   2. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
+#      runner each, so no artifact reaches a release untested on its own
+#      architecture.
+#   3. The crate itself, in three places — **Windows will not compile** until
 #      every one of them goes back behind a `cfg`, and restoring only the first
 #      still fails, after a full CI matrix has run:
 #        - `spawn_detached` in `src/_shared/proc.rs` calls a Unix API
@@ -55,12 +59,17 @@ supported_targets() {
     'x86_64-apple-darwin darwin x64'
 }
 
-# How many platform packages a complete release carries.
+# How many binaries a complete release carries.
 target_count() {
   supported_targets | wc -l | tr -d ' '
 }
 
-# The npm package name for a target's os/cpu pair.
-platform_package() {
-  printf '@askviraj/claude-status-%s-%s' "$1" "$2"
+# The GitHub release asset filename for a target's os/cpu pair.
+#
+# Every target's binary is `claude-status` on disk, so they cannot all be
+# uploaded to one release under that name. The os/cpu suffix is what makes them
+# distinguishable, and it is the same `<os>-<cpu>` key the checksum manifest and
+# `hostKey()` use — one shape, three consumers.
+asset_name() {
+  printf 'claude-status-%s-%s' "$1" "$2"
 }

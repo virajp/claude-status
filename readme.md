@@ -37,9 +37,22 @@ see [Running it elsewhere](#running-it-elsewhere) if that is you.
 npx @askviraj/claude-status --install
 ```
 
-npm resolves the platform package for your Mac, and the installer puts the
-binary at `~/.claude/bin/claude-status`, seeds `~/.config/claude-status.json` if
+The installer downloads the binary for your Mac from its GitHub release, checks
+it against the SHA-256 this package pins, and only then puts it at
+`~/.claude/bin/claude-status`. It also seeds `~/.config/claude-status.json` if
 you have no config, and wires three keys into `~/.claude/settings.json`.
+
+**`--install` needs network access**, and that is the one thing it needs beyond
+your own machine. A digest mismatch fails the install and writes nothing. Behind
+a proxy, note that Node does not honour `HTTPS_PROXY` for this download — the
+installer says so when it sees one set, and the fallback is to fetch the binary
+from [the release](https://github.com/virajp/claude-status/releases) by hand and
+drop it at `~/.claude/bin/claude-status`.
+
+Why a download rather than an npm payload: release assets are mutable and npm
+versions are not, so the digest lives in the immutable half and the bytes come
+from the other. That keeps the trust root on npm while leaving one package to
+publish instead of one per platform.
 
 **The npm package is only ever the installer.** Claude Code runs the raw binary;
 routing a render through a Node shim would pay Node's startup every four seconds

@@ -75,7 +75,9 @@ MODIFIERS
   --force     replace a status line this installer did not write, without asking
 
 WHAT --install DOES
-  ~/.claude/bin/claude-status        the binary Claude Code runs
+  ~/.claude/bin/claude-status        the binary Claude Code runs, downloaded
+                                     from its GitHub release and checked
+                                     against the digest this package pins
   ~/.config/claude-status.json       your config, seeded if absent
                                      (migrated from statusline.json if found,
                                      minus projectName — that is repo-level)

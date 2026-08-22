@@ -119,4 +119,5 @@ export {
   readFileSync,
   renameSync,
   rmSync,
+  writeFileSync,
 };

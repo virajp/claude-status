@@ -22,17 +22,24 @@ mise run build:statusline ${DEBUG_FLAG}
 line_sep "-"
 mise run build:installer ${DEBUG_FLAG}
 
-# `build:installer` warns rather than fails when a target is missing, because staging
-# one package is a legitimate thing to want. Here it is not: this task exists to
-# produce a complete, publishable set.
+# The binaries no longer ship inside npm packages, so what has to be complete
+# here is the CHECKSUM MANIFEST: an entry per target, each naming a release asset
+# that the tag push must upload. A package pinning fewer than every target would
+# install fine on the maintainer's own Mac and fail on the other architecture.
 line_sep "-"
-STAGED="$(find target/npm -maxdepth 1 -name 'claude-status-*' -type d | wc -l | tr -d ' ')"
+MANIFEST="target/npm/claude-status/bin/checksums.json"
+PINNED="$(node -p "Object.keys(require('./${MANIFEST}').assets).length")"
 EXPECTED="$(target_count)"
-if [[ "${STAGED}" != "${EXPECTED}" ]]; then
-  print_error "staged ${STAGED}/${EXPECTED} platform packages — a release needs every one"
+if [[ "${PINNED}" != "${EXPECTED}" ]]; then
+  print_error "checksums.json pins ${PINNED}/${EXPECTED} targets — a release needs every one"
   exit 1
 fi
 
-VERSION="$(crate_version)"
-print_header "claude-status ${VERSION}: ${EXPECTED} platform packages + the wrapper are staged in target/npm/."
-print_yellow "  Publishing is CI's job — push a v${VERSION} tag to release."
+BINARY_VERSION="$(crate_version)"
+PKG_VERSION="$(node -p "require('./target/npm/claude-status/package.json').version")"
+print_header "claude-status: npm ${PKG_VERSION}, binary ${BINARY_VERSION}, ${EXPECTED} targets pinned."
+print_yellow "  Publishing is CI's job — push a v${BINARY_VERSION} tag to release."
+if [[ "${PKG_VERSION}" != "${BINARY_VERSION}" ]]; then
+  print_warn  "  npm and binary are on separate version lines — deliberate, and temporary."
+  print_warn  "  See docs/plans/2026-08-22-2147-github-artifacts.md."
+fi

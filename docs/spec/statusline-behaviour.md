@@ -1031,6 +1031,49 @@ things cannot derive it, and each is kept in step by hand:
    architecture. Both are failures, and only the first is currently caught.
 4. The crate, where a platform may need a `cfg` that macOS does not.
 
+> **Amended 2026-08-22** (`github-artifacts` cycle). The channel is still npm —
+> `npx @askviraj/claude-status --install` is unchanged and is still what a user
+> types. What moved is the **bytes**: the binary is a GitHub Release asset that
+> `--install` downloads, rather than the payload of one npm package per
+> platform. Three published packages become one.
+>
+> The table above weighed "GitHub Releases + install script" against "npm with
+> platform binaries" as alternatives. They were not: this takes the artifact
+> half of the first and keeps the entry point of the second, which is why the
+> row's "you own a shell installer" cost does not apply — there is no shell
+> installer, only the Node CLI that already existed.
+>
+> **The standard objection does not apply either.** Fetching a binary from an
+> npm package is normally a `postinstall` hook, which `--ignore-scripts`
+> suppresses and a lockfile cannot vouch for. `--install` is a command the user
+> types, which already writes to `~/.claude` and `~/.config`; no package-manager
+> setting suppresses it and nothing about it is implicit.
+>
+> **Integrity is anchored on npm, not on GitHub.** A release asset is mutable —
+> it can be deleted and re-uploaded at the same URL — and an npm version is not.
+> So `bin/checksums.json` ships inside the package naming every target's asset
+> and its SHA-256, and the download is verified against it before anything
+> reaches `~/.claude/bin`. A mismatch is fatal and is reported as itself, with
+> an explicit instruction not to retry: a mismatch is not a flaky download. The
+> trust root therefore does not move, and GitHub is reduced to a bytes-mover.
+>
+> **Two version lines, deliberately and temporarily.** The tag and `Cargo.toml`
+> are the *binary's* version and must agree, which CI enforces. The npm
+> package's version is hand-set and is not derived from `Cargo.toml`, so a `0.x`
+> installer can be republished while the fetch path is proven without burning
+> binary versions on installer bugs. Resolution never keys off the package's own
+> version — the manifest names the release, so an older
+> `npx @askviraj/claude-status@<old>` installs the binary it was published
+> against and never `latest`. When the lines are matched again the manifest
+> field simply names the same number and no code changes.
+>
+> **What this costs.** `--install` was entirely offline and is not any more.
+> Air-gapped installs stop working, and the documented fallback is to place the
+> binary by hand. Node's `fetch` ignores `HTTPS_PROXY`, so the installer names
+> the variable when it sees one set rather than reporting a bare timeout. And
+> release ordering inverts: the GitHub Release must exist **before** the npm
+> publish, or a published installer points at an asset that is not there.
+
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather

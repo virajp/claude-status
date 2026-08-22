@@ -7,7 +7,10 @@
  * touch the real one, so `HOME` is the only home any assertion knows about.
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+} from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
@@ -16,6 +19,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,6 +30,7 @@ import {
 import {
   after,
   before,
+  beforeEach,
   describe,
   it,
 } from "node:test";
@@ -35,9 +40,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /**
  * The crate version, read from the one place that owns it.
  *
- * The fixtures below stand in for a real platform package, and a hard-coded
- * number here goes stale on the first bump — quietly, because nothing compares
- * it to anything.
+ * The fixtures below stand in for a real release, and a hard-coded number here
+ * goes stale on the first bump — quietly, because nothing compares it to
+ * anything. This is the BINARY's version, which the manifest names; the npm
+ * package carries its own, and the two deliberately differ.
  */
 const CRATE_VERSION = readFileSync(join(ROOT, "Cargo.toml"), "utf8")
   .match(/^version\s*=\s*"([^"]+)"/m)[1];
@@ -46,28 +52,103 @@ const ASSET = join(ROOT, "assets", "claude-status.defaults.json");
 /** The installed binary's filename. macOS only, so there is no extension. */
 const BINARY_NAME = "claude-status";
 
-/** A fake platform package, so the installer has a binary to copy. */
-let fakeModules;
+/**
+ * The binary is no longer inside an npm package — it is a release asset the
+ * installer downloads and verifies. So the fixtures are a **manifest** beside
+ * the bundle and a **local server** standing in for GitHub, reached through
+ * `$CLAUDE_STATUS_RELEASE_BASE`. Real HTTP, real digest checking, no network.
+ */
+const ASSET_NAME = `claude-status-${process.platform}-${process.arch}`;
+const FAKE_BINARY = `#!/bin/sh\necho ${CRATE_VERSION}\n`;
+const MANIFEST = join(ROOT, "npm", "claude-status", "bin", "checksums.json");
 
-before(() => {
+let server;
+let releaseBase;
+/** Where the server reads its behaviour from, so a test can change it. */
+let modeFile;
+
+const digestOf = text =>
+  createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
+
+/**
+ * Puts the stand-in release server into one of its three modes.
+ *
+ * `ok` serves the binary; `404` stands in for a yanked asset; `corrupt` serves
+ * bytes that do not match the pinned digest.
+ */
+function serving(mode) {
+  writeFileSync(modeFile, mode);
+}
+
+/**
+ * The server runs in its OWN PROCESS, and that is not incidental.
+ *
+ * `run()` drives the installer with `execFileSync`, which blocks this process's
+ * event loop until the child exits. An in-process server could therefore never
+ * accept the child's connection — the two would deadlock, each waiting on the
+ * other. A separate process has its own loop and answers while this one is
+ * blocked.
+ *
+ * It reads its mode from a file on every request rather than taking it at
+ * startup, so a test can change the behaviour without restarting anything.
+ */
+const SERVER_SOURCE = `
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const [modeFile, body] = process.argv.slice(2);
+createServer((req, res) => {
+  const mode = readFileSync(modeFile, "utf8").trim();
+  if (mode === "404") {
+    res.writeHead(404); res.end("no such asset"); return;
+  }
+  res.writeHead(200, { "content-type": "application/octet-stream" });
+  res.end(mode === "corrupt" ? body + "tampered" : body);
+}).listen(0, "127.0.0.1", function () {
+  console.log(this.address().port);
+});
+`;
+
+before(async () => {
   assert.ok(
     existsSync(BUNDLE),
     `run \`pnpm exec tsup\` first — no bundle at ${BUNDLE}`,
   );
 
-  // The installer resolves `@askviraj/claude-status-<os>-<cpu>` relative to
-  // itself, so stand one up beside the bundle.
-  const pkg = `@askviraj/claude-status-${process.platform}-${process.arch}`;
-  fakeModules = join(ROOT, "npm", "claude-status", "node_modules", pkg);
-  mkdirSync(join(fakeModules, "bin"), { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), "claude-status-release-"));
+  const script = join(dir, "release-server.mjs");
+  modeFile = join(dir, "mode");
+  writeFileSync(script, SERVER_SOURCE);
+  serving("ok");
+
+  server = spawn(process.execPath, [script, modeFile, FAKE_BINARY], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const port = await new Promise((resolve, reject) => {
+    server.stdout.once("data", data => resolve(String(data).trim()));
+    server.once("error", reject);
+  });
+  releaseBase = `http://127.0.0.1:${port}`;
+
+  // The manifest the installer reads. Its `version` is the BINARY's — the
+  // release to fetch from — and is deliberately not the package's version.
   writeFileSync(
-    join(fakeModules, "package.json"),
-    JSON.stringify({ name: pkg, version: CRATE_VERSION }),
-  );
-  writeFileSync(
-    join(fakeModules, "bin", BINARY_NAME),
-    `#!/bin/sh\necho ${CRATE_VERSION}\n`,
-    { mode: 0o755 },
+    MANIFEST,
+    JSON.stringify({
+      version: CRATE_VERSION,
+      // BOTH targets, as a real package pins — the unsupported-platform
+      // message lists them, and a manifest carrying only the host's would make
+      // that assertion pass for the wrong reason.
+      assets: {
+        "darwin-arm64": {
+          file: "claude-status-darwin-arm64",
+          sha256: digestOf(FAKE_BINARY),
+        },
+        "darwin-x64": {
+          file: "claude-status-darwin-x64",
+          sha256: digestOf(FAKE_BINARY),
+        },
+      },
+    }),
   );
 
   // The seeded defaults ship beside the bundle.
@@ -77,11 +158,13 @@ before(() => {
   );
 });
 
+beforeEach(() => {
+  serving("ok");
+});
+
 after(() => {
-  rmSync(join(ROOT, "npm", "claude-status", "node_modules"), {
-    recursive: true,
-    force: true,
-  });
+  rmSync(MANIFEST, { force: true });
+  server?.kill();
 });
 
 function newHome() {
@@ -91,7 +174,11 @@ function newHome() {
 function run(home, args, options = {}) {
   try {
     const stdout = execFileSync(process.execPath, [BUNDLE, ...args], {
-      env: { ...process.env, HOME: home },
+      env: {
+        ...process.env,
+        HOME: home,
+        CLAUDE_STATUS_RELEASE_BASE: releaseBase,
+      },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       ...options,
@@ -198,7 +285,11 @@ describe("unsupported platforms", () => {
     );
     try {
       const stdout = execFileSync(process.execPath, [shim], {
-        env: { ...process.env, HOME: home },
+        env: {
+          ...process.env,
+          HOME: home,
+          CLAUDE_STATUS_RELEASE_BASE: releaseBase,
+        },
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -463,6 +554,104 @@ describe("the ai-plugins leftovers", () => {
   it("says nothing when there is nothing left behind", () => {
     const home = newHome();
     assert.ok(!/ai-plugins/.test(run(home, ["--install"]).stdout));
+  });
+});
+
+describe("fetching the binary", () => {
+  it("downloads it, verifies the digest and makes it executable", () => {
+    const home = newHome();
+    const { code, stdout } = run(home, ["--install", "--yes"]);
+
+    assert.equal(code, 0);
+    const installed = join(home, ".claude", "bin", BINARY_NAME);
+    assert.ok(existsSync(installed));
+    assert.equal(readFileSync(installed, "utf8"), FAKE_BINARY);
+    assert.ok(
+      statSync(installed).mode & 0o111,
+      "the binary must be executable",
+    );
+    assert.match(stdout, /fetched/);
+  });
+
+  it("records the verified digest, so uninstall can tell it was edited", () => {
+    const home = newHome();
+    run(home, ["--install", "--yes"]);
+
+    const receipt = json(
+      join(home, ".config", "claude-status", "receipt.json"),
+    );
+    const entry = receipt.entries.find(e =>
+      e.kind === "file" && e.path.endsWith(join(".claude", "bin", BINARY_NAME))
+    );
+    assert.equal(
+      entry.sha256,
+      digestOf(FAKE_BINARY),
+      "the digest the download was verified against is the one recorded",
+    );
+  });
+
+  it("keeps a binary the user replaced since installing", () => {
+    const home = newHome();
+    run(home, ["--install", "--yes"]);
+    const installed = join(home, ".claude", "bin", BINARY_NAME);
+    writeFileSync(installed, "#!/bin/sh\necho mine\n", { mode: 0o755 });
+
+    const { stdout } = run(home, ["--uninstall"]);
+
+    assert.ok(
+      existsSync(installed),
+      "an edit since install is the user's work",
+    );
+    assert.match(stdout, /edited since install/);
+  });
+
+  it("installs nothing when the release asset is gone", () => {
+    const home = newHome();
+    serving("404");
+
+    const { code, stderr } = run(home, ["--install", "--yes"]);
+
+    assert.equal(code, 1);
+    assert.match(stderr, /HTTP 404/);
+    assert.deepEqual(
+      snapshot(home),
+      {},
+      "a missing asset must fail having touched nothing",
+    );
+  });
+
+  it("refuses a binary whose digest does not match, and says not to retry", () => {
+    const home = newHome();
+    serving("corrupt");
+
+    const { code, stderr } = run(home, ["--install", "--yes"]);
+
+    assert.equal(code, 1);
+    assert.match(stderr, /does not match the digest/);
+    assert.match(stderr, /Do not retry/);
+    assert.doesNotMatch(
+      stderr,
+      /ENOENT|undefined/,
+      "the mismatch must be reported as itself, not as a knock-on failure",
+    );
+    assert.deepEqual(
+      snapshot(home),
+      {},
+      "a tampered binary must never reach ~/.claude/bin, even briefly",
+    );
+  });
+
+  it("reaches no network under --dry-run, and reports the expected digest", () => {
+    const home = newHome();
+    // Any request at all would be served a mismatching body, so a dry run that
+    // downloaded would fail loudly rather than passing by luck.
+    serving("corrupt");
+
+    const { code, stdout } = run(home, ["--install", "--dry-run", "--yes"]);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /would fetch/);
+    assert.deepEqual(snapshot(home), {}, "--dry-run mutates nothing");
   });
 });
 
