@@ -22,6 +22,11 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
 - **Rate limits before they bite.** Both the 5-hour and 7-day windows, each with
   its reset time.
 - **Cost as you go.** What this session has spent, live.
+- **Monthly budget, for team and enterprise seats.** If your limit is a spend
+  cap rather than the rolling windows, the `spend` segment puts the month's
+  budget right next to the session cost — so the person accountable for it can
+  see where things stand without opening a dashboard. It knows to stay out of
+  the way on Pro and Max seats, where those windows are the real limit.
 - **Git-aware.** Branch, worktree and dirty markers, resolved straight from the
   filesystem.
 - **Make it yours.** Every colour, glyph, segment and row order is config. Per
