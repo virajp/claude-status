@@ -111,6 +111,19 @@ node -e '
   fs.writeFileSync(manifest, JSON.stringify(pkg, null, 2) + "\n");
 ' "${WRAPPER}/package.json" "${VERSION}" ${DEPS}
 
+# The installer reports its own `--version` from this manifest, and it must be
+# the version of the binary it installs. The substitution above is what makes
+# that true; this is what stops it being silently untrue — a renamed placeholder
+# or a hand-edited manifest would otherwise ship an installer that disagrees
+# with the binary in the same tarball.
+STAMPED="$(node -p "require('./${WRAPPER}/package.json').version")"
+if [[ "${STAMPED}" != "${VERSION}" ]]; then
+  print_error "wrapper manifest says ${STAMPED}, Cargo.toml says ${VERSION}"
+  print_warn  "the installer's --version must be the binary's; see npm/claude-status/package.json"
+  exit 1
+fi
+print_yellow "  stamped the installer at ${VERSION}"
+
 PINNED="$(node -p "Object.keys(require('./${WRAPPER}/package.json').optionalDependencies).length")"
 if [[ "${PINNED}" != "$(target_count)" ]]; then
   print_error "wrapper pins ${PINNED} platform packages, expected $(target_count)"

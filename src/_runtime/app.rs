@@ -488,11 +488,12 @@ mod tests {
 
     #[test]
     fn version_output_is_bare() {
+        let expected = format!("{}\n", env!("CARGO_PKG_VERSION"));
         let out = dispatch(Cli { mode: Mode::Version, debug: false });
-        assert_eq!(out, "6.0.0\n");
+        assert_eq!(out, expected);
 
         let with_debug = dispatch(Cli { mode: Mode::Version, debug: true });
-        assert_eq!(with_debug, "6.0.0\n", "--debug must not decorate the version");
+        assert_eq!(with_debug, expected, "--debug must not decorate the version");
     }
 
     #[test]

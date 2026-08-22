@@ -23,7 +23,7 @@ name: Release
 # then owns every real release, with provenance.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
-# (e.g. v6.0.1). Cargo.toml is the single source of truth for the version — the
+# (e.g. v1.0.1). Cargo.toml is the single source of truth for the version — the
 # npm manifests are generated from it by `mise run build:installer`.
 on:
   push:

@@ -176,6 +176,16 @@ mod tests {
 
     #[test]
     fn the_version_is_the_crate_version() {
-        assert_eq!(VERSION, "6.0.0");
+        // The shape, not a literal. `VERSION` *is* `CARGO_PKG_VERSION`, so
+        // asserting a number here only pins a copy that has to be edited on
+        // every bump — and the installer keys on this output's shape, not on
+        // any particular value.
+        assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
+        let parts: Vec<&str> = VERSION.split('.').collect();
+        assert_eq!(parts.len(), 3, "the version must be bare semver: {VERSION}");
+        assert!(
+            parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
+            "the version must carry no prefix or suffix: {VERSION}"
+        );
     }
 }

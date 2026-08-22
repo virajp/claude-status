@@ -367,7 +367,7 @@ fn version_is_exactly_the_version_with_or_without_debug() {
     let home = Home::new(&safe_config());
     for args in [&["--version"][..], &["--version", "--debug"]] {
         let out = run(&home, args, "", &[]);
-        assert_eq!(stdout(&out), "6.0.0\n", "{args:?}");
+        assert_eq!(stdout(&out), format!("{}\n", env!("CARGO_PKG_VERSION")), "{args:?}");
         assert_eq!(stderr(&out), "", "{args:?} must not narrate");
     }
 }

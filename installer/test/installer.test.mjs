@@ -32,6 +32,15 @@ import {
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+/**
+ * The crate version, read from the one place that owns it.
+ *
+ * The fixtures below stand in for a real platform package, and a hard-coded
+ * number here goes stale on the first bump — quietly, because nothing compares
+ * it to anything.
+ */
+const CRATE_VERSION = readFileSync(join(ROOT, "Cargo.toml"), "utf8")
+  .match(/^version\s*=\s*"([^"]+)"/m)[1];
 const BUNDLE = join(ROOT, "npm", "claude-status", "bin", "installer.mjs");
 const ASSET = join(ROOT, "assets", "claude-status.defaults.json");
 /** The installed binary's filename. macOS only, so there is no extension. */
@@ -53,11 +62,11 @@ before(() => {
   mkdirSync(join(fakeModules, "bin"), { recursive: true });
   writeFileSync(
     join(fakeModules, "package.json"),
-    JSON.stringify({ name: pkg, version: "6.0.0" }),
+    JSON.stringify({ name: pkg, version: CRATE_VERSION }),
   );
   writeFileSync(
     join(fakeModules, "bin", BINARY_NAME),
-    "#!/bin/sh\necho 6.0.0\n",
+    `#!/bin/sh\necho ${CRATE_VERSION}\n`,
     { mode: 0o755 },
   );
 
@@ -803,7 +812,7 @@ describe("--uninstall", () => {
     writeFileSync(
       join(home, ".config", "claude-status", "receipt.json"),
       JSON.stringify({
-        version: "6.0.0",
+        version: CRATE_VERSION,
         installedAt: "2026-08-20T00:00:00.000Z",
         entries: [{
           kind: "configKey",
