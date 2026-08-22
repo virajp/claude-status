@@ -27,6 +27,16 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
   budget right next to the session cost — so the person accountable for it can
   see where things stand without opening a dashboard. It knows to stay out of
   the way on Pro and Max seats, where those windows are the real limit.
+- **Guardrails that act, not just inform.** A `PostToolUse` hook watches your
+  usage and, when you cross a cap, tells Claude to wrap up and hand off rather
+  than letting a session run past the line. It ships at **65%** context, 90% of
+  the 5-hour window and 80% of the 7-day one — and a project can tighten any of
+  them in its own `.config/vwf.yaml`. Only tighten: a repo can lower a cap but
+  never raise one, so it cannot quietly switch off its own safety rail.
+- **Your subagents, at a glance too.** The same binary draws a second panel for
+  subagent sessions — a row each with the agent's name, model, what it's working
+  on, tokens and elapsed time, and a status glyph that colours the row: running,
+  done, errored, still queued. Styled from the same config as the main bar.
 - **Git-aware.** Branch, worktree and dirty markers, resolved straight from the
   filesystem.
 - **Make it yours.** Every colour, glyph, segment and row order is config. Per
