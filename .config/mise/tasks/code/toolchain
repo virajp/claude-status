@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#MISE description="Check no env config redeclares a tool the base config owns"
+#MISE dir="{{ config_root }}"
+
+# The bug this exists to catch, in full:
+#
+#   mise.toml       "core:rust" = { profile = "minimal", ... }
+#   mise.dev.toml   "core:rust" = { profile = "default", ... }   # ← silent
+#
+# A maintainer's machine had clippy; CI did not. `code:lint` is clippy, so the
+# first tag push failed on a toolchain difference nothing declared and nothing
+# checked. Reading either file alone told you a true thing about exactly one of
+# the two environments that matter.
+#
+# **This is a STATIC check, and that is deliberate.** The obvious approach —
+# resolve the tools under both MISE_ENV settings and compare — does not work:
+# `mise ls --json` reports `source.path` as the base config in both cases even
+# when an env file overrides the *profile*, because the profile is an option on
+# a tool that is still "from" mise.toml. Two earlier attempts at this task
+# passed while the very override they were written to catch was in place.
+#
+# What is actually wrong is structural and visible in the files: a tool the base
+# config declares must not be redeclared in an environment config. Checking that
+# needs no resolution and cannot be fooled by what mise chooses to report.
+#
+# Dev having MORE tools is the point of the three-file split and is not a
+# failure. Dev redefining a shared one is.
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+cd "$MISE_PROJECT_ROOT"
+
+print_header "Checking no env config redeclares a shared tool ..."
+
+# Tool names in a config's [tools] table, `core:` stripped — that prefix selects
+# a backend and is not part of the name.
+tools_in() {
+  [[ -f "$1" ]] || return 0
+  awk '
+    /^\[tools\]/ { in_tools = 1; next }
+    /^\[/        { in_tools = 0 }
+    in_tools && /^[^#]*=/ {
+      line = $0
+      sub(/=.*/, "", line)
+      gsub(/[" \t]/, "", line)
+      sub(/^core:/, "", line)
+      if (line != "") print line
+    }
+  ' "$1" | sort -u
+}
+
+BASE=".config/mise.toml"
+shared="$(tools_in "${BASE}")"
+
+if [[ -z "${shared}" ]]; then
+  print_error "${BASE} declares no tools — that cannot be right"
+  exit 1
+fi
+
+failed=0
+for env_config in .config/mise.dev.toml .config/mise.ci.toml; do
+  [[ -f "${env_config}" ]] || continue
+  overlap="$(comm -12 <(printf '%s\n' "${shared}") <(tools_in "${env_config}"))"
+  if [[ -n "${overlap}" ]]; then
+    while read -r tool; do
+      [[ -z "${tool}" ]] && continue
+      print_error "  ${tool} is declared in BOTH ${BASE} and ${env_config}"
+    done <<< "${overlap}"
+    print_warn  "    an env config silently overriding a shared tool is invisible"
+    print_warn  "    until the other environment runs — move it to one file"
+    failed=1
+  fi
+done
+
+if [[ "${failed}" -ne 0 ]]; then
+  exit 1
+fi
+
+while read -r tool; do
+  [[ -z "${tool}" ]] && continue
+  print_yellow "  ${tool} ← ${BASE}, and nowhere else"
+done <<< "${shared}"
+
+print_header "dev and CI agree on every shared tool."

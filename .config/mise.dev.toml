@@ -2,13 +2,15 @@
 env_shell_expand     = true
 status.missing_tools = "always"
 
+# Only what CI never runs. Rust, node and pnpm are shared and live in
+# mise.toml — a `core:rust` line here would override the base profile silently,
+# which is the bug this file used to carry.
 [tools]
-"core:rust" = { profile = "default", version = "latest" }
-dprint      = { version = "latest" }
-gitleaks    = { version = "latest" }
-grype       = { version = "latest" }
-pre-commit  = { version = "latest" }
-taplo       = { version = "latest" }
+dprint     = { version = "latest" }
+gitleaks   = { version = "latest" }
+grype      = { version = "latest" }
+pre-commit = { version = "latest" }
+taplo      = { version = "latest" }
 
 # No cross-compilation toolchain is pinned. Both published targets are macOS,
 # and `rustup target add` is the whole story on a Mac — see build:statusline.

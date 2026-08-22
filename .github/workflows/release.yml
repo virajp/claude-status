@@ -108,6 +108,11 @@ jobs:
       - name: Install build dependencies
         run: pnpm install --frozen-lockfile
 
+      # Cheap, and it guards the config that decides whether the lint below
+      # even has a linter — which is how the first release failed.
+      - name: Check the shared toolchain
+        run: mise run code:toolchain
+
       - name: Lint
         run: mise run code:lint
 

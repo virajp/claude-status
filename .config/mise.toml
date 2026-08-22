@@ -13,11 +13,21 @@ npm.package_manager = "pnpm"
 [env]
 _.path = { path = "node_modules/.bin", tools = true }
 
-# The common runtime every environment needs. Rust builds the bar; node and pnpm
-# build the npm installer that ships it. Environment-specific tools live in
-# mise.dev.toml and mise.ci.toml.
+# Every tool dev and CI both need, resolved identically in both. Rust builds the
+# bar; node and pnpm build the npm installer that ships it. Tools only one
+# environment uses live in mise.dev.toml; mise.ci.toml holds CI-only additions
+# and production env VALUES.
+#
+# `profile = "default"`, not `minimal`. The two environments run the same
+# `code:*` tasks, and `code:lint` is clippy, which `minimal` does not carry.
+# This config used to say `minimal` while mise.dev.toml quietly overrode it to
+# `default` — so a maintainer's machine had clippy and CI did not, and the first
+# release failed on exactly that. The cost of `default` is clippy and rustfmt
+# downloaded everywhere; the benefit is that "works locally" and "works in CI"
+# stop being different questions about the toolchain. Do not narrow this back
+# without moving the lint out of CI first.
 [tools]
-"core:rust" = { profile = "minimal", version = "latest" }
+"core:rust" = { profile = "default", version = "latest" }
 node        = { version = "latest" }
 pnpm        = { version = "latest" }
 

@@ -18,6 +18,16 @@ exclude: ^(graphify-out/|tests/golden/)
 repos:
   - repo: local
     hooks:
+      - id: mise-toolchain
+        name: Shared mise tools live in one file
+        description: Fails if an environment config redeclares a tool the base
+          config owns — the silent override that made CI lint without a linter.
+        entry: mise x -- mise run code:toolchain
+        language: system
+        pass_filenames: false
+        files: ^\.config/mise(\.(dev|ci))?\.toml$
+        stages: [ pre-commit ]
+
       - id: git-config
         name: Forbidden Local git-config
         description: Prevents local .git/config from overriding global user and
