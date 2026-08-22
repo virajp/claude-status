@@ -1,8 +1,7 @@
 # Statusline for Claude Code
 
-A fast powerline status line for Claude Code, in Rust. It renders in **1–2 ms**
-where the Node script it replaces took 30–50, which matters because the bar
-redraws every four seconds in every open session.
+A fast powerline status line for Claude Code, in Rust. It renders in **1–2 ms**,
+which matters because the bar redraws every four seconds in every open session.
 
 ![The claude-status bar: two powerline lines. The first shows the model and
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
@@ -10,7 +9,8 @@ effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
 session cost. The second shows the project name and the git branch with a dirty
 marker.](https://raw.githubusercontent.com/virajp/claude-status/main/assets/statusline.png)
 
-One binary, three surfaces, each chosen by a flag:
+One binary, three surfaces, each chosen by a flag. Claude Code invokes these —
+you do not run them by hand:
 
 | Flag           | What it renders                                        |
 | -------------- | ------------------------------------------------------ |
@@ -40,9 +40,19 @@ The installer puts the binary at `~/.claude/bin/claude-status`, seeds
 `~/.claude/settings.json`. The binary ships inside the package, so `--install`
 needs no network access at all.
 
-**The npm package is only ever the installer.** Claude Code runs the raw binary;
-routing a render through a Node shim would pay Node's startup every four seconds
-and give back everything the rewrite bought.
+**The npm package is only ever the installer.** Claude Code is wired straight to
+the binary — routing each render through a Node process would cost more in
+startup than the render itself, several times a minute.
+
+Everything the installer does, it does through one of these:
+
+| Command       | Does                                                                    |
+| ------------- | ----------------------------------------------------------------------- |
+| `--install`   | place the binary, seed your config, wire Claude Code                    |
+| `--uninstall` | remove it, restoring the `settings.json` keys it changed                |
+| `--configure` | add a [repo-level config](#getting-a-repo-layer) to the repo you are in |
+| `--help`      | the same list, with detail                                              |
+| `--version`   | print the installed version                                             |
 
 | Modifier    | Does                                                                    |
 | ----------- | ----------------------------------------------------------------------- |
@@ -65,10 +75,6 @@ changed. The receipt at `~/.config/claude-status/receipt.json` records **prior
 state**, so a status line you had before is put back verbatim, a config you
 edited after installing is kept, and a key that was absent before ends up absent
 rather than set to a default.
-
-A `statusline.json` the install migrated is **not** brought back. Uninstall
-removes what belongs to this project and nothing else — reviving the JS bar's
-config would hand you a file for a tool you no longer have.
 
 ## Configuration
 
@@ -100,9 +106,8 @@ is a palette name, a `#rrggbb` string, or an `[r, g, b]` triple.
 ### Getting a repo layer
 
 `npx @askviraj/claude-status --configure`, run from inside a repo, writes layer
-3: it migrates a repo-level `statusline.json` if it finds one, and otherwise
-seeds `projectName` from the repo's directory name. An existing file is kept and
-only gains `projectName` if that key was missing.
+3, seeding `projectName` from the repo's directory name. An existing file is
+kept and only gains `projectName` if that key was missing.
 
 You usually do not have to. `autoConfigureRepo` is **true by default**, so a
 `--statusline` render in a repo with no layer 3 creates it by the same rules.
@@ -113,19 +118,6 @@ silent, because stdout is the bar.
 `projectName` is **repo-level only**. It ships in neither the embedded defaults
 nor the seeded user config, so a repo that has not been configured omits the
 `project` segment rather than inheriting a name that was never about it.
-
-Migrating a `statusline.json` — at either level — rewrites rather than renames:
-the old file points `$schema` at the `ai-plugins` repo, and a file kept under
-that URL is validated against the wrong schema forever. Every other key is
-carried across untouched, and the old file is deleted once the new one is on
-disk. A legacy file that is not a JSON object has no key to set `$schema` on, so
-it is discarded for a fresh config rather than carried across.
-
-The one exception is `projectName`, and only when migrating the **user** layer:
-the JS bar read it from that file, but here it is repo-level only, so keeping it
-would name every repo you open after whichever one you set it in. It is dropped
-rather than moved — the installer cannot know which repo it meant — and
-`--configure` derives the right name from the repo you run it in.
 
 ### Segments
 
@@ -180,19 +172,8 @@ leaves stdout byte-identical.
 | Variable                    | Does                                                  |
 | --------------------------- | ----------------------------------------------------- |
 | `CLAUDE_STATUS_USAGE_DIR`   | where the usage mirror the caps hook reads is written |
-| `AI_PLUGINS_USAGE_DIR`      | the previous name for it, still honoured              |
 | `CLAUDE_STATUS_SPEND_CACHE` | override the spend cache path                         |
 | `CLAUDE_STATUS_SPEND_URL`   | override the usage endpoint — for testing             |
-
-**Moving from the `ai-plugins` statusline:** `$AI_PLUGINS_SPEND_CACHE` and
-`$AI_PLUGINS_SPEND_URL` are **gone**, replaced by the `CLAUDE_STATUS_` names
-above. `$AI_PLUGINS_USAGE_DIR` still works — it is read after
-`$CLAUDE_STATUS_USAGE_DIR` and will be dropped once the JS bar is retired. The
-installer migrates `~/.config/statusline.json` to the new name, keeping your
-theming and repointing `$schema`, then adds any top-level keys the template has
-and your file lacks. `projectName` is dropped, because it is repo-level here —
-run `--configure` in a repo to set it there. It also offers to remove what the
-old install left behind.
 
 ## Contributing
 
