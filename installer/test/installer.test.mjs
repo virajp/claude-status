@@ -727,3 +727,201 @@ describe("--uninstall", () => {
     );
   });
 });
+
+describe("--configure", () => {
+  /** A throwaway git repo, since --configure asks git where the root is. */
+  function newRepo(name = "my-project") {
+    const parent = mkdtempSync(join(tmpdir(), "claude-status-repo-"));
+    const root = join(parent, name);
+    mkdirSync(root, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
+    return root;
+  }
+
+  const repoConfig = root => join(root, ".config", "claude-status.json");
+  const legacyConfig = root => join(root, ".config", "statusline.json");
+
+  it("refuses outside a repo and names the fix", () => {
+    const home = newHome();
+    const loose = mkdtempSync(join(tmpdir(), "claude-status-loose-"));
+
+    const { code, stderr } = run(home, ["--configure"], { cwd: loose });
+
+    assert.equal(code, 1);
+    assert.match(stderr, /run it from inside a repo/);
+    assert.deepEqual(
+      snapshot(loose),
+      {},
+      "a refusal must not leave anything behind",
+    );
+  });
+
+  it("seeds a repo config carrying the repo's directory name", () => {
+    const home = newHome();
+    const root = newRepo("widget-service");
+
+    const { code } = run(home, ["--configure"], { cwd: root });
+
+    assert.equal(code, 0);
+    const written = json(repoConfig(root));
+    assert.equal(written.projectName, "widget-service");
+    assert.match(written.$schema, /claude-status\.schema\.json$/);
+  });
+
+  it("writes nothing under $HOME — the file belongs to the repo", () => {
+    const home = newHome();
+    const root = newRepo();
+    const before = snapshot(home);
+
+    run(home, ["--configure"], { cwd: root });
+
+    assert.deepEqual(
+      snapshot(home),
+      before,
+      "--configure is the one command scoped to a directory, not to $HOME",
+    );
+  });
+
+  it("resolves the repo root from a subdirectory", () => {
+    const home = newHome();
+    const root = newRepo("deep-repo");
+    const nested = join(root, "src", "modules");
+    mkdirSync(nested, { recursive: true });
+
+    run(home, ["--configure"], { cwd: nested });
+
+    assert.ok(
+      existsSync(repoConfig(root)),
+      "the config belongs at the root, not beside the cwd",
+    );
+    assert.equal(json(repoConfig(root)).projectName, "deep-repo");
+  });
+
+  it("keeps a projectName the user already set", () => {
+    const home = newHome();
+    const root = newRepo();
+    mkdirSync(dirname(repoConfig(root)), { recursive: true });
+    writeFileSync(
+      repoConfig(root),
+      JSON.stringify({ projectName: "hand-picked", defaultFg: "aqua" }),
+    );
+    const before = sha(repoConfig(root));
+
+    const { stdout } = run(home, ["--configure"], { cwd: root });
+
+    assert.equal(
+      sha(repoConfig(root)),
+      before,
+      "an set name is never rewritten",
+    );
+    assert.match(stdout, /kept/);
+  });
+
+  it("fills a missing projectName without disturbing the other keys", () => {
+    const home = newHome();
+    const root = newRepo("filled");
+    mkdirSync(dirname(repoConfig(root)), { recursive: true });
+    writeFileSync(
+      repoConfig(root),
+      JSON.stringify({ $schema: "x", defaultFg: "aqua" }),
+    );
+
+    run(home, ["--configure"], { cwd: root });
+
+    assert.deepEqual(json(repoConfig(root)), {
+      $schema: "x",
+      defaultFg: "aqua",
+      projectName: "filled",
+    });
+  });
+
+  it("migrates statusline.json to the new name, keeping its bytes", () => {
+    const home = newHome();
+    const root = newRepo();
+    mkdirSync(dirname(legacyConfig(root)), { recursive: true });
+    const body =
+      "{\n  \"projectName\": \"from-legacy\",\n  \"defaultFg\": \"aqua\"\n}\n";
+    writeFileSync(legacyConfig(root), body);
+
+    run(home, ["--configure"], { cwd: root });
+
+    assert.equal(
+      readFileSync(repoConfig(root), "utf8"),
+      body,
+      "a migration is a rename, not a re-encode",
+    );
+    assert.ok(!existsSync(legacyConfig(root)), "the old name is gone");
+  });
+
+  it("gives a migrated config a projectName when it carried none", () => {
+    const home = newHome();
+    const root = newRepo("named-by-dir");
+    mkdirSync(dirname(legacyConfig(root)), { recursive: true });
+    writeFileSync(legacyConfig(root), JSON.stringify({ defaultFg: "aqua" }));
+
+    run(home, ["--configure"], { cwd: root });
+
+    assert.deepEqual(json(repoConfig(root)), {
+      defaultFg: "aqua",
+      projectName: "named-by-dir",
+    });
+  });
+
+  it("leaves the legacy file alone when both names exist", () => {
+    const home = newHome();
+    const root = newRepo();
+    mkdirSync(dirname(repoConfig(root)), { recursive: true });
+    writeFileSync(repoConfig(root), JSON.stringify({ projectName: "current" }));
+    writeFileSync(legacyConfig(root), JSON.stringify({ projectName: "old" }));
+
+    run(home, ["--configure"], { cwd: root });
+
+    assert.equal(json(repoConfig(root)).projectName, "current");
+    assert.equal(json(legacyConfig(root)).projectName, "old");
+  });
+
+  it("refuses a repo config that is not a JSON object", () => {
+    const home = newHome();
+    const root = newRepo();
+    mkdirSync(dirname(repoConfig(root)), { recursive: true });
+    writeFileSync(repoConfig(root), "[1, 2, 3]");
+
+    const { code, stderr } = run(home, ["--configure"], { cwd: root });
+
+    assert.equal(code, 1);
+    assert.match(stderr, /not a JSON object/);
+    assert.equal(
+      readFileSync(repoConfig(root), "utf8"),
+      "[1, 2, 3]",
+      "refusing must not overwrite",
+    );
+  });
+
+  it("reports under --dry-run and changes nothing", () => {
+    const home = newHome();
+    const root = newRepo();
+    const before = snapshot(root);
+
+    const { code, stdout } = run(home, ["--configure", "--dry-run"], {
+      cwd: root,
+    });
+
+    assert.equal(code, 0);
+    assert.match(stdout, /would config/);
+    assert.deepEqual(snapshot(root), before);
+  });
+
+  it("treats --configure with another verb as help rather than as a sequence", () => {
+    const home = newHome();
+    const root = newRepo();
+
+    for (const other of ["--install", "--uninstall"]) {
+      const { stdout } = run(home, ["--configure", other], { cwd: root });
+      assert.match(stdout, /USAGE/, `--configure ${other} must not act`);
+      assert.ok(
+        !existsSync(repoConfig(root)),
+        `--configure ${other} must not write a repo config`,
+      );
+    }
+  });
+});

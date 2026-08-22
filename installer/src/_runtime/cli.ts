@@ -5,10 +5,16 @@
  * directory to touch on a half-remembered command.
  */
 import { say } from "../_shared/io.js";
+import { configure } from "./configure.js";
 import { install } from "./install.js";
 import { uninstall } from "./uninstall.js";
 
-export type Command = "help" | "install" | "uninstall" | "version";
+export type Command =
+  | "configure"
+  | "help"
+  | "install"
+  | "uninstall"
+  | "version";
 
 /** The modifiers, resolved once and threaded through every mutation. */
 export interface Options {
@@ -26,17 +32,22 @@ export function parse(argv: string[]): Command {
   if (args.has("--version")) {
     return "version";
   }
-  // Install and uninstall together is a contradiction, not a sequence.
-  if (args.has("--uninstall") && args.has("--install")) {
+  // Two of these together is a contradiction, not a sequence. Counted rather
+  // than checked pairwise, so a fourth verb cannot be added without the
+  // contradiction rule following it.
+  const verbs = (["--install", "--uninstall", "--configure"] as const)
+    .filter(flag => args.has(flag));
+  if (verbs.length !== 1) {
     return "help";
   }
+
   if (args.has("--uninstall")) {
     return "uninstall";
   }
   if (args.has("--install")) {
     return "install";
   }
-  return "help";
+  return "configure";
 }
 
 export function options(argv: string[]): Options {
@@ -54,6 +65,7 @@ export function helpText(version: string): string {
 USAGE
   npx @askviraj/claude-status --install     install the status line
   npx @askviraj/claude-status --uninstall   remove it and restore what was there
+  npx @askviraj/claude-status --configure   add a repo-level config to this repo
   npx @askviraj/claude-status --help        this help
   npx @askviraj/claude-status --version     print this installer's version
 
@@ -77,6 +89,20 @@ WHAT --uninstall DOES
   Restores every key and file the receipt recorded, then removes the binary.
   A config you have edited since installing is left alone.
 
+WHAT --configure DOES
+  Run it from inside a repo. It writes that repo's config layer, which the bar
+  reads on top of your user one:
+
+  <repo-root>/.config/claude-status.json   projectName set to the repo's
+                                           directory name
+                                           (migrated from statusline.json if
+                                           found, keeping its bytes)
+
+  An existing file is kept and only gains projectName if it was missing; a
+  projectName you already set is never rewritten. Nothing is recorded in the
+  receipt and --uninstall does not touch it — the file belongs to the repo, so
+  commit it, and let git be the undo.
+
 The installed binary is what renders the bar — this package is only ever the
 installer, and never sits on the render path.
 `;
@@ -93,6 +119,8 @@ export async function run(
       return install(version, env, opts);
     case "uninstall":
       return uninstall(env, opts);
+    case "configure":
+      return configure(env, opts);
     case "version":
       // The installer's version. The **binary's** `--version` is a different
       // answer and must stay undecorated — that shape is how an installed
