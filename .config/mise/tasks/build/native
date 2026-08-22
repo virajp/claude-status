@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build the release binary for this host and smoke-test it"
 #MISE dir="{{ config_root }}"
+#MISE depends=["build:clean"]
 
 #USAGE flag "--debug" help="emit debug logs"
 

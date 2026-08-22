@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build every target and stage the publishable npm packages"
 #MISE dir="{{ config_root }}"
+#MISE depends=["build:clean"]
 
 #USAGE flag "--debug" help="emit debug logs"
 

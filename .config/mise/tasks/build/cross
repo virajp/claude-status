@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build the release binary for every published target"
 #MISE dir="{{ config_root }}"
+#MISE depends=["build:clean"]
 
 #USAGE flag "--debug" help="emit debug logs"
 #USAGE flag "--target <target>" help="build one Rust target triple instead of every one"
