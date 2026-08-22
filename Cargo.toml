@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name    = "claude-status"
-version = "1.0.0"         # this repo's first release; the JS bar's 5.1.0 is a separate lineage
+version = "0.1.0"         # one line for the binary and the npm package; 1.0.0 ships once tested
 
 # An integration test in tests/ cannot link a bin target, so the golden and
 # defaults tests need the library.

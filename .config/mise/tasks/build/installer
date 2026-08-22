@@ -10,9 +10,10 @@ source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
 
 cd "$MISE_PROJECT_ROOT"
 
-# The version of the BINARY — the GitHub release the installer will fetch from.
-# It is not the npm package's version; see the manifest note below.
-BINARY_VERSION="$(crate_version)"
+# One version for the binary and the package, from the one place that owns it.
+VERSION="$(crate_version)"
+# The single published target, read from the table rather than spelled here.
+read -r TARGET _os _cpu < <(supported_targets)
 OUT="target/npm"
 PKG="${OUT}/claude-status"
 ASSET="assets/claude-status.defaults.json"
@@ -25,7 +26,7 @@ if [[ ! -f npm/claude-status/bin/installer.mjs ]]; then
   exit 1
 fi
 
-print_header "Staging the npm package (binary ${BINARY_VERSION}) ..."
+print_header "Staging @askviraj/claude-status ${VERSION} ..."
 rm -rf "${OUT}"
 mkdir -p "${PKG}"
 
@@ -49,65 +50,38 @@ if ! shasum -a 256 -c <(printf '%s  %s\n' \
   exit 1
 fi
 
-# The checksums manifest — the whole integrity story in one file.
+# The binary itself. It travels INSIDE the package again.
 #
-# GitHub release assets are MUTABLE: one can be deleted and re-uploaded at the
-# same URL. npm versions are not. So the digest of every binary is pinned here,
-# inside the immutable artifact, and the installer verifies the mutable download
-# against it. That is what keeps the trust root on npm and reduces GitHub to a
-# bytes-mover.
-#
-# `version` is the BINARY's version — the release tag to fetch from — and is
-# deliberately NOT the npm package's version. The two are on separate lines
-# while the fetch path is being proven against a real release, so that a `0.x`
-# package can be republished freely without burning binary versions on installer
-# bugs. When they are matched again this field simply names the same number, and
-# nothing here changes.
-#
-# Keyed by `<os>-<cpu>` because that is exactly what `hostKey()` returns.
-MANIFEST="${PKG}/bin/checksums.json"
-missing=0
-{
-  printf '{\n  "version": "%s",\n  "assets": {\n' "${BINARY_VERSION}"
-  first=1
-  while read -r target os cpu; do
-    [[ -z "${target}" ]] && continue
-    bin="target/${target}/release/${BINARY_NAME}"
-    if [[ ! -f "${bin}" ]]; then
-      print_warn "  no binary at ${bin} (run build:statusline first)" >&2
-      missing=$((missing + 1))
-      continue
-    fi
-    digest="$(shasum -a 256 "${bin}" | cut -d' ' -f1)"
-    [[ ${first} -eq 0 ]] && printf ',\n'
-    first=0
-    printf '    "%s-%s": { "file": "%s", "sha256": "%s" }' \
-      "${os}" "${cpu}" "$(asset_name "${os}" "${cpu}")" "${digest}"
-  done < <(supported_targets)
-  printf '\n  }\n}\n'
-} > "${MANIFEST}"
-
-ENTRIES="$(node -p "Object.keys(require('./${MANIFEST}').assets).length")"
-if [[ "${ENTRIES}" != "$(target_count)" ]]; then
-  print_error "checksums.json names ${ENTRIES} targets, expected $(target_count)"
-  print_warn  "a release must pin every target — run build:statusline for all of them"
+# It briefly did not: the `github-artifacts` cycle moved it to a GitHub release
+# asset the installer downloaded and verified. That bought one npm package
+# instead of three — a benefit of not having per-platform packages, which having
+# one target delivers for free. What was left was only cost: a required network
+# call, broken air-gapped installs, an unhonoured HTTPS_PROXY, and a digest
+# manifest to maintain against a MUTABLE release asset. Embedding deletes the
+# problem rather than verifying around it, because there is no second artifact
+# to distrust — npm versions are immutable and that is the whole integrity
+# story.
+BIN="target/${TARGET}/release/${BINARY_NAME}"
+if [[ ! -f "${BIN}" ]]; then
+  print_error "no binary at ${BIN}"
+  print_warn  "run build:statusline first — a package staged without its binary is not releasable"
   exit 1
 fi
-print_yellow "  pinned ${ENTRIES} binaries at ${BINARY_VERSION}"
+install -m 755 "${BIN}" "${PKG}/bin/${BINARY_NAME}"
+print_yellow "  staged ${BINARY_NAME} $("${BIN}" --version)"
 
-# The npm package's own version is HAND-SET in npm/claude-status/package.json
-# and is not substituted from Cargo.toml. It is reported by `--version` and is
-# the number users install; the binary it fetches is named by the manifest.
-PKG_VERSION="$(node -p "require('./${PKG}/package.json').version")"
-if [[ "${PKG_VERSION}" == *"managed-by-cargo"* ]]; then
-  print_error "npm/claude-status/package.json still carries the old placeholder"
-  print_warn  "set a real version there — it is no longer substituted from Cargo.toml"
+# The installer reports its own `--version` from this manifest, and it must be
+# the version of the binary beside it. The substitution is what makes that true;
+# this is what stops it being silently untrue — a renamed placeholder or a
+# hand-edited manifest would otherwise ship an installer that disagrees with the
+# binary in the same tarball.
+sed -i.bak "s|0\.0\.0-managed-by-cargo|${VERSION}|g" "${PKG}/package.json"
+rm -f "${PKG}/package.json.bak"
+STAMPED="$(node -p "require('./${PKG}/package.json').version")"
+if [[ "${STAMPED}" != "${VERSION}" ]]; then
+  print_error "package manifest says ${STAMPED}, Cargo.toml says ${VERSION}"
   exit 1
 fi
-print_yellow "  staged @askviraj/claude-status ${PKG_VERSION}"
+print_yellow "  stamped the installer at ${VERSION}"
 
-print_header "Staged @askviraj/claude-status ${PKG_VERSION} (binary ${BINARY_VERSION}) in ${OUT}/."
-if [[ "${missing}" -gt 0 ]]; then
-  print_error "${missing} target(s) had no binary — this package cannot be released"
-  exit 1
-fi
+print_header "Staged @askviraj/claude-status ${VERSION} in ${OUT}/."

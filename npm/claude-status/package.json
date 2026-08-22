@@ -1,6 +1,6 @@
 {
   "name": "@askviraj/claude-status",
-  "version": "0.1.0",
+  "version": "0.0.0-managed-by-cargo",
   "description": "A fast powerline status line for Claude Code",
   "keywords": [
     "claude",
@@ -19,6 +19,7 @@
   "files": [
     "bin"
   ],
+  "preferUnplugged": true,
   "os": [
     "darwin"
   ],
@@ -28,5 +29,5 @@
   "engines": {
     "node": ">=18"
   },
-  "//": "Apple Silicon macOS only. `os` AND `cpu` together express the supported set exactly \u2014 with one target there is no cross product to leak \u2014 so npm refuses the install on an Intel Mac, on Linux and on Windows with EBADPLATFORM rather than failing at run time. The installer's own unsupported-platform message is the second line of defence, for an install forced past npm. The BINARY is not in this package: it is a GitHub release asset that `--install` downloads and verifies against bin/checksums.json, which `mise run build:installer` generates from the target table in .config/mise/tasks/_scripts/_rust. Adding a platform means that table, both fields here, and a build AND test matrix entry in .github/workflows/release.yml."
+  "//": "Apple Silicon macOS only. `os` AND `cpu` together express the supported set exactly \u2014 with one target there is no cross product to leak \u2014 so npm refuses the install on an Intel Mac, on Linux and on Windows with EBADPLATFORM rather than failing at run time. The installer's own unsupported-platform message is the second line of defence, for an install forced past npm. `preferUnplugged` because this package carries an executable, which Yarn PnP must not leave inside a zip. `version` is substituted from Cargo.toml by `mise run build:installer` and must never be hand-edited \u2014 the binary in bin/ is the one this version names. Adding a platform means the target table in .config/mise/tasks/_scripts/_rust, both fields here, and a build AND test matrix entry in .github/workflows/release.yml."
 }

@@ -14,6 +14,7 @@ import {
   hasTty,
   rmSync,
   say,
+  sha256,
   step,
   warn,
   wouldStep,
@@ -44,20 +45,24 @@ export async function install(
 
   // 1. The binary. Resolved before anything is written — and before anything
   //    is *said*, so a host this package cannot serve is told so instead of
-  //    reading "Installing claude-status" and then an error. Resolution is
-  //    pure: it reads the pinned manifest and reaches no network, which is what
-  //    lets the dry run report the real digest without touching anything.
-  const manifest = binary.readManifest();
-  const resolved = binary.resolve(manifest);
+  //    reading "Installing claude-status" and then an error.
+  const resolved = binary.resolve();
   if (!resolved.ok) {
+    if (resolved.reason === "unsupported") {
+      fail(
+        `unsupported platform ${resolved.host}\n`
+          + `  claude-status ships an Apple Silicon macOS binary only.\n`
+          + `  supported: ${binary.supportedPlatforms().join(", ")}\n`
+          + `  npm normally refuses this install outright — reaching this\n`
+          + `  message means it was forced past. Nothing has been changed.\n`
+          + `  Building from source is the only other option, and it is\n`
+          + `  unsupported: https://github.com/virajp/claude-status#requirements`,
+      );
+    }
     fail(
-      `unsupported platform ${resolved.host}\n`
-        + `  claude-status ships macOS binaries only.\n`
-        + `  supported: ${binary.supportedPlatforms(manifest).join(", ")}\n`
-        + `  npm normally refuses this install outright — reaching this\n`
-        + `  message means it was forced past. Nothing has been changed.\n`
-        + `  Building from source is the only other option, and it is\n`
-        + `  unsupported: https://github.com/virajp/claude-status#requirements`,
+      `this package is missing its binary at ${resolved.path}\n`
+        + `  That should be impossible in a published package — reinstall with:\n`
+        + `    npm install @askviraj/claude-status --force`,
     );
   }
 
@@ -83,41 +88,20 @@ export async function install(
     }));
   entries.push(...dirsBefore);
 
-  // The download is the one network call this installer makes, and it happens
-  // only on a real run. `download` verifies the digest before returning bytes,
-  // so nothing unverified can reach ~/.claude/bin even briefly.
   const binaryExisted = existsSync(paths.binary);
   if (!opts.dryRun) {
-    let bytes: Buffer;
-    try {
-      bytes = await binary.download(resolved.url, resolved.sha256);
-    }
-    catch (error: unknown) {
-      fail(
-        error instanceof binary.BinaryFetchError
-          ? error.message
-          : `could not install the binary: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-      );
-    }
-    binary.place(bytes, paths.binary);
+    binary.install(resolved.path, paths.binary);
   }
-  // The digest is recorded now that there is a verified one to record. It is
-  // what lets uninstall apply to the binary the same "edited since install"
-  // guard it already applies to the config, rather than removing whatever
-  // happens to sit at that path.
+  // The digest is recorded so uninstall can apply to the binary the same
+  // "edited since install" guard it already applies to the config, rather than
+  // removing whatever happens to sit at that path.
   entries.push({
     kind: "file",
     path: paths.binary,
     existedBefore: binaryExisted,
-    sha256: resolved.sha256,
+    sha256: sha256(resolved.path),
   });
-  did(
-    `binary   ${tilde(paths.binary, paths)} (${
-      opts.dryRun ? "would fetch" : "fetched"
-    } ${resolved.version})`,
-  );
+  did(`binary   ${tilde(paths.binary, paths)}`);
 
   // 2. The config: seeded, migrated from the JS bar's name, or left alone.
   const outcome = config.seedOrMigrate(paths, opts.dryRun);

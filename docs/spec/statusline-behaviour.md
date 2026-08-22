@@ -1105,6 +1105,49 @@ things cannot derive it, and each is kept in step by hand:
 > **exactly** — no cross product to leak — so npm is the first gate and the
 > installer's unsupported-platform message is the second, rather than the only.
 
+> **Amended 2026-08-22** (`release-fix` cycle, second amendment). The binary
+> travels **inside** the npm package again. The download-and-verify path added
+> earlier the same day is deleted, not disabled.
+>
+> **The earlier amendment's reasoning was sound for the input it had.** With
+> three published packages, fetching bought one npm package instead of three,
+> one Trusted Publisher instead of three, and a first publish that did not have
+> to reserve three names by hand. Every one of those is a benefit of *not having
+> per-platform packages*.
+>
+> Cutting to one target delivers all of them for free — one target is one
+> package whether the binary is inside it or not — so the download's entire
+> upside evaporated and only its costs remained: a required network call,
+> air-gapped installs broken, `HTTPS_PROXY` unhonoured by Node's `fetch`, a
+> release that had to precede the npm publish, and a digest manifest maintained
+> against a mutable asset.
+>
+> **The integrity argument inverts rather than weakens.** The download design's
+> central move was pinning digests in the immutable artifact because a release
+> asset can be deleted and re-uploaded at the same URL. Embedding makes that
+> problem not exist: there is no second artifact to distrust, and npm's own
+> immutability is the whole story. `checksums.json`, three distinguishable
+> failure modes and a test HTTP server in its own process all disappear rather
+> than being maintained.
+>
+> **Two things from that cycle stay.** One npm package — the per-platform
+> packages are gone and stay gone. And the receipt records the **binary's**
+> digest, which it never did before, so `--uninstall` applies to the binary the
+> same "edited since install" guard it already applied to the config; that was
+> an independent fix that merely arrived alongside.
+>
+> **One version line, again.** `crate_version()` describes itself as *"the
+> single source of truth for everything published … deliberately NOT duplicated
+> into a package.json that could drift"*. That stopped being true for one cycle,
+> when the npm package carried a hand-set `0.x` while the binary was `1.0.0`.
+> With the binary inside the package that split made one artifact claim two
+> versions of itself, so the manifest is stamped from the crate again and the
+> stamp check is back.
+>
+> The GitHub Release still carries the binary. It is no longer load bearing for
+> npm — it is for anyone who wants the binary directly, and for a Homebrew tap
+> later.
+
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather

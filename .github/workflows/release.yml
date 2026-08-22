@@ -1,8 +1,9 @@
 name: Release
 
-# Publishes the binaries as GitHub Release assets, then @askviraj/claude-status
-# to npm. ONE npm package: the binary is a release asset the installer fetches
-# and verifies against bin/checksums.json, not a per-platform package.
+# Publishes @askviraj/claude-status to npm, and the binary as a GitHub Release
+# asset. ONE npm package, with the binary INSIDE it — the release is for people
+# who want the binary directly, and nothing in the published package points at
+# it.
 # Triggered two ways:
 #   1. a pushed version tag (v*)   — the normal release path
 #   2. workflow_dispatch           — manual re-publish of an existing tag
@@ -21,16 +22,13 @@ name: Release
 # package does — so the package has to be created by hand, once, with a granular
 # token, before OIDC can be registered. See npm/cli#8544.
 #
-# TWO VERSION LINES, deliberately and temporarily. The TAG and Cargo.toml are
-# the BINARY's version and must agree, which `verify` enforces. The npm
-# package's version is hand-set in npm/claude-status/package.json and is NOT
-# derived from Cargo.toml, so a `0.x` installer can be republished while the
-# fetch path is proven without burning binary versions. The installer finds its
-# binary through bin/checksums.json, never through its own version.
+# ONE version. Cargo.toml owns it: the binary self-reports it, the npm package
+# is stamped from it by `build:installer`, and `verify` below checks the tag
+# against it. There was briefly a second, hand-set npm version; embedding the
+# binary made that one artifact claiming two versions of itself.
 #
-# ORDER IS LOAD BEARING: the GitHub Release must exist BEFORE the npm publish.
-# The published installer names a release to download from, so publishing npm
-# first opens a window where every install 404s.
+# Order between the two publishes no longer matters — the package carries its
+# binary, so it works whether or not the release exists.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v1.0.1).
@@ -189,27 +187,16 @@ jobs:
       - name: Stage the npm package
         run: mise run build:installer
 
-      # The binaries are what the release carries, and the manifest inside the
-      # npm package is what vouches for them. Both come from this one staging
-      # step, so they cannot disagree — but assert it anyway, because a silent
-      # disagreement ships a package that 404s or refuses its own download.
-      - name: Collect the release assets
-        id: assets
+      # The binary the package carries is the binary the release publishes —
+      # one build, two destinations, so they cannot disagree.
+      - name: Collect the release asset
         run: |
           set -e
           source .config/mise/tasks/_scripts/_rust
           mkdir -p release-assets
-          manifest="target/npm/claude-status/bin/checksums.json"
           while read -r target os cpu; do
             [ -z "$target" ] && continue
-            name="$(asset_name "$os" "$cpu")"
-            cp "target/$target/release/$BINARY_NAME" "release-assets/$name"
-            pinned="$(node -p "require('./$manifest').assets['$os-$cpu'].sha256")"
-            actual="$(shasum -a 256 "release-assets/$name" | cut -d' ' -f1)"
-            if [ "$pinned" != "$actual" ]; then
-              echo "::error::$name is $actual but checksums.json pins $pinned"
-              exit 1
-            fi
+            cp "target/$target/release/$BINARY_NAME" "release-assets/$(asset_name "$os" "$cpu")"
           done < <(supported_targets)
           ( cd release-assets && shasum -a 256 * > SHA256SUMS )
           count="$(find release-assets -type f -not -name SHA256SUMS | wc -l | tr -d ' ')"
@@ -217,11 +204,10 @@ jobs:
             echo "::error::collected $count assets, expected $(target_count)"
             exit 1
           fi
-          echo "Collected $count assets"
 
-      # BEFORE the npm publish — the published installer points at this release,
-      # so it has to be there first. `--clobber` makes a re-run idempotent the
-      # same way the npm publishes below are.
+      # Not load bearing for npm any more — the package carries its own binary.
+      # This is for people who want the binary directly, and for a Homebrew tap
+      # later. `--clobber` makes a re-run idempotent, as the npm publish is.
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -241,10 +227,6 @@ jobs:
       - name: Ensure npm supports OIDC trusted publishing
         run: npm install -g npm@latest
 
-      # The npm version is the PACKAGE's, read from the staged manifest — not
-      # `verify.outputs.version`, which is the binary's and may differ while the
-      # two lines are apart.
-      #
       # Idempotent: an already-published version is skipped, not failed, so a
       # re-run or a partially-failed release is safe to retry. Republishing the
       # same npm version is impossible on npm, and this is what keeps that from
@@ -252,10 +234,10 @@ jobs:
       - name: Publish the npm package
         run: |
           set -e
-          version="$(node -p "require('./target/npm/claude-status/package.json').version")"
+          version="${{ needs.verify.outputs.version }}"
           if npm view "@askviraj/claude-status@$version" version >/dev/null 2>&1; then
             echo "@askviraj/claude-status@$version is already published — skipping."
             exit 0
           fi
-          echo "Publishing @askviraj/claude-status@$version (binary ${{ needs.verify.outputs.version }}) ..."
+          echo "Publishing @askviraj/claude-status@$version ..."
           npm publish --access public target/npm/claude-status
