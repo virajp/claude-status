@@ -34,37 +34,20 @@ export interface Paths {
   legacyHook: string;
 }
 
-/** The binary's filename, which carries an extension only on Windows. */
-export const BINARY_NAME = process.platform === "win32"
-  ? "claude-status.exe"
-  : "claude-status";
+/** The binary's filename. macOS only, so it never carries an extension. */
+export const BINARY_NAME = "claude-status";
 
 /**
  * The home directory.
  *
- * `HOME` first — it is what Unix uses, it is what Git Bash sets on Windows, and
- * honouring it is what lets the tests point the installer at a throwaway
- * directory. Then `USERPROFILE`, which is where Claude Code keeps `.claude` on
- * native Windows, and finally the drive/path pair a domain-joined machine may
- * have instead.
+ * `$HOME` first — it is what macOS uses, and honouring it is what lets the
+ * tests point the whole installer at a throwaway directory. `homedir()` is the
+ * fallback for the rare process that inherits no environment.
  */
 export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
   const home = env["HOME"];
   if (home && home.length > 0) {
     return home;
-  }
-
-  if (process.platform === "win32") {
-    const profile = env["USERPROFILE"];
-    if (profile && profile.length > 0) {
-      return profile;
-    }
-
-    const drive = env["HOMEDRIVE"];
-    const path = env["HOMEPATH"];
-    if (drive && path) {
-      return `${drive}${path}`;
-    }
   }
 
   return homedir();

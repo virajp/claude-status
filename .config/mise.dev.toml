@@ -10,20 +10,8 @@ grype       = { version = "latest" }
 pre-commit  = { version = "latest" }
 taplo       = { version = "latest" }
 
-# Cross-compiling the two Linux targets from macOS. zig supplies a linker for
-# the target libc without a per-target cross toolchain, and — the reason it is
-# worth having rather than leaving to CI — it also handles the C dependency that
-# arrives with the spend subsystem's TLS stack. CI builds each target on a
-# natively-matching runner and never needs these; a maintainer running
-# `build:all` locally does.
-"cargo:cargo-zigbuild" = { version = "latest" }
-zig                    = { version = "latest" }
-
-# Cross-compiling the two Windows targets from macOS. cargo-xwin fetches the
-# MSVC headers and import libraries on first use, so the first Windows build is
-# slow and needs a network. CI never touches it — the release workflow builds
-# each Windows target on a native Windows runner.
-"cargo:cargo-xwin" = { version = "latest" }
+# No cross-compilation toolchain is pinned. Both published targets are macOS,
+# and `rustup target add` is the whole story on a Mac — see build:cross.
 
 [shell_alias]
 cc        = "claude --name 'claude-status' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status' --continue"

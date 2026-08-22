@@ -78,41 +78,41 @@ impl SpendCache {
 /// `$CLAUDE_STATUS_SPEND_CACHE` wins, expanding a **leading `~` only** — unlike
 /// `$AI_PLUGINS_USAGE_DIR`, which also expands `$HOME`. The two are different
 /// contracts and the contract document conflates them.
-pub fn path() -> PathBuf {
+///
+/// `None` when there is no `$HOME` to resolve against. **Absent, never
+/// relative:** falling back to a bare `spend.json` wrote the cache into
+/// whatever directory Claude Code happened to be launched from — a stray file
+/// in the user's working tree, and a cache that never hit, because the next
+/// session started somewhere else.
+pub fn path() -> Option<PathBuf> {
     if let Ok(override_path) = std::env::var(CACHE_ENV)
         && !override_path.is_empty()
     {
         return expand_tilde(&override_path);
     }
 
-    match crate::_shared::paths::home() {
-        Some(home) => home.join(".cache").join("claude-status").join("spend.json"),
-        None => PathBuf::from("spend.json"),
-    }
+    Some(crate::_shared::paths::home()?.join(".cache").join("claude-status").join("spend.json"))
 }
 
-fn expand_tilde(path: &str) -> PathBuf {
+fn expand_tilde(path: &str) -> Option<PathBuf> {
     match path.strip_prefix('~') {
-        Some(rest) => match crate::_shared::paths::home() {
-            Some(home) => PathBuf::from(format!("{}{rest}", home.display())),
-            None => PathBuf::from(path),
-        },
-        None => PathBuf::from(path),
+        // Same rule as `path()`: a value that asks for the home directory and
+        // cannot get one is absent, not a literal `~/…` relative to nowhere.
+        Some(rest) => Some(PathBuf::from(format!("{}{rest}", crate::_shared::paths::home()?.display()))),
+        None => Some(PathBuf::from(path)),
     }
 }
 
 /// Reads the cache. Missing, unreadable or corrupt all read as `None` — a
 /// render must never fail because of this file.
-pub fn read() -> Option<SpendCache> {
-    read_from(&path())
-}
-
+///
+/// There is no `read()`/`write()` pair taking the path implicitly. Both existed
+/// and neither had a caller: every real site resolves `path()` once and threads
+/// it, which is also what lets the tests point at a temp directory. Making the
+/// path an argument is the reason there is nothing here to get wrong when
+/// `$HOME` is unresolvable.
 pub fn read_from(path: &std::path::Path) -> Option<SpendCache> {
     SpendCache::from_json(&read_json_file(path)?)
-}
-
-pub fn write(cache: &SpendCache) -> std::io::Result<()> {
-    write_to(&path(), cache)
 }
 
 pub fn write_to(path: &std::path::Path, cache: &SpendCache) -> std::io::Result<()> {
@@ -183,19 +183,39 @@ mod tests {
 
     #[test]
     fn the_env_override_wins_and_expands_a_leading_tilde() {
-        // SAFETY: single-threaded test.
-        unsafe { std::env::set_var("HOME", "/tmp/fakehome") };
-        unsafe { std::env::set_var(CACHE_ENV, "~/custom/spend.json") };
-        assert_eq!(path(), PathBuf::from("/tmp/fakehome/custom/spend.json"));
+        let mut env = crate::_shared::env_lock();
+        env.set("HOME", "/tmp/fakehome");
+        env.set(CACHE_ENV, "~/custom/spend.json");
+        assert_eq!(path(), Some(PathBuf::from("/tmp/fakehome/custom/spend.json")));
 
-        unsafe { std::env::set_var(CACHE_ENV, "/absolute/spend.json") };
-        assert_eq!(path(), PathBuf::from("/absolute/spend.json"));
+        env.set(CACHE_ENV, "/absolute/spend.json");
+        assert_eq!(path(), Some(PathBuf::from("/absolute/spend.json")));
 
         // Unlike the usage mirror, `$HOME` is NOT expanded here.
-        unsafe { std::env::set_var(CACHE_ENV, "$HOME/spend.json") };
-        assert_eq!(path(), PathBuf::from("$HOME/spend.json"));
+        env.set(CACHE_ENV, "$HOME/spend.json");
+        assert_eq!(path(), Some(PathBuf::from("$HOME/spend.json")));
 
-        unsafe { std::env::remove_var(CACHE_ENV) };
-        assert_eq!(path(), PathBuf::from("/tmp/fakehome/.cache/claude-status/spend.json"));
+        env.unset(CACHE_ENV);
+        assert_eq!(path(), Some(PathBuf::from("/tmp/fakehome/.cache/claude-status/spend.json")));
+    }
+
+    #[test]
+    fn without_a_home_the_path_is_absent_rather_than_relative() {
+        // Both variables are restored on drop, including if an assertion here
+        // fails — a trailing restore would be skipped by the unwind and every
+        // later test would then run with no `HOME`.
+        let mut env = crate::_shared::env_lock();
+        env.unset(CACHE_ENV);
+        env.unset("HOME");
+        assert_eq!(path(), None, "a bare spend.json would land in the user's cwd");
+
+        // A `~` override cannot resolve either — and must not degrade to the
+        // literal `~/…`, which is just as relative.
+        env.set(CACHE_ENV, "~/custom/spend.json");
+        assert_eq!(path(), None);
+
+        // An absolute override needs no home and still works.
+        env.set(CACHE_ENV, "/absolute/spend.json");
+        assert_eq!(path(), Some(PathBuf::from("/absolute/spend.json")));
     }
 }

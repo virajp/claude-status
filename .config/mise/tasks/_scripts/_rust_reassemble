@@ -12,10 +12,10 @@
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/_rust"
 
-while read -r target _os _cpu exe; do
+while read -r target _os _cpu; do
   [[ -z "${target}" ]] && continue
   mkdir -p "target/${target}/release"
-  cp "artifacts/binary-${target}/${exe}" "target/${target}/release/${exe}"
-  chmod 755 "target/${target}/release/${exe}"
-  echo "  restored target/${target}/release/${exe}"
+  cp "artifacts/binary-${target}/${BINARY_NAME}" "target/${target}/release/${BINARY_NAME}"
+  chmod 755 "target/${target}/release/${BINARY_NAME}"
+  echo "  restored target/${target}/release/${BINARY_NAME}"
 done < <(supported_targets)

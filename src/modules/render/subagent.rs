@@ -246,7 +246,10 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
 
     if let Some(desc) = description(task) {
         let (bg, fg, bold) = style("desc", "bg3", config);
-        segments.push(Segment { text: truncate(&desc, panel.budget), bg, fg, bold });
+        // Sanitized *before* truncating, not just by the sweep below: the
+        // budget is a width, and measuring it against characters that are
+        // about to be removed would leave the row short of it.
+        segments.push(Segment { text: truncate(&crate::render::sanitize(&desc), panel.budget), bg, fg, bold });
     }
 
     // tokens — present-but-not-null, so an honest `0` renders `0`.
@@ -261,6 +264,18 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
         let (bg, fg, bold) = style("duration", "purple", config);
         let elapsed = panel.now_ms.saturating_sub(start) as f64;
         segments.push(Segment { text: format!("{} {}", sym("duration"), human_duration(Some(elapsed))), bg, fg, bold });
+    }
+
+    // The panel builds its segments directly rather than through
+    // `segments::build`, so it does not inherit that path's filtering — which
+    // is exactly how `name` and `description` reached the row unfiltered. Every
+    // field above is attacker-influenced: `name` and `description` are written
+    // by a model and so are steerable by prompt injection, the model and effort
+    // labels come from the payload, and the glyphs come from a config layer the
+    // repository supplies. One sweep here covers all of them, and covers any
+    // segment added later without needing to remember.
+    for segment in &mut segments {
+        segment.text = crate::render::sanitize(&segment.text);
     }
 
     segments
@@ -631,6 +646,44 @@ mod tests {
         let long = "word ".repeat(40);
         let row = texts(&json!({ "id": 1, "description": long }), &json!({ "columns": 120 }), &config);
         assert_eq!(row[1].encode_utf16().count(), 54);
+    }
+
+    #[test]
+    fn model_authored_task_fields_cannot_carry_escapes_into_the_row() {
+        // `name` and `description` are written by a model, so they are
+        // steerable by indirect prompt injection — a task described from the
+        // contents of a file being read. The panel builds its segments directly
+        // rather than through `segments::build`, so it needs its own filtering.
+        let config = shipped();
+        let row = texts(
+            &json!({
+                "id": 1,
+                "name": "reviewer\u{1b}[0m\u{1b}[41mFAKE",
+                "description": "audit\u{1b}]52;c;cGF5bG9hZA==\u{7} done",
+            }),
+            &json!({ "columns": 200 }),
+            &config,
+        );
+        let joined = row.join("|");
+        assert!(!joined.contains('\u{1b}'), "escape survived: {joined:?}");
+        assert!(joined.contains("FAKE"), "the text itself is kept: {joined:?}");
+    }
+
+    #[test]
+    fn the_ndjson_content_carries_no_escape_from_a_task_field() {
+        // Through `render_panel`, because the JSON encoding of `` in the
+        // NDJSON is *transport*, not a control: Claude Code decodes it before
+        // rendering, so an escape that reaches here reaches the terminal.
+        let config = shipped();
+        let out = render_panel(
+            &json!({ "columns": 120, "tasks": [{ "id": "t1", "name": "a\u{1b}[2Jb" }] }),
+            &config,
+            0,
+            None,
+        );
+        let content = serde_json::from_str::<Value>(&out).unwrap();
+        let content = content.get("content").and_then(Value::as_str).unwrap();
+        assert!(!content.contains("\u{1b}[2J"), "erase-display survived: {content:?}");
     }
 
     #[test]

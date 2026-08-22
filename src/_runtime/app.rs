@@ -55,9 +55,14 @@ fn dispatch(cli: Cli) -> String {
 /// with its stdio at `/dev/null`, so anything it said would be discarded, and
 /// it always exits 0.
 fn refresh_spend() -> String {
+    // No cache path — no `$HOME` — means there is nowhere to write the result,
+    // so there is no point making the request.
+    let Some(path) = spend::cache::path() else {
+        return String::new();
+    };
     let config = layers::load(home().as_deref(), None).config;
     let spend_config = spend::SpendConfig::from_config(&config);
-    spend::refresh::run(&spend::cache::path(), spend_config.refresh_minutes, time::now_ms(), false);
+    spend::refresh::run(&path, spend_config.refresh_minutes, time::now_ms(), false);
     String::new()
 }
 
@@ -65,7 +70,7 @@ fn refresh_spend() -> String {
 fn render_statusline(debug: bool) -> String {
     let narrate = |msg: &str| {
         if debug {
-            eprintln!("claude-status: {msg}");
+            crate::_shared::diag(&format!("claude-status: {msg}"));
         }
     };
 
@@ -73,7 +78,7 @@ fn render_statusline(debug: bool) -> String {
         Ok(bar) => bar,
         Err(payload) => {
             // The real error goes to stderr; stdout still gets a usable line.
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             FALLBACK_LINE.to_string()
         }
     }
@@ -87,7 +92,7 @@ fn caps_hook() -> String {
     match catch_unwind(AssertUnwindSafe(build_caps_directive)) {
         Ok(out) => out,
         Err(payload) => {
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }
@@ -104,7 +109,12 @@ fn build_caps_directive() -> String {
     let (Some(dir), Some(session_id)) = (usage::usage_dir_from_env(), json::opt_str(&input, "session_id")) else {
         return String::new();
     };
-    let dir = usage::expand_home(&dir);
+    // Inert too when the directory names `$HOME` and there is none — the same
+    // rule the writer follows, so the hook never reads from a directory the bar
+    // would not have written to.
+    let Some(dir) = usage::expand_home(&dir) else {
+        return String::new();
+    };
 
     // No mirror yet: the bar has not rendered this session. Not an error.
     let Some(mirror) = json::read_json_file(&dir.join(format!("{session_id}.json"))) else {
@@ -142,7 +152,7 @@ fn render_subagent() -> String {
     match catch_unwind(AssertUnwindSafe(build_panel)) {
         Ok(panel) => panel,
         Err(payload) => {
-            eprintln!("claude-status error: {}", panic_message(&payload));
+            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }
@@ -221,8 +231,13 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
         return None;
     }
 
+    let Some(cache_path) = spend::cache::path() else {
+        narrate("spend: no $HOME, so no cache to read and nowhere to refresh into");
+        return None;
+    };
+
     let spend_config = spend::SpendConfig::from_config(config);
-    let cached = spend::cache::read_from(&spend::cache::path());
+    let cached = spend::cache::read_from(&cache_path);
 
     match spend::schedule::decide(cached.as_ref(), &spend_config, now_ms) {
         spend::schedule::Decision::Spawn => {
@@ -249,6 +264,19 @@ fn debug_report() -> String {
     debug_report_with(&|config| crate::_runtime::debug::spend_report(config, time::now_ms()))
 }
 
+/// One dynamic value in the `--debug` report.
+///
+/// `render::sanitize` — the **row** filter, which strips newlines too. The
+/// report's own sweep exempts `\n` because the report is many lines, so a value
+/// that carried one could forge a line, a section header, or a whole
+/// `CLAUDE WIRING` block in a diagnostic the user is reading precisely because
+/// they are trying to work out what is wrong. Only the report's own structure
+/// may contribute newlines; nothing that came from a config, a path or a
+/// payload may.
+fn field(value: &str) -> String {
+    crate::render::sanitize(value)
+}
+
 fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
@@ -263,26 +291,42 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
 
     let _ = writeln!(out, "\nCONFIG LAYERS (low to high)");
     for source in &sources {
-        let path = source.path.as_ref().map_or_else(|| "<embedded>".to_string(), |p| p.display().to_string());
+        // A `None` path means two different things: the **embedded** layer has
+        // no file by definition, while the user or repo layer has none because
+        // there was no home or no git root to build one from. Printing
+        // `<embedded>` for the second is how `--debug` outside a repo came to
+        // report `repo  not found  <embedded>`.
+        // Each `None` is explained by the layer it belongs to, and the arms
+        // are matched against the named constants rather than string literals:
+        // a catch-all here is how `repo  not found  <embedded>` happened, and a
+        // renamed or fourth layer would reintroduce it silently.
+        let path = match (&source.path, source.label) {
+            (Some(path), _) => path.display().to_string(),
+            (None, layers::LABEL_EMBEDDED) => "<embedded>".to_string(),
+            (None, layers::LABEL_USER) => "<no $HOME>".to_string(),
+            // Also reached when the process has no readable cwd to walk up from.
+            (None, layers::LABEL_REPO) => "<no git root>".to_string(),
+            (None, other) => format!("<no path for {other}>"),
+        };
         let state = if source.loaded { "loaded" } else { "not found" };
-        let _ = writeln!(out, "  {:8} {state:10} {path}", source.label);
+        let _ = writeln!(out, "  {:8} {state:10} {}", source.label, field(&path));
     }
 
     let _ = writeln!(out, "\nCLAUDE WIRING (~/.claude/settings.json)");
     for line in claude_wiring() {
-        let _ = writeln!(out, "  {line}");
+        let _ = writeln!(out, "  {}", field(&line));
     }
 
     let _ = writeln!(out, "\nEFFECTIVE LAYOUT");
     for (i, line) in config.lines().iter().enumerate() {
-        let ids: Vec<String> = line.iter().map(describe_entry).collect();
+        let ids: Vec<String> = line.iter().map(describe_entry).map(|e| field(&e)).collect();
         let _ = writeln!(out, "  line {i}: {}", ids.join(", "));
     }
 
     let _ = writeln!(out, "\nGIT");
-    let _ = writeln!(out, "  cwd:      {}", cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string()));
-    let _ = writeln!(out, "  root:     {}", root.as_ref().map_or("<none>".into(), |r| r.display().to_string()));
-    let _ = writeln!(out, "  branch:   {}", branch.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "  cwd:      {}", field(&cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string())));
+    let _ = writeln!(out, "  root:     {}", field(&root.as_ref().map_or("<none>".into(), |r| r.display().to_string())));
+    let _ = writeln!(out, "  branch:   {}", field(branch.as_deref().unwrap_or("<none>")));
 
     let mut git_facts = GitFacts {
         worktree_subpath: cwd.as_deref().and_then(|c| git::worktree_subpath(c, &config.worktree_matcher())),
@@ -291,13 +335,31 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         ..Default::default()
     };
     git::resolve_markers(&mut git_facts);
-    let _ = writeln!(out, "  worktree: {}", git_facts.worktree_subpath.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "  worktree: {}", field(git_facts.worktree_subpath.as_deref().unwrap_or("<none>")));
     let _ = writeln!(out, "  ahead:    {}", git_facts.ahead);
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
     let _ = writeln!(out, "\nSPEND");
     out.push_str(&spend_section(&config));
 
+    // **The one place `--debug` output is filtered** (contract §4a, invariant
+    // 4). Everything assembled above is diagnostic text drawn from untrusted
+    // sources — the config `lines` entries, the spend gate table and its
+    // symbols, the `settings.json` command, the endpoint URL, the plan tag,
+    // and every path — and filtering those one write at a time is how several
+    // of them were missed. One sweep covers whatever is added here later.
+    //
+    // Newlines survive: the report is deliberately many lines. That exemption
+    // is why every dynamic value above ALSO goes through `field`, which strips
+    // them — a value carrying a `\n` would otherwise forge whole lines and
+    // section headers in a report the user reads to diagnose their machine.
+    // The sweep is the backstop for what a `field` call misses; it is not the
+    // only defence, because on its own it cannot be one.
+    let mut out = crate::render::sanitize_report(&out);
+
+    // Appended AFTER the sweep, because it is the one part whose escapes are
+    // meant to be there: `render_main` emits the SGR codes itself, and every
+    // dynamic value inside it already went through `segments::build`.
     let _ = writeln!(out, "\nSAMPLE RENDER");
     // No spend text: the SPEND section above already reported what it would
     // draw and why, and the sample's facts are synthetic anyway.
@@ -444,6 +506,8 @@ mod tests {
 
     #[test]
     fn the_debug_report_names_every_section() {
+        // Reads `$HOME` indirectly, through the config layers.
+        let _env = crate::_shared::env_lock();
         // Stubbed rather than live: `spend_report` fetches, and no unit test
         // may reach the spend endpoint.
         let out = debug_report_with(&|_| "  stubbed\n".to_string());

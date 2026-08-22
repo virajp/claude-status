@@ -21,10 +21,21 @@ pub const CONFIG_FILE_NAME: &str = "claude-status.json";
 
 /// Where one layer came from and whether it contributed, for `--debug`.
 pub struct LayerSource {
+    /// One of [`LABEL_EMBEDDED`], [`LABEL_USER`] or [`LABEL_REPO`]. A `&str`
+    /// rather than an enum because it is only ever displayed — but the three
+    /// constants exist so a consumer matching on it cannot be silently wrong
+    /// when a layer is renamed or a fourth is added.
     pub label: &'static str,
     pub path: Option<PathBuf>,
     pub loaded: bool,
 }
+
+/// The defaults compiled into the binary. Never has a path.
+pub const LABEL_EMBEDDED: &str = "embedded";
+/// `~/.config/claude-status.json`. No path means no `$HOME`.
+pub const LABEL_USER: &str = "user";
+/// `<repo-root>/.config/claude-status.json`. No path means no git root.
+pub const LABEL_REPO: &str = "repo";
 
 pub struct Layers {
     pub config: Config,
@@ -39,9 +50,9 @@ pub struct Layers {
 pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
     let embedded: Value = serde_json::from_str(DEFAULTS_JSON).unwrap_or_else(|_| Value::Object(Default::default()));
     let mut merged = embedded;
-    let mut sources = vec![LayerSource { label: "embedded", path: None, loaded: true }];
+    let mut sources = vec![LayerSource { label: LABEL_EMBEDDED, path: None, loaded: true }];
 
-    for (label, base) in [("user", home), ("repo", repo_root)] {
+    for (label, base) in [(LABEL_USER, home), (LABEL_REPO, repo_root)] {
         let path = base.map(|b| b.join(".config").join(CONFIG_FILE_NAME));
         // A layer must be an *object*. A file holding `null`, a number or an
         // array parses fine but would replace the whole merged config

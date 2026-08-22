@@ -79,7 +79,12 @@ One line fits the bar and names the fix. Twenty lines of usage would be
 unreadable in a status line, and printing nothing would leave the user with a
 silently blank bar and no clue.
 
-### Three invariants that outrank everything else
+### Five invariants that outrank everything else
+
+These cut across every section below. Each is here rather than beside the
+feature it constrains because more than one feature has to obey it, and the ones
+added later were added precisely because a rule kept in one place had been
+applied in one place.
 
 1. **stdout is the bar.** Claude renders whatever arrives there. Diagnostics,
    warnings, errors — all stderr, always. A single stray byte on stdout is a
@@ -101,6 +106,65 @@ silently blank bar and no clue.
    printing `⚡ Claude`. Reproduce that: wrap the render in
    `std::panic::catch_unwind`, print the fallback, and put the real error on
    stderr.
+4. **Only the renderer emits escapes.** **Added 2026-08-21** (`macos-only`
+   cycle), after review found the powerline separators reaching the row
+   unfiltered. Every dynamic value is stripped of control characters before it
+   is written, on **both** rendering surfaces and in `--debug`. See
+   [§4a](#4a-what-may-carry-an-escape-and-what-may-not).
+5. **An unresolvable `$HOME` means absent, never relative.** **Added
+   2026-08-21** (`macos-only` cycle), after review found four callers of the
+   home-directory helper had each invented their own answer and one had invented
+   the wrong one.
+
+   `$HOME` is the only source of the user's home directory. When it is unset or
+   empty, every path derived from it is **absent** — the feature that needed it
+   does nothing, and says so where there is somewhere to say it. A path that
+   names the home directory and cannot resolve one must **never** degrade to the
+   unexpanded text: `~/x` and `spend.json` taken literally are *relative* paths,
+   so the process writes into whatever directory Claude Code was launched from
+   believing it wrote into the home one. That is a stray file in the user's
+   working tree, and a cache that never hits because the next session starts
+   somewhere else.
+
+   Concretely, the spend cache path ([§7](#7-the-spend-subsystem)), the usage
+   mirror directory ([§8](#8-the-usage-mirror--a-contract-with-ai-plugins)) and
+   the credentials **file** are each absent without a home. Invariant 3 still
+   outranks this: the render succeeds, the segment omits like any other, and
+   `--debug` names the missing `$HOME` rather than reporting an empty result.
+
+   A path that never asked for the home directory is unaffected — an absolute
+   `$CLAUDE_STATUS_SPEND_CACHE` works with no `$HOME` at all.
+
+   **The macOS keychain is the exception, and the ordering is deliberate.** The
+   keychain is *not* scoped by `$HOME`, so "no home" does not mean "no
+   credentials": the fallback in [§7](#7-the-spend-subsystem) can still return a
+   real token. The rule is that **the cache path is resolved first, and no fetch
+   is made when it is absent** — with nowhere to write the result, a request
+   would spend the account's rate limit to produce nothing, on every render.
+   This is stated because it is the one case where a `$HOME`-derived absence has
+   to gate something that is not itself `$HOME`-derived, and it was previously
+   only implied by the order the code happened to run in.
+
+   The same asymmetry is why a test with a fake `$HOME` is **not** protected
+   from reaching the live endpoint. Two rules follow, and they are separate —
+   stating only the first is how three harnesses came to invent three different
+   answers to the second:
+
+   1. **Pin the endpoint.** Every test that can reach `http::fetch` sets
+      `$CLAUDE_STATUS_SPEND_URL` itself rather than trusting its runner to have
+      exported it.
+   2. **Neutralise *both* credential arms.** A fake `$HOME` removes the
+      credentials *file*. The keychain arm is not `$HOME`-scoped: it shells out
+      to `security`, so it is neutralised by pointing `PATH` at a directory that
+      does not exist. A test that wants credentials seeds the file instead; a
+      test that wants *none* must do both, or it is asserting whatever happens
+      to be true of the machine it ran on.
+
+   **`PATH=""` is not the way to do the second.** An empty `PATH` is a single
+   empty entry, which POSIX resolves as the **current directory** — so a
+   `security` binary sitting in the package root would be run and its stdout
+   parsed as an OAuth document. Unsetting `PATH` is no better: the C library
+   falls back to `_PATH_DEFPATH`, which includes `/usr/bin`.
 
 ---
 
@@ -435,6 +499,96 @@ Get these exactly right; they are visible on every render.
 - **Money** — minor units + exponent → `$75.93`, with a whole-dollar amount
   rendering as `$75` (strip a trailing `.00`).
 
+### 4a. What may carry an escape, and what may not
+
+**Added 2026-08-21** (`macos-only` cycle). Before this, nothing said which
+strings on the row were trusted, and the answer in the code turned out to be
+"the ones somebody remembered".
+
+**Treat every dynamic value as hostile.** Not as a worst case — as the normal
+case. A branch name, a directory under a worktree, a session name, a model
+string, and a task's `name` and `description` (written by a model, and therefore
+steerable by indirect prompt injection) all reach the bar unreviewed. So does
+**`<repo-root>/.config/claude-status.json`**, which is read from whatever
+repository the user changes into: cloning a hostile repo is the entire attack,
+with no further interaction.
+
+**Only the renderer emits escape sequences.** Every dynamic value is stripped of
+control characters before it is written. This applies to the main bar, the
+subagent panel and `--debug` alike: the panel's NDJSON escaping is **transport
+encoding, not a control** — Claude Code decodes it back before rendering — and
+`--debug` writes to a terminal like everything else.
+
+Stripped, as **two** filters rather than three:
+
+- **`Cc`** — the Unicode control category, which is `U+0000`–`U+001F`, `U+007F`
+  **and** `U+0080`–`U+009F`. C1 needs no rule of its own: it is already `Cc`. It
+  matters because a terminal in 8-bit mode reads `U+009B` as CSI with no `ESC`
+  in front of it.
+- **The invisibles that are not `Cc`** — bidi overrides and isolates
+  (`U+202A`–`U+202E`, `U+2066`–`U+2069`), and `U+200B` / `U+FEFF`.
+
+Kept: ZWJ, variation selectors, and the private-use codepoints — the bar is
+built from Nerd Font glyphs, so filtering those would erase it.
+
+**The filter belongs at the point every value passes through**, not in each
+producer. There are **five** such points, one per surface, and a sixth surface
+would need its own:
+
+| Surface            | Chokepoint                                                                | Why there                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main bar           | `segments::build`                                                         | Every segment's text is assembled through it                                                                                                                |
+| Subagent panel     | the sweep ending `task_row`                                               | The panel builds its `Segment`s directly and inherits none of the bar's filtering                                                                           |
+| Powerline seams    | `Powerline::from_config`                                                  | Config-supplied, and written **outside** any segment's SGR bracket — the widest of the five                                                                 |
+| `--debug` report   | one sweep over the assembled report, before the sample render is appended | Many values, many sections, one write                                                                                                                       |
+| stderr (all of it) | `_shared::diag`                                                           | stderr is a terminal too. `narrate` is the `--debug`-gated caller; the panic reporter, the unknown-segment warning and the bad-regex warning are the others |
+
+The stderr surface was the last to be found, and for the usual reason: it is not
+stdout, so it did not look like a rendering surface. It is one. It was first
+patched at two `{}` writes by hand — the per-write pattern this section exists
+to reject — then narrowed to `narrate`, which turned out to be **one of six**
+writers. `_shared::diag` is now the only `eprintln!` in the crate, which makes
+the rule checkable with a grep rather than by reading every call site.
+
+`--debug` earned a chokepoint rather than a call per write, and the reason is
+the cycle that added it: filtering the paths first missed the layout entries and
+the spend gate table, both of which reach the terminal by a different route.
+Anything added to the report later is covered without anyone having to remember.
+
+Two consequences of the `--debug` sweep worth stating, because both are
+load-bearing:
+
+- **Newlines survive it.** The report is deliberately many lines, so it uses a
+  variant of the filter that keeps `\n` and strips everything else.
+- **The `SAMPLE RENDER` section is appended after it.** That section *is*
+  renderer output: its SGR codes are meant to be there, and every dynamic value
+  inside it already passed through `segments::build`. Sweeping it would strip
+  the colours the section exists to show.
+
+**stderr keeps newlines out, and pays for it.** `_shared::diag` uses the row
+filter, so one call is one line — which collapses a multi-line panic payload
+onto a single line rather than preserving its shape. Deliberate: a panic message
+quotes whatever it panicked on, so allowing a newline there would let a branch
+name or a config value forge a second `claude-status:` line. A stack's shape is
+worth less than a diagnostic whose boundaries a reader can trust.
+
+**A dynamic value may never contribute a newline.** This is a rule, not a
+consequence of the one above, and it is why `--debug`'s report-wide sweep is
+**not** its only defence: that sweep exempts `\n` so the report can be many
+lines, and a value carrying one would forge a line, a section header, or a whole
+`CLAUDE WIRING` block in the diagnostic a user reads *because* they are trying
+to work out what is wrong. No escape is needed for that attack. Every value in
+the report therefore also goes through the row filter, which strips newlines;
+only the report's own structure may add them.
+
+The report may still *quote* a hostile value — that is it doing its job. What it
+may not do is let the value stop being a quoted value.
+
+**Known residual.** A dynamic value may still contain a private-use separator
+glyph and so *look* like a segment boundary. Accepted: the same config layer can
+already set the row's colours by design, and the line drawn here is between
+theming the bar and escaping out of it.
+
 ---
 
 ## 5. CLI surface
@@ -673,6 +827,27 @@ Reproduce the verdict. It is the single most useful line the tool prints.
 > As a *modifier* (`--statusline --debug`) this does not apply: a render still
 > never fetches, and stdout stays byte-identical.
 
+> **Amended 2026-08-21** (`macos-only` cycle), after review pointed out the
+> ordering was real in the code and unwritten here.
+>
+> **`--debug` fetches even when the user's own gates hide the segment.** The
+> four gates in §7 decide whether the figure is *drawn*; they do not decide
+> whether it is *fetched*. So `--debug` on a config with `spend` absent from
+> `lines` still performs the authenticated request, and then reports
+> `gate 1 ✗ HIDDEN`. That is deliberate and is the whole point of the mode: "you
+> have it switched off" and "your token is rejected" are different answers, and
+> a passive `--debug` could not tell them apart.
+>
+> **One thing does stop it, and the order matters:** the cache path is resolved
+> **first**, and no fetch happens when it is absent (invariant 5). With nowhere
+> to write the result there is nothing to diagnose and nothing to keep, so a
+> request would spend the account's rate limit to produce nothing.
+>
+> The corollary for tests: a fake `$HOME` does **not** make `--debug` or the
+> refresh path safe, because the macOS keychain is not `$HOME`-scoped. Anything
+> that can reach the fetch must pin `$CLAUDE_STATUS_SPEND_URL` **and** seed a
+> credentials file, so the file arm answers before the keychain is ever asked.
+
 ---
 
 ## 8. The usage mirror — a contract with `ai-plugins`
@@ -739,6 +914,13 @@ into `settings.json`. A Rust binary cannot be `pnpx`'d, so this has to change.
 | **`cargo install`**                  | Trivial to publish                                                               | Requires a Rust toolchain — most users will not have one              |
 | **Homebrew tap**                     | Great on macOS, one command                                                      | A second channel to maintain; Linux users still need another          |
 
+> **Read this table as of the day it was written.** Every row's reasoning
+> assumed the six-target set the paragraph below now strikes through — most
+> visibly the Homebrew row, whose "Linux users still need another" stopped being
+> an argument against anything on 2026-08-21. The table is kept unedited because
+> it is the record of a decision, and a revisited channel should see what was
+> actually weighed rather than a tidied version of it.
+
 **The recommendation was** GitHub Releases with prebuilt binaries plus a small
 install script that also merges the `settings.json` keys. **The decision went
 the other way:** npm with platform binaries — a `@askviraj/claude-status`
@@ -747,10 +929,41 @@ wrapper whose `optionalDependencies` carry one package per target, so existing
 does not have to own a shell installer, a build matrix *and* a checksum story on
 day one. A Homebrew tap can still come later.
 
-The supported set is **six** targets — macOS and Linux on both architectures,
-plus Windows, which Claude Code runs on natively. `supported_targets()` in
-`.config/mise/tasks/_scripts/_rust` is the single source; nothing else should
-hard-code the list or its length.
+~~The supported set is **six** targets — macOS and Linux on both architectures,
+plus Windows, which Claude Code runs on natively.~~ **Reversed 2026-08-21**
+(`macos-only` cycle). The supported set is **two** targets — macOS on both
+architectures — and nothing else. Three things the six-target decision could not
+weigh at the time:
+
+- **Four of the six were never verified.** `build:cross` proved architecture,
+  not execution: no Linux or Windows binary this repo produced was ever *run* by
+  anyone. Shipping them was shipping a claim nobody had checked.
+- **The C toolchain problem arrived.** The first full build after the spend
+  subsystem's TLS stack landed produced four of six, both Windows targets
+  failing on a missing archiver. The mitigation was a preflight and a
+  `--host-only` flag — two features whose only purpose was making a partial
+  build survivable.
+- **A platform costs more than a matrix row.** Windows alone was a `cargo-xwin`
+  pin, an `llvm-lib` preflight, a `.exe` filename branch, a `USERPROFILE` home
+  branch, a `chmod` guard, a parallel `cmd /C` test fixture module and two CI
+  runners — for a platform that cannot be tested here.
+
+Nothing had been published when this was decided, so no user lost a platform.
+The narrowing is stated at three layers: the wrapper's `"os": ["darwin"]` makes
+npm refuse the install, the installer names the host it will not serve before
+writing anything, and the readme leads with it.
+
+`supported_targets()` in `.config/mise/tasks/_scripts/_rust` remains the single
+source; nothing that can *derive* the list or its length may hard-code it. Four
+things cannot derive it, and each is kept in step by hand:
+
+1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
+2. `"os": ["darwin"]` in `npm/claude-status/package.json`.
+3. The `build` **and** `test` matrices in `.github/workflows/release.yml`. One
+   runner per published target in each: a build matrix that skips a target does
+   not ship it, and a test matrix that skips one ships it untested on its own
+   architecture. Both are failures, and only the first is currently caught.
+4. The crate, where a platform may need a `cfg` that macOS does not.
 
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the

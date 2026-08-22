@@ -25,16 +25,19 @@ const require = createRequire(import.meta.url);
 /**
  * npm installs only the optionalDependency matching the host.
  *
- * Every platform Claude Code itself runs on: macOS and Linux on both
- * architectures, and Windows 10 1809+ on x64 and ARM64.
+ * **macOS only, both architectures.** Claude Code runs on Linux and Windows
+ * too, and this map used to carry them; the `macos-only` cycle cut it to two.
+ * The wrapper's `"os": ["darwin"]` field is the first gate — npm refuses the
+ * install outright — and this map is the second, for anyone who forced past it.
+ *
+ * Kept in step with `supported_targets` in
+ * `.config/mise/tasks/_scripts/_rust`, which is what actually builds the
+ * packages. The two lists disagreeing means a host resolving a package nobody
+ * publishes.
  */
 const PACKAGES: Record<string, string> = {
   "darwin:arm64": "@askviraj/claude-status-darwin-arm64",
   "darwin:x64": "@askviraj/claude-status-darwin-x64",
-  "linux:arm64": "@askviraj/claude-status-linux-arm64",
-  "linux:x64": "@askviraj/claude-status-linux-x64",
-  "win32:arm64": "@askviraj/claude-status-win32-arm64",
-  "win32:x64": "@askviraj/claude-status-win32-x64",
 };
 
 export function supportedPlatforms(): string[] {
@@ -83,9 +86,5 @@ export function resolvePlatformBinary(): Resolution {
 export function install(source: string, destination: string): void {
   mkdirSync(dirname(destination), { recursive: true });
   copyFileSync(source, destination);
-  // No-op on Windows, where the `.exe` extension is what makes a file
-  // runnable — and where chmod can throw on some filesystems.
-  if (process.platform !== "win32") {
-    chmodSync(destination, 0o755);
-  }
+  chmodSync(destination, 0o755);
 }

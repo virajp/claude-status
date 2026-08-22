@@ -39,12 +39,15 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
 
     if !KNOWN.contains(&id) {
         // Warn and omit. Never fail the render, and never touch stdout.
-        eprintln!("statusline: unknown segment {id:?}");
+        crate::_shared::diag(&format!("statusline: unknown segment {id:?}"));
         return None;
     }
 
     // A panicking builder costs its own segment and nothing else.
     let text = catch_unwind(AssertUnwindSafe(|| text_for(id, facts, git, config, spend))).ok().flatten()?;
+    // Every segment's text passes through here, which is why the filter lives
+    // at this one point rather than in each builder.
+    let text = super::sanitize(&text);
 
     // Inline override → `segments.<id>` default → hard fallback. An explicit
     // `null` at either level falls through, as `??` made it, while `false` and
@@ -209,6 +212,19 @@ mod tests {
             seven_day: RateLimit { used_pct: Some(1.0), resets_at: Some(json!(1_774_600_000i64)) },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_malicious_branch_name_reaches_the_row_defanged() {
+        // Through `build`, not `text_for` — the filter is only worth anything
+        // if it sits on the path the renderer actually takes.
+        let git = GitFacts {
+            branch: Some("main\u{1b}[0m\u{1b}[41mPWNED".into()),
+            ..Default::default()
+        };
+        let segment = build(&json!("branch"), &facts(), &git, &config(), None).unwrap();
+        assert!(!segment.text.contains('\u{1b}'), "got {:?}", segment.text);
+        assert!(segment.text.contains("PWNED"), "the text survives, only the escapes go");
     }
 
     #[test]

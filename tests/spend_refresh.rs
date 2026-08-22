@@ -70,9 +70,33 @@ fn stub(status: u16, reason: &str, body: &'static str) -> Stub {
 
 /// Points the fetch at a stub and seeds credentials, then runs one refresh.
 ///
-/// `HOME` is redirected too, so the credentials file is the fake one and the
-/// macOS keychain fallback is never reached.
+/// `HOME` is redirected too, so the credentials file is the fake one.
+///
+/// **With `with_credentials == false`, `PATH` is redirected too** — see
+/// [`PathGuard`], which points it at a directory that does not exist.
+/// Redirecting `$HOME` removes the *file* arm of `creds::load`, but the macOS
+/// keychain arm is not `$HOME`-scoped: it shells out to `security`, which on a
+/// logged-in machine returns a real token. That made "no credentials"
+/// untestable — the outcome depended on whose laptop ran it — and it is how a
+/// real token came to be sent to a loopback stub.
 fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outcome {
+    run_reported_against(url, cache_path, with_credentials).outcome
+}
+
+/// The same, keeping the whole report — for the assertions that need to know
+/// whether a request was actually made.
+fn run_reported_against(url: &str, cache_path: &Path, with_credentials: bool) -> refresh::Report {
+    // **The guard for this harness.** `http::fetch`'s own `#[cfg(test)]`
+    // assertion does not apply here: `cfg(test)` is false when the library is
+    // linked by an integration test, so the lib code these tests call is
+    // compiled without it. This is the only in-process harness that can reach
+    // the network, so the check has to live here.
+    assert_ne!(
+        url,
+        claude_status::spend::http::DEFAULT_URL,
+        "a test would have reached the real spend endpoint with a real token",
+    );
+
     let home = tempfile::TempDir::new().unwrap();
     if with_credentials {
         let claude = home.path().join(".claude");
@@ -91,13 +115,56 @@ fn refresh_against(url: &str, cache_path: &Path, with_credentials: bool) -> Outc
     // broken test rather than a slow one.
     let _serialised = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
+    // RAII, not trailing statements: `run_reported` below can panic, and a
+    // stranded `PATH` would make every later case in this binary pass for the
+    // wrong reason — still finding no credentials, but because the environment
+    // was broken rather than because the test arranged it.
+    let _path = PathGuard::new(with_credentials);
+
     // SAFETY: every writer of these variables in this binary holds ENV_LOCK.
     unsafe {
         std::env::set_var("HOME", home.path());
         std::env::set_var("CLAUDE_STATUS_SPEND_URL", url);
     }
 
-    refresh::run(cache_path, 15.0, 1_000_000, true)
+    refresh::run_reported(cache_path, 15.0, 1_000_000, true)
+}
+
+/// Points `PATH` at a directory that does not exist, so `security` cannot be
+/// found — and puts the real one back on drop.
+///
+/// **Not `PATH=""`.** An empty `PATH` is one *empty entry*, which POSIX resolves
+/// as the **current directory** — verified by experiment: a `security`
+/// executable in the spawning process's cwd (for `cargo test`, the package
+/// root) is found, run, and its stdout parsed as an OAuth document. A
+/// kill-switch that instead executes an arbitrary local binary is worse than
+/// the hazard it replaces. `remove_var` is no good either: the C library then
+/// falls back to `_PATH_DEFPATH`, which contains `/usr/bin`.
+struct PathGuard(Option<std::ffi::OsString>);
+
+impl PathGuard {
+    fn new(with_credentials: bool) -> Self {
+        // `var_os`, not `var`: a non-UTF-8 `PATH` is `Err` from `var`, which
+        // would collapse into the same `None` as "unset" — and `Drop` would
+        // then *remove* it, restoring `_PATH_DEFPATH` and silently undoing the
+        // very kill-switch this guard exists to be.
+        let saved = std::env::var_os("PATH");
+        if !with_credentials {
+            // SAFETY: the caller holds ENV_LOCK for this guard's whole life.
+            unsafe { std::env::set_var("PATH", "/nonexistent/claude-status-test-path") };
+        }
+        Self(saved)
+    }
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        // SAFETY: as above — the lock outlives this guard.
+        match self.0.take() {
+            Some(path) => unsafe { std::env::set_var("PATH", path) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+    }
 }
 
 /// Serialises the process-global environment these tests depend on.
@@ -108,6 +175,10 @@ fn temp_cache() -> (tempfile::TempDir, std::path::PathBuf) {
     let path = dir.path().join("spend.json");
     (dir, path)
 }
+
+/// Port 1 is reserved and nothing listens on it. Used where a test must reach
+/// the fetch path but must **not** be able to deliver a token to anything.
+const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/never";
 
 const MODERN: &str = r#"{"spend":{"used":{"amount_minor":7593},"limit":{"amount_minor":15000,"exponent":2},"percent":50.62,"enabled":true}}"#;
 const LEGACY: &str = r#"{"extra_usage":{"used_credits":7593,"monthly_limit":15000,"decimal_places":2,"utilization":50.62,"is_enabled":true}}"#;
@@ -193,7 +264,7 @@ fn a_network_error_after_a_429_erases_the_backoff() {
     assert!(cache::read_from(&path).unwrap().backoff_until > 0);
 
     // Port 1 is reserved; nothing listens.
-    let outcome = refresh_against("http://127.0.0.1:1/never", &path, true);
+    let outcome = refresh_against(CLOSED_PORT_URL, &path, true);
     assert!(matches!(outcome, Outcome::Failed { .. }), "got {outcome:?}");
 
     assert_eq!(
@@ -207,7 +278,7 @@ fn a_network_error_after_a_429_erases_the_backoff() {
 #[test]
 fn a_connection_refusal_is_a_failure_not_a_panic() {
     let (_dir, path) = temp_cache();
-    let outcome = refresh_against("http://127.0.0.1:1/never", &path, true);
+    let outcome = refresh_against(CLOSED_PORT_URL, &path, true);
     assert!(matches!(outcome, Outcome::Failed { .. }), "got {outcome:?}");
     assert_eq!(cache::read_from(&path).unwrap().failures, 1);
 }
@@ -215,14 +286,22 @@ fn a_connection_refusal_is_a_failure_not_a_panic() {
 #[test]
 fn without_credentials_nothing_is_fetched() {
     let (_dir, path) = temp_cache();
-    let server = stub(200, "OK", MODERN);
 
-    // On macOS the keychain is the fallback, and it is not scoped by $HOME —
-    // so this asserts on the request count rather than the outcome, which is
-    // the part that must hold on every machine.
-    let outcome = refresh_against(&server.url, &path, false);
-    if outcome == Outcome::NoCredentials {
-        assert_eq!(server.hits.load(Ordering::SeqCst), 0, "no credentials means no request");
-        assert_eq!(cache::read_from(&path).unwrap().failures, 1);
-    }
+    // A **live** stub, deliberately: the invariant this test is named for is
+    // that no request is made, and only something listening can prove a request
+    // did not arrive. What makes that safe — and deterministic — is that
+    // `refresh_against(.., false)` empties `PATH` as well as redirecting
+    // `$HOME`, so the keychain arm cannot resolve and no real token exists to
+    // be sent. Without that, this was machine-dependent: on a logged-in laptop
+    // the keychain answered, the real token went to the stub as an
+    // `Authorization` header, and the outcome guard skipped every assertion in
+    // exactly that case.
+    let server = stub(200, "OK", MODERN);
+    let report = run_reported_against(&server.url, &path, false);
+
+    assert_eq!(report.outcome, Outcome::NoCredentials, "PATH and HOME are both stubbed, so neither arm can resolve");
+    assert_eq!(server.hits.load(Ordering::SeqCst), 0, "no credentials means no request");
+    assert!(report.status.is_none(), "no response can have been seen");
+    assert!(server.auth.lock().unwrap().is_empty(), "nothing may have been sent as a credential");
+    assert_eq!(cache::read_from(&path).unwrap().failures, 1, "a failure is still recorded");
 }

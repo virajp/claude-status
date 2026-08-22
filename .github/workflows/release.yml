@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes @askviraj/claude-status and its six platform packages to npm.
+# Publishes @askviraj/claude-status and its two platform packages to npm.
 # Triggered two ways:
 #   1. a pushed version tag (v*)   — the normal release path
 #   2. workflow_dispatch           — manual re-publish of an existing tag
@@ -11,13 +11,13 @@ name: Release
 # THIS file; `workflow_call` is unusable for that reason.
 #
 # One-time setup: on npmjs.com, register this repo + `release.yml` as the
-# Trusted Publisher for ALL SEVEN packages — the wrapper and each of the six
-# platform packages (two darwin, two linux, two windows). Miss one and that
-# package alone fails with ENEEDAUTH, part-way through the release.
+# Trusted Publisher for ALL THREE packages — the wrapper and each of the two
+# darwin platform packages. Miss one and that package alone fails with
+# ENEEDAUTH, part-way through the release.
 #
 # THIS WORKFLOW CANNOT PERFORM THE FIRST PUBLISH. A Trusted Publisher is
 # configured on a package's settings page, which does not exist until the
-# package does — so all seven have to be created by hand, once, with a granular
+# package does — so all three have to be created by hand, once, with a granular
 # token, before OIDC can be registered for them. See npm/cli#8544. Publishing a
 # placeholder version to reserve each name is enough; the tag-driven path below
 # then owns every real release, with provenance.
@@ -49,7 +49,7 @@ env:
 
 jobs:
   # The tag has to agree with Cargo.toml before anything is built, so a
-  # mismatched release fails in seconds rather than after six builds.
+  # mismatched release fails in seconds rather than after both builds.
   verify:
     runs-on: ubuntu-24.04
     outputs:
@@ -75,14 +75,23 @@ jobs:
           fi
           echo "Releasing claude-status $pkg"
 
-  # The full suite on both operating systems the bar ships to. Git resolution
-  # and the process-spawn path are the parts most likely to differ.
+  # The full suite once per **published architecture**, not once per OS. It used
+  # to run on ubuntu-24.04 and macos-latest; the `macos-only` cycle removed the
+  # Linux target, and dropping that runner would have left the published
+  # x86_64-apple-darwin artifact with no coverage but `--version` — macos-latest
+  # is arm64. One runner per row of `supported_targets` keeps every artifact
+  # that reaches npm backed by a suite that ran on its own architecture.
+  #
+  # `macos-15-intel`, not `macos-13`: the hosted fleet retired the macOS 13
+  # images, and the free x64 labels are now `macos-15-intel` / `macos-26-intel`
+  # (the `-large` ones are billed). An unschedulable job under `fail-fast: true`
+  # aborts the whole release.
   test:
     needs: verify
     strategy:
       fail-fast: true
       matrix:
-        os: [ ubuntu-24.04, macos-latest ]
+        os: [ macos-latest, macos-15-intel ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -102,6 +111,7 @@ jobs:
 
   # One target per natively-matching runner, so nothing is cross-compiled and no
   # C toolchain has to be arranged for the TLS stack the spend subsystem adds.
+  # Kept in step with `supported_targets` in .config/mise/tasks/_scripts/_rust.
   build:
     needs: verify
     strategy:
@@ -111,17 +121,7 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-apple-darwin
-            os: macos-13
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-24.04
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            exe: .exe
-          - target: aarch64-pc-windows-msvc
-            os: windows-11-arm
-            exe: .exe
+            os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -135,13 +135,9 @@ jobs:
 
       # The binary is what ships, so prove this exact file answers `--version`
       # with the bare number the installer keys on.
-      # The binary is what ships, so prove this exact file answers `--version`
-      # with the bare number the installer keys on. `bash` explicitly, because
-      # the Windows runners default to PowerShell.
       - name: Verify the built binary
-        shell: bash
         run: |
-          bin="target/${{ matrix.target }}/release/claude-status${{ matrix.exe }}"
+          bin="target/${{ matrix.target }}/release/claude-status"
           reported="$("$bin" --version)"
           if [ "$reported" != "${{ needs.verify.outputs.version }}" ]; then
             echo "::error::$bin reports $reported, expected ${{ needs.verify.outputs.version }}"
@@ -152,8 +148,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/claude-status${{ matrix.exe
-            }}
+          path: target/${{ matrix.target }}/release/claude-status
           if-no-files-found: error
           retention-days: 1
 

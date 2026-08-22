@@ -61,12 +61,32 @@ fn config_with(show: &str) -> String {
 
 /// Runs `--debug`, returning both streams separately.
 fn debug(home: &TempDir, url: &str) -> Output {
+    debug_with_path(home, url, &std::env::var("PATH").unwrap_or_default())
+}
+
+/// The same, with `PATH` under the caller's control.
+///
+/// Pointing it at a directory that does not exist is how a test makes "no
+/// credentials" **true** rather than merely likely: redirecting `$HOME` removes
+/// the credentials *file*, but the macOS keychain arm shells out to `security`,
+/// which is not `$HOME`-scoped and on a logged-in machine returns a real token.
+/// Without this the invariant could not be asserted at all, only hoped for.
+///
+/// Not `PATH=""` — that is one empty entry, which resolves as the current
+/// directory. See `tests/spend_refresh.rs`'s `PathGuard` for the experiment.
+fn debug_with_path(home: &TempDir, url: &str, path: &str) -> Output {
+    // The endpoint is passed in, so assert it here rather than trusting each
+    // caller to have remembered. `http::fetch`'s own `#[cfg(test)]` check does
+    // not apply to a subprocess, and the macOS keychain is not `$HOME`-scoped —
+    // so a missing override means a real token to the real endpoint.
+    assert_ne!(url, claude_status::spend::http::DEFAULT_URL, "this would reach the real spend endpoint");
+
     Command::new(BINARY)
         .arg("--debug")
         .env_clear()
         .env("HOME", home.path())
         .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("PATH", path)
         .env("CLAUDE_STATUS_SPEND_URL", url)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -219,18 +239,26 @@ fn a_refused_connection_reports_the_transport_error() {
 
 #[test]
 fn no_credentials_names_both_places_it_looked() {
-    // A home with a config but no credentials file. On macOS the keychain is
-    // still reached and may hold a real token, so this asserts only on the
-    // shape of the answer, never that the fetch failed.
+    // A home with a config and no credentials file, **and** a `PATH` with no
+    // `security` on it — so both arms of `creds::load` fail on every machine.
+    //
+    // This used to assert only the shape of the answer, because the keychain
+    // arm was live and might hold a real token: the invariant in the test's own
+    // name went unverified precisely on the machines where it mattered, and a
+    // real OAuth token was read into the test process on every developer run.
     let dir = TempDir::new().unwrap();
     let config_dir = dir.path().join(".config");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::write(config_dir.join("claude-status.json"), config_with("always")).unwrap();
 
-    let out = debug(&dir, CLOSED_PORT_URL);
+    let out = debug_with_path(&dir, CLOSED_PORT_URL, "/nonexistent/claude-status-test-path");
     let (stdout, _) = streams(&out);
 
-    assert!(stdout.contains("creds"), "the credential stage is reported:\n{stdout}");
+    assert!(stdout.contains("creds    NONE"), "both sources must have failed:\n{stdout}");
+    // The point of the test's name: it says *where* it looked, both places.
+    assert!(stdout.contains(".credentials.json"), "it names the file:\n{stdout}");
+    assert!(stdout.contains("keychain"), "it names the keychain:\n{stdout}");
+    assert!(stdout.contains("not attempted"), "no credentials means no fetch:\n{stdout}");
     assert!(stdout.contains("VERDICT"), "it still ends in a verdict:\n{stdout}");
     assert_no_token(&out, "no-credentials");
 }
@@ -255,6 +283,41 @@ fn a_held_lock_is_reported_rather_than_waited_on() {
     assert!(started.elapsed().as_secs() < 30, "it did not block on the holder");
     assert!(!cache.exists(), "and it did not fetch");
     assert_no_token(&out, "locked");
+}
+
+#[test]
+fn an_unwritable_cache_directory_is_reported_as_a_lock_that_could_not_be_created() {
+    // The `LockUnavailable` outcome, which was the only one this file did not
+    // cover — so the wording was rewritten once on reasoning alone. It is
+    // reached not by an unreadable lock but by `create_new` failing for any
+    // reason other than "already exists": here `PermissionDenied` on a cache
+    // directory the process cannot write to.
+    let home = home(&config_with("always"), "team");
+    let cache = cache_path(&home);
+    let dir = cache.parent().unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+
+    // Read+execute, no write. Restored below so the TempDir can be cleaned up.
+    use std::os::unix::fs::PermissionsExt;
+    let original = std::fs::metadata(dir).unwrap().permissions();
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let out = debug(&home, CLOSED_PORT_URL);
+    std::fs::set_permissions(dir, original).unwrap();
+
+    let (stdout, _) = streams(&out);
+
+    // Scoped to the lock row. A bare `contains("unreadable")` over the whole
+    // report matches the CLAUDE WIRING line — `settings.json is missing or
+    // unreadable` — which is a different and entirely correct use of the word.
+    let lock_line = stdout.lines().find(|l| l.trim_start().starts_with("lock")).expect("the lock stage is reported");
+    assert!(lock_line.contains("could not be created or read"), "the lock row says what happened: {lock_line:?}");
+    assert!(!lock_line.contains("unreadable"), "the old wording sent users hunting a stale lock: {lock_line:?}");
+    assert!(
+        stdout.contains("directory exists and is writable"),
+        "and the verdict names the thing to check — the point of the rewording:\n{stdout}",
+    );
+    assert_no_token(&out, "lock-unavailable");
 }
 
 #[test]

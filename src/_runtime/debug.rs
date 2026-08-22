@@ -21,14 +21,27 @@ use crate::fmt::human_duration;
 use crate::modules::spend::refresh::{self, Outcome};
 use crate::modules::spend::{self, Gate, SpendConfig, Verdict, cache, extract};
 
+/// One dynamic value in the report. See `app.rs`'s `field` for why the row
+/// filter is used here rather than the report one: nothing that came from a
+/// config, a credential or the environment may contribute a newline.
+fn field(value: &str) -> String {
+    crate::render::sanitize(value)
+}
+
 /// Builds the `SPEND` section, fetching as it goes.
 pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let mut out = String::new();
     let spend_config = SpendConfig::from_config(config);
     let lines = config.lines();
-    let path = cache::path();
+    // `--debug` exists to name what is wrong, so an unresolvable `$HOME` is
+    // reported here rather than silently producing an empty report.
+    let Some(path) = cache::path() else {
+        let _ = writeln!(out, "  cache    UNAVAILABLE — $HOME is unset, so there is nowhere to cache");
+        let _ = writeln!(out, "\n  VERDICT  spend cannot work without $HOME. Nothing was fetched.");
+        return out;
+    };
 
-    let _ = writeln!(out, "  cache    {}", path.display());
+    let _ = writeln!(out, "  cache    {}", field(&path.display().to_string()));
     let before = cache::read_from(&path);
     match before.as_ref() {
         None => {
@@ -59,7 +72,7 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
             let _ = writeln!(out, "  lock     HELD — holder started {holder_age_secs}s ago, not waiting");
         }
         Outcome::LockUnavailable => {
-            let _ = writeln!(out, "  lock     unreadable — no fetch was attempted");
+            let _ = writeln!(out, "  lock     could not be created or read — no fetch was attempted");
         }
         _ => {
             let _ = writeln!(out, "  lock     free");
@@ -73,7 +86,14 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let verdict = spend::verdict(after.as_ref(), &spend_config, &lines, config.symbol("spend"));
     write_gates(&mut out, after.as_ref(), &spend_config, &verdict);
 
-    let _ = writeln!(out, "\n  VERDICT  {}", verdict_of(&report, &verdict, after.as_ref(), &spend_config, config));
+    // Filtered as one value rather than inside each branch: `verdict_of`
+    // returns a single line, and its arms interpolate the cached plan tag, the
+    // rendered figure and `spend.show` — all config- or credential-derived.
+    let _ = writeln!(
+        out,
+        "\n  VERDICT  {}",
+        field(&verdict_of(&report, &verdict, after.as_ref(), &spend_config, config, &path)),
+    );
 
     out
 }
@@ -85,18 +105,18 @@ fn write_credentials(out: &mut String, report: &refresh::Report) {
     };
 
     let _ = writeln!(out, "  creds    {} ✓", source.describe());
-    let _ = writeln!(out, "           token ✓ (not shown)  plan={}", report.plan.as_deref().unwrap_or("<none>"));
+    let _ = writeln!(out, "           token ✓ (not shown)  plan={}", field(report.plan.as_deref().unwrap_or("<none>")));
 }
 
 fn write_fetch(out: &mut String, report: &refresh::Report) {
-    let _ = writeln!(out, "  fetch    GET {}", report.url);
+    let _ = writeln!(out, "  fetch    GET {}", field(&report.url));
     match report.status {
         Some(status) => {
             let _ = writeln!(out, "           {status} in {}ms", report.elapsed_ms);
         }
         None => match &report.outcome {
             Outcome::Failed { reason } => {
-                let _ = writeln!(out, "           FAILED after {}ms — {reason}", report.elapsed_ms);
+                let _ = writeln!(out, "           FAILED after {}ms — {}", report.elapsed_ms, field(reason));
             }
             _ => {
                 let _ = writeln!(out, "           not attempted");
@@ -177,7 +197,7 @@ fn write_gates(
         (3, gate_3, Gate::Disabled),
         (4, format!("show={}, plan={plan}", config.show), Gate::NotATeamPlan),
     ] {
-        let _ = writeln!(out, "  gate {n}   {label:<38}{}", mark(gate));
+        let _ = writeln!(out, "  gate {n}   {:<38}{}", field(&label), mark(gate));
     }
 }
 
@@ -200,13 +220,25 @@ fn verdict_of(
     cached: Option<&cache::SpendCache>,
     spend_config: &SpendConfig,
     config: &Config,
+    cache_path: &std::path::Path,
 ) -> String {
     match &report.outcome {
         Outcome::Locked { holder_age_secs } => format!(
             "a refresh is already running — its lock is {holder_age_secs}s old. No fetch was made; re-run once it finishes."
         ),
         Outcome::LockUnavailable => {
-            format!("the lock at {} could not be read, so no fetch was made.", cache::path().display())
+            // The **lock**, not the cache beside it: they differ by a `.lock`
+            // suffix, and naming the healthy file sends the reader to the wrong
+            // one in the only situation where this line is printed.
+            // Not only "unreadable": the lock is `create_new`, so this arm also
+            // covers PermissionDenied, NotADirectory and ENOSPC on the cache
+            // directory. Saying "could not be read" sends a user hunting for a
+            // stale lock file that was never created.
+            format!(
+                "the lock at {} could not be created or read, so no fetch was made. \
+                 Check that its directory exists and is writable.",
+                crate::modules::spend::lock::lock_path(cache_path).display(),
+            )
         }
         Outcome::NoCredentials => format!(
             "no credentials — neither {} nor {} yielded a token. Log in with Claude Code, then re-run.",
@@ -352,7 +384,14 @@ mod tests {
         };
         let config = SpendConfig { refresh_minutes: 15.0, show: "auto".into() };
         let verdict = Verdict::Hidden { gate: Gate::NoData };
-        let line = verdict_of(&report, &verdict, None, &config, &Config::new(serde_json::json!({})));
+        let line = verdict_of(
+            &report,
+            &verdict,
+            None,
+            &config,
+            &Config::new(serde_json::json!({})),
+            std::path::Path::new("/tmp/spend.json"),
+        );
 
         assert!(line.contains("14s"), "it names the holder's age: {line}");
         assert!(line.contains("already running"), "{line}");

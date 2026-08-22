@@ -11,25 +11,48 @@ crate_version() {
   cargo pkgid | sed -E 's/.*[@#]([0-9]+\.[0-9]+\.[0-9]+.*)$/\1/'
 }
 
-# The supported targets, as `<rust-triple> <npm-os> <npm-cpu> <binary-name>`
-# rows — every platform Claude Code itself runs on.
+# The built binary's filename, the same for every target. It used to be a
+# fourth column on the table below, carrying `.exe` for the two Windows rows;
+# with those gone it was a constant threaded through two consumers that each had
+# to remember to ignore it.
+BINARY_NAME="claude-status"
+
+# The supported targets, as `<rust-triple> <npm-os> <npm-cpu>` rows.
 #
-# gnu rather than musl on Linux: the bar shells out to git and reads the user's
-# config, so it lives on a normal desktop libc, and a musl build buys nothing.
+# **macOS only, both architectures.** Claude Code also runs on Linux and
+# Windows, and this table used to carry all six targets — the `macos-only`
+# cycle cut it to two. Four of those six had never had a binary *executed* on
+# them by anyone: `build:cross` proved architecture, not execution. Shipping
+# them was shipping a claim nobody checked, and each one cost a cross-toolchain
+# pin, a preflight, a filename branch and a CI runner to keep unchecked. See
+# contract §9, whose six-target paragraph is struck through and annotated.
 #
-# msvc rather than gnu on Windows: it is the default Rust toolchain there and
-# needs no runtime DLLs beside the binary.
+# Everything that COUNTS targets derives from this function — `target_count`,
+# `build:npm`'s staging and pin checks, `_rust_reassemble`, the release
+# workflow's staged-package check. Four things do NOT, and adding a platform
+# back means editing every one of them; nothing here catches a miss:
+#
+#   1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
+#   2. `"os": ["darwin"]` in `npm/claude-status/package.json` — npm refuses the
+#      install off macOS, so re-adding a row without this ships a wrapper that
+#      cannot be installed on the platform it now claims to serve.
+#   3. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
+#      runner each, so no artifact reaches npm untested on its own architecture.
+#   4. The crate itself, in three places — **Windows will not compile** until
+#      every one of them goes back behind a `cfg`, and restoring only the first
+#      still fails, after a full CI matrix has run:
+#        - `spawn_detached` in `src/_shared/proc.rs` calls a Unix API
+#          (`process_group`) unconditionally;
+#        - that file's `mod shell` test fixtures are now plain `echo`/`false`/
+#          `sleep`, their `cmd /C` twin deleted;
+#        - `tests/e2e.rs` chmods a `#!/bin/sh` shim through `PermissionsExt`.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
 supported_targets() {
   printf '%s\n' \
-    'aarch64-apple-darwin darwin arm64 claude-status' \
-    'x86_64-apple-darwin darwin x64 claude-status' \
-    'x86_64-unknown-linux-gnu linux x64 claude-status' \
-    'aarch64-unknown-linux-gnu linux arm64 claude-status' \
-    'x86_64-pc-windows-msvc win32 x64 claude-status.exe' \
-    'aarch64-pc-windows-msvc win32 arm64 claude-status.exe'
+    'aarch64-apple-darwin darwin arm64' \
+    'x86_64-apple-darwin darwin x64'
 }
 
 # How many platform packages a complete release carries.

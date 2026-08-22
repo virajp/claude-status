@@ -42,21 +42,20 @@ export async function install(
   const did = (message: string) =>
     opts.dryRun ? wouldStep(message) : step(message);
 
-  say(
-    opts.dryRun
-      ? `Dry run — claude-status ${version}. Nothing will be changed.`
-      : `Installing claude-status ${version}`,
-  );
-
-  // 1. The binary. Resolved before anything is written, so an unsupported
-  //    platform fails having touched nothing.
+  // 1. The binary. Resolved before anything is written — and before anything
+  //    is *said*, so a host this package cannot serve is told so instead of
+  //    reading "Installing claude-status" and then an error.
   const resolved = binary.resolvePlatformBinary();
   if (!resolved.ok) {
     if (resolved.reason === "unsupported") {
       fail(
         `unsupported platform ${resolved.host}\n`
+          + `  claude-status ships macOS binaries only.\n`
           + `  supported: ${binary.supportedPlatforms().join(", ")}\n`
-          + `  build from source instead: https://github.com/virajp/claude-status`,
+          + `  npm normally refuses this install outright — reaching this\n`
+          + `  message means it was forced past. Nothing has been changed.\n`
+          + `  Building from source is the only other option, and it is\n`
+          + `  unsupported: https://github.com/virajp/claude-status#requirements`,
       );
     }
     fail(
@@ -65,6 +64,12 @@ export async function install(
         + `    npm install @askviraj/claude-status --force`,
     );
   }
+
+  say(
+    opts.dryRun
+      ? `Dry run — claude-status ${version}. Nothing will be changed.`
+      : `Installing claude-status ${version}`,
+  );
 
   // Every directory this install might bring into being is recorded before it
   // is created, so an uninstall can take an empty one back out. Miss one and

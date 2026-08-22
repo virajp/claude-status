@@ -63,8 +63,12 @@ fn from_file() -> Option<Credentials> {
     parse(&read_json_file(&path)?, Source::File)
 }
 
-/// macOS only. On Linux and Windows there is no keychain to ask, and shelling
-/// out to a command that does not exist is just a wasted spawn.
+/// The `security` keychain lookup.
+///
+/// The `target_os` guard is kept even though the only published targets are
+/// macOS: this is a *capability* check, not a platform-support statement, and
+/// it is what keeps a source build on another OS from shelling out to a command
+/// that is not there. See contract §9 for why the shipped set is macOS-only.
 fn from_keychain() -> Option<Credentials> {
     if !cfg!(target_os = "macos") {
         return None;

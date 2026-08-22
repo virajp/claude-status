@@ -87,24 +87,7 @@ impl Home {
 
 /// Runs the binary with stdin piped, returning both streams separately.
 fn run(home: &Home, args: &[&str], stdin: &str, extra_env: &[(&str, &str)]) -> Output {
-    let mut cmd = Command::new(BINARY);
-    cmd.args(args)
-        .env_clear()
-        .env("HOME", home.path())
-        .env("PATH", std::env::var("PATH").unwrap_or_default())
-        // See the module docs on the spend hazard.
-        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
-        .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in extra_env {
-        cmd.env(k, v);
-    }
-
-    let mut child = cmd.spawn().expect("the binary runs");
-    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
-    child.wait_with_output().unwrap()
+    run_in(args, stdin, Some(home.path()), None, extra_env)
 }
 
 /// The shipped defaults, with spend refresh disabled.
@@ -434,6 +417,14 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
     }
     assert!(text.contains("claude-status.json"), "it names the config path it looked at");
     assert!(out.status.success());
+
+    // The `SAMPLE RENDER` carve-out contract §4a calls load-bearing: that
+    // section is appended **after** the report-wide sweep precisely so its SGR
+    // codes survive. Asserting the header alone would pass with an empty body,
+    // and would still pass if the sweep were moved to cover it — which would
+    // silently strip the colours the section exists to show.
+    let sample = text.split("SAMPLE RENDER").nth(1).expect("the section is present");
+    assert!(sample.contains('\u{1b}'), "the sample render lost its colour: {}", sample.escape_debug());
 }
 
 #[test]
@@ -559,7 +550,6 @@ fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
         ),
     )
     .unwrap();
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -612,4 +602,238 @@ fn stdout_never_carries_a_diagnostic_whatever_the_input() {
         assert!(!bar.contains(noise), "{noise:?} leaked onto stdout: {}", bar.escape_debug());
     }
     assert!(!stderr(&out).is_empty(), "the diagnostics did happen — just not on stdout");
+}
+
+/// Runs the binary with **no `$HOME` at all**, which is the case the contract's
+/// absent-never-relative clause governs.
+///
+/// A separate process, so this needs none of the in-process env locking the
+/// unit tests do — `env_clear()` simply never sets it.
+fn run_without_home(args: &[&str], stdin: &str, cwd: &Path, extra_env: &[(&str, &str)]) -> Output {
+    // A `PATH` with no `security` on it, per invariant 5's second rule: with no
+    // `$HOME` there is no credentials **file**, and the keychain arm is not
+    // `$HOME`-scoped — so without this the "no credentials" half is true only
+    // because the code happens to bail on the cache path first. Relying on that
+    // is relying on an ordering, not on the test's own setup.
+    let no_security = [("PATH", "/nonexistent/claude-status-test-path")];
+    let env: Vec<(&str, &str)> = no_security.iter().chain(extra_env.iter()).copied().collect();
+    run_in(args, stdin, None, Some(cwd), &env)
+}
+
+/// The one place this file builds a command.
+///
+/// `run` and `run_without_home` are the two shapes tests actually want; both go
+/// through here so the spend hazard the module docs describe is neutralised in
+/// exactly **one** place. Three near-identical hand-rolled builders is how a
+/// `CLAUDE_STATUS_SPEND_URL` goes missing from the fourth.
+fn run_in(args: &[&str], stdin: &str, home: Option<&Path>, cwd: Option<&Path>, extra_env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(BINARY);
+    cmd.args(args)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        // Never optional. See the module docs on the spend hazard.
+        .env("CLAUDE_STATUS_SPEND_URL", CLOSED_PORT_URL)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(home) = home {
+        cmd.env("HOME", home)
+            .env("CLAUDE_STATUS_SPEND_CACHE", home.join(".cache").join("claude-status").join("spend.json"));
+    }
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().expect("the binary runs");
+    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn with_no_home_the_bar_still_renders() {
+    // Invariant 3 outranks the new clause: a render never fails visibly, even
+    // when every path derived from `$HOME` is absent.
+    let dir = TempDir::new().unwrap();
+    let out = run_without_home(&["--statusline"], FIXTURE, dir.path(), &[]);
+
+    assert!(out.status.success(), "exit code {:?}", out.status.code());
+    let bar = stdout(&out);
+    assert!(bar.contains("Opus 4.8"), "got: {}", bar.escape_debug());
+}
+
+#[test]
+fn with_no_home_nothing_is_written_relative_to_the_cwd() {
+    // The point of the clause, and the exact paths the old code produced:
+    // `cache::path()` fell back to a bare `spend.json`, and `expand_home`
+    // returned the literal `~/usage` — so the mirror landed in a directory
+    // *named* `~`, not in one called `usage`. Naming both precisely is what
+    // stops this passing for the wrong reason.
+    let dir = TempDir::new().unwrap();
+    let marker = dir.path().join("only-this-should-be-here");
+    std::fs::write(&marker, "").unwrap();
+
+    run_without_home(&["--statusline"], FIXTURE, dir.path(), &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")]);
+    run_without_home(&["--refresh-spend"], "", dir.path(), &[]);
+
+    let after: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(after, vec![marker.file_name().unwrap()], "something was written: {after:?}");
+    assert!(!dir.path().join("spend.json").exists(), "the spend cache went relative");
+    assert!(!dir.path().join("~").exists(), "the usage mirror wrote into a directory named `~`");
+}
+
+#[test]
+fn with_no_home_debug_names_the_missing_variable() {
+    // `--debug` exists to say what is wrong; an empty SPEND section would be
+    // the useless answer the user already had.
+    let dir = TempDir::new().unwrap();
+    let out = run_without_home(&["--debug"], "", dir.path(), &[]);
+
+    // Scoped to the SPEND section. A bare `contains("$HOME")` over the whole
+    // report is satisfied by the `user  not found  <no $HOME>` row in CONFIG
+    // LAYERS — which this same cycle added — so it would pass even if the spend
+    // section said nothing at all.
+    let report = stdout(&out);
+    // Bounded at both ends. `SAMPLE RENDER` is appended after SPEND, so a slice
+    // that only cut at the start would run to the end of the report and pick up
+    // whatever came after — holding by luck rather than by construction.
+    let spend = report
+        .split("\nSPEND")
+        .nth(1)
+        .expect("the SPEND section is present")
+        .split("\nSAMPLE RENDER")
+        .next()
+        .expect("split always yields one");
+    assert!(spend.contains("$HOME"), "the spend section never mentions it: {spend}");
+    assert!(spend.contains("UNAVAILABLE"), "no cache verdict: {spend}");
+}
+
+#[test]
+fn with_no_home_the_caps_hook_stays_silent() {
+    // Its usage directory names `$HOME` and cannot resolve one, so it is inert
+    // — the same rule the writer follows, rather than reading from a directory
+    // relative to wherever the hook happened to run.
+    let dir = TempDir::new().unwrap();
+
+    // **Seeded at the path the OLD code would have read.** `expand_home` used
+    // to return the literal `~/usage`, which resolves relative to the cwd — so
+    // a breach-level mirror here is exactly what it would have found and acted
+    // on. Without this the test proves nothing: an absent file produces silence
+    // either way, which is how it passed before this seeding was added.
+    seed_mirror(&dir.path().join("~").join("usage"), "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":1774600000}"#);
+
+    let out = run_without_home(
+        &["--caps-hook"],
+        r#"{"session_id":"s1"}"#,
+        dir.path(),
+        &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")],
+    );
+
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "", "a directive was injected into the agent's context");
+}
+
+#[test]
+fn debug_reports_a_hostile_repo_config_without_obeying_it() {
+    // `--debug` is the fourth surface contract §4a names, and the widest input
+    // to it is the repo-level config layer — read from whatever repository the
+    // user changed into. Two of the values below land in two *different*
+    // sections of the report (EFFECTIVE LAYOUT and the spend gate table), which
+    // is exactly why the filter is one sweep over the assembled report rather
+    // than a call at each write: both were missed that way.
+    //
+    // The third, `symbols.spend`, reaches the VERDICT line only through
+    // `hidden_verdict`, which needs `Outcome::Updated` — a successful fetch,
+    // which a closed port never produces. It is planted anyway, so that if this
+    // test is ever pointed at a stub server the value is already in place; it
+    // is **not** load-bearing here, and this comment says so rather than
+    // letting a future reader assume it is covered.
+    let esc = '\u{1b}';
+    let home = Home::new(&safe_config());
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    // Built with `serde_json` rather than written as raw text: a literal ESC
+    // byte inside a JSON string is **invalid JSON**, so a hand-written fixture
+    // fails to parse, the layer loads as "not found", and the assertions below
+    // pass having exercised nothing. It has to be an escape sequence on disk.
+    std::fs::write(
+        repo.path().join(".config").join("claude-status.json"),
+        serde_json::json!({
+            // `describe_entry` prints a segment's id or name, so that is where
+            // a layout entry can carry one into EFFECTIVE LAYOUT.
+            "lines": [[format!("{esc}]52;c;cGF5bG9hZA=="), { "name": format!("{esc}[41mcost") }]],
+            // Straight into gate 4's row of the spend table.
+            "spend": { "show": format!("{esc}[2J{esc}[H") },
+            "symbols": { "spend": format!("{esc}[41mFAKE") },
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // A git root, so the repo layer is actually loaded.
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+    // `run_in` rather than a fourth hand-rolled builder: the cwd has to be the
+    // hostile repo so its config layer loads, and the home has to be the
+    // seeded one so the spend section still runs.
+    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
+
+    let report = stdout(&out);
+    // SAMPLE RENDER is renderer output and legitimately carries SGR codes, so
+    // assert against everything before it.
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+    // Proof the fixture actually landed. Without it the layer can fail to parse,
+    // load as "not found", and the escape assertion below passes having
+    // exercised nothing — which is exactly what this test did at first.
+    assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
+    assert!(!diagnostics.contains(esc), "an escape reached the report: {}", diagnostics.escape_debug());
+    assert!(diagnostics.contains("EFFECTIVE LAYOUT"), "the report was not produced at all: {report}");
+    assert!(report.contains("SAMPLE RENDER"), "the sample render must still be appended");
+}
+
+#[test]
+fn a_repo_config_cannot_forge_lines_in_the_debug_report() {
+    // The **newline** attack, which needs no escape at all and which the
+    // report-wide sweep cannot stop: that sweep exempts `\n` because the report
+    // is many lines, so a dynamic value carrying one forges a line — or a whole
+    // section header — in the diagnostic a user reads when trying to work out
+    // what is wrong with their machine. It is why every value in the report
+    // also goes through the row filter.
+    let home = Home::new(&safe_config());
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    std::fs::write(
+        repo.path().join(".config").join("claude-status.json"),
+        serde_json::json!({
+            "lines": [["model\nCLAUDE WIRING (~/.claude/settings.json)\n  statusLine: FORGED"]],
+            "spend": { "show": "auto\n\n  VERDICT  everything is fine, nothing to see" },
+        })
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
+    let report = stdout(&out);
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+
+    assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
+
+    // The text itself surviving is correct and expected — the report is
+    // *reporting* what the config says. What must not survive is the
+    // **structure**: the value may not become a line of its own.
+    let forged = diagnostics.lines().find(|l| l.contains("FORGED")).expect("the value is still reported");
+    assert!(forged.trim_start().starts_with("line 0:"), "it broke out onto its own line: {forged:?}");
+
+    let verdict = diagnostics.lines().find(|l| l.contains("everything is fine")).expect("still reported");
+    assert!(verdict.trim_start().starts_with("gate 4"), "it broke out of its gate row: {verdict:?}");
+
+    // Exactly one line *begins* each real section header. Counting substrings
+    // would count the inert copy inside the `line 0:` row above, which is the
+    // report faithfully quoting the config and is not a forgery.
+    let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
+    assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged: {diagnostics}");
+    assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged: {diagnostics}");
 }
