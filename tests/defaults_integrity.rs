@@ -140,9 +140,21 @@ fn the_non_glyph_scalars_hold() {
     assert_eq!(at(&d, "subagent.descBudgetFraction").as_f64(), Some(0.45));
     assert_eq!(str_at(&d, "defaultFg"), "white");
     assert_eq!(str_at(&d, "worktreePattern"), "worktree");
-    assert_eq!(str_at(&d, "projectName"), "Project-Name");
     assert_eq!(at(&d, "spend.refreshMinutes").as_u64(), Some(15));
     assert_eq!(str_at(&d, "spend.show"), "auto");
+    // Opt-**out**: the shipped default creates a missing repo layer, and a user
+    // who does not want that writes `false` into their own config.
+    assert_eq!(at(&d, "autoConfigureRepo").as_bool(), Some(true));
+}
+
+/// The one key the defaults must **not** carry.
+///
+/// `projectName` is repo-level only. Shipping it embedded is what made every
+/// repo without its own config render the same placeholder name, which is
+/// exactly the thing `autoConfigureRepo` exists to replace with a real one.
+#[test]
+fn the_defaults_carry_no_project_name() {
+    assert_eq!(defaults().as_object().unwrap().get("projectName"), None);
 }
 
 #[test]
@@ -202,5 +214,16 @@ fn the_shipped_schema_describes_exactly_the_keys_the_asset_carries() {
     let defaults: Value = serde_json::from_str(DEFAULTS_JSON).unwrap();
     let shipped: BTreeSet<&str> = defaults.as_object().unwrap().keys().map(String::as_str).collect();
 
-    assert_eq!(described, shipped, "the schema and the shipped defaults describe different configs");
+    // The asset may not carry a key the schema does not describe — that is the
+    // direction that makes an editor report a valid key as an error.
+    let undescribed: BTreeSet<&str> = shipped.difference(&described).copied().collect();
+    assert!(undescribed.is_empty(), "the shipped defaults carry keys the schema does not describe: {undescribed:?}");
+
+    // The other direction is **not** equality, because one key is deliberately
+    // schema-only: the schema validates the repo config too, and `projectName`
+    // lives there. Named rather than tolerated, so a second omission still
+    // fails this test.
+    let schema_only: BTreeSet<&str> = described.difference(&shipped).copied().collect();
+    let expected: BTreeSet<&str> = ["projectName"].into_iter().collect();
+    assert_eq!(schema_only, expected, "the schema and the shipped defaults have drifted apart");
 }

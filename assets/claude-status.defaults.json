@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
+  "autoConfigureRepo": true,
   "defaultFg": "white",
   "gauge": {
     "empty": "▱",
@@ -79,7 +80,6 @@
     "sepThin": "",
     "thinFg": "grey"
   },
-  "projectName": "Project-Name",
   "segments": {
     "branch": {
       "bg": "aqua"

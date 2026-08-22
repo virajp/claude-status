@@ -313,9 +313,15 @@ mod tests {
 
     #[test]
     fn project_reads_the_config_not_the_payload() {
-        let c = config();
-        let out = text("project", &MainFacts::default(), &GitFacts::default()).unwrap();
-        assert_eq!(out, format!("{} Project-Name", c.symbol("project")));
+        // The shipped defaults carry no `projectName` — it is repo-level only —
+        // so the segment omits until a repo config supplies one.
+        assert_eq!(text("project", &MainFacts::default(), &GitFacts::default()), None);
+
+        let named = Config::new(json!({ "symbols": { "project": "P" }, "projectName": "from-repo" }));
+        assert_eq!(
+            text_for("project", &MainFacts::default(), &GitFacts::default(), &named, None),
+            Some("P from-repo".to_string())
+        );
 
         let bare = Config::new(json!({ "symbols": { "project": "P" } }));
         assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &bare, None), None);

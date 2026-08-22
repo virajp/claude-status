@@ -91,7 +91,10 @@ mod tests {
     #[test]
     fn with_no_files_the_embedded_defaults_render_a_full_bar() {
         let layers = load(None, None);
-        assert_eq!(layers.config.project_name(), Some("Project-Name"));
+        // `projectName` is deliberately NOT embedded — it is repo-level only —
+        // so the probe into the embedded layer is a key that ships in it.
+        assert_eq!(layers.config.project_name(), None, "the defaults carry no project name");
+        assert_eq!(layers.config.get("defaultFg").and_then(Value::as_str), Some("white"));
         assert_eq!(layers.config.gauge_width(), 10);
         assert_eq!(layers.config.lines().len(), 2, "a cold start still has a layout");
         assert!(layers.sources.iter().filter(|s| s.loaded).count() == 1);
@@ -116,7 +119,11 @@ mod tests {
         let home = seed(&dir.path().join("home"), "{ this is not json");
 
         let layers = load(Some(&home), None);
-        assert_eq!(layers.config.project_name(), Some("Project-Name"), "the render succeeds on the embedded layer");
+        assert_eq!(
+            layers.config.get("defaultFg").and_then(Value::as_str),
+            Some("white"),
+            "the render succeeds on the embedded layer"
+        );
         let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
         assert!(!user.loaded, "the layer is reported as not loaded");
         assert!(user.path.is_some(), "but the path it looked at is still reported");
@@ -129,7 +136,7 @@ mod tests {
             let home = seed(dir.path(), body);
 
             let layers = load(Some(&home), None);
-            assert_eq!(layers.config.project_name(), Some("Project-Name"), "{body} blanked the bar");
+            assert_eq!(layers.config.get("defaultFg").and_then(Value::as_str), Some("white"), "{body} blanked the bar");
             assert_eq!(layers.config.lines().len(), 2);
             let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
             assert!(!user.loaded, "{body} should not count as a loaded layer");

@@ -446,7 +446,9 @@ fn a_syntactically_invalid_config_layer_is_ignored_and_the_render_succeeds() {
 
     let bar = stdout(&out);
     assert!(bar.contains("Opus 4.8"), "the render succeeded on the embedded layer");
-    assert!(bar.contains("Project-Name"), "the embedded default came through");
+    // The gauge is the probe here, not `projectName`: that key is repo-level
+    // only and ships in no layer this test has.
+    assert!(bar.contains('\u{25b0}'), "the embedded gauge glyph came through");
     assert!(out.status.success());
 }
 
