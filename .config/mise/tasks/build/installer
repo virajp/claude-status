@@ -39,7 +39,7 @@ stage_platform() {
   local bin="target/${target}/release/${BINARY_NAME}"
 
   if [[ ! -f "${bin}" ]]; then
-    print_warn "  skipping ${os}-${cpu}: no binary at ${bin} (run build:cross first)"
+    print_warn "  skipping ${os}-${cpu}: no binary at ${bin} (run build:statusline first)"
     return 0
   fi
 

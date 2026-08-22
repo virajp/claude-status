@@ -11,7 +11,7 @@ pre-commit  = { version = "latest" }
 taplo       = { version = "latest" }
 
 # No cross-compilation toolchain is pinned. Both published targets are macOS,
-# and `rustup target add` is the whole story on a Mac — see build:cross.
+# and `rustup target add` is the whole story on a Mac — see build:statusline.
 
 [shell_alias]
 cc        = "claude --name 'claude-status' --allow-dangerously-skip-permissions --dangerously-skip-permissions --remote-control 'claude-status' --continue"

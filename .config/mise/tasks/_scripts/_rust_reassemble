@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Put CI's downloaded build artifacts back where build:npm expects them"
+#MISE description="Put CI's downloaded build artifacts back where build:installer expects them"
 #MISE hide=true
 
 # Each build job uploads one binary; `actions/download-artifact` lands them in

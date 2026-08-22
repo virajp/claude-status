@@ -22,13 +22,13 @@ BINARY_NAME="claude-status"
 # **macOS only, both architectures.** Claude Code also runs on Linux and
 # Windows, and this table used to carry all six targets — the `macos-only`
 # cycle cut it to two. Four of those six had never had a binary *executed* on
-# them by anyone: `build:cross` proved architecture, not execution. Shipping
+# them by anyone: a local build proved architecture, not execution. Shipping
 # them was shipping a claim nobody checked, and each one cost a cross-toolchain
 # pin, a preflight, a filename branch and a CI runner to keep unchecked. See
 # contract §9, whose six-target paragraph is struck through and annotated.
 #
 # Everything that COUNTS targets derives from this function — `target_count`,
-# `build:npm`'s staging and pin checks, `_rust_reassemble`, the release
+# `build:installer`'s staging and pin checks, `_rust_reassemble`, the release
 # workflow's staged-package check. Four things do NOT, and adding a platform
 # back means editing every one of them; nothing here catches a miss:
 #

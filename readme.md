@@ -178,17 +178,22 @@ theming, and offers to remove what the old install left behind.
 ## Building
 
 ```sh
-mise run setup:all      # toolchain
-mise run code:test      # the suite
-mise run build:native   # a release binary for this machine
-mise run build:all      # both published targets, then the npm packages
+mise run setup:all         # toolchain
+mise run code:test         # the suite
+mise run build:statusline  # the bar, for both published targets
+mise run build:installer   # the npm packages, staged into target/npm/
+mise run build:all         # both of the above, in order
 ```
+
+`build:statusline` builds every published target and smoke-tests the host slice
+— the one this machine can actually execute; the other arch is proven the same
+way on its own CI runner. Pass `--target <triple>` to build just one.
 
 Both published targets are macOS, and Apple ships both slices of the system
 libraries — so `build:all` on any Mac needs nothing but the two `rustup`
 targets. There is no cross toolchain to install and no partial-build case to
-handle. On a non-Mac host `build:cross` stops and says so rather than staging an
-incomplete set.
+handle. On a non-Mac host `build:statusline` stops and says so rather than
+staging an incomplete set.
 
 `supported_targets` in `.config/mise/tasks/_scripts/_rust` is where the platform
 list lives; see [contract §9](docs/spec/statusline-behaviour.md) for why it is

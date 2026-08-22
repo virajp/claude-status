@@ -24,7 +24,7 @@ name: Release
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v6.0.1). Cargo.toml is the single source of truth for the version — the
-# npm manifests are generated from it by `mise run build:npm`.
+# npm manifests are generated from it by `mise run build:installer`.
 on:
   push:
     tags:
@@ -131,7 +131,7 @@ jobs:
       - uses: jdx/mise-action@v4
 
       - name: Build ${{ matrix.target }}
-        run: mise run build:cross --target ${{ matrix.target }}
+        run: mise run build:statusline --target ${{ matrix.target }}
 
       # The binary is what ships, so prove this exact file answers `--version`
       # with the bare number the installer keys on.
@@ -167,22 +167,22 @@ jobs:
           pattern: binary-*
           path: artifacts
 
-      # Put each binary back where build:npm expects it, and restore the
+      # Put each binary back where build:installer expects it, and restore the
       # executable bit — upload-artifact does not preserve it.
       - name: Reassemble the build outputs
         run: |
           set -e
-          # Driven by the same table build:npm reads, so adding a target does
+          # Driven by the same table build:installer reads, so adding a target does
           # not need this step edited too.
           .config/mise/tasks/_scripts/_rust_reassemble
 
       # tsup bundles the installer, so the build dependencies are needed here
-      # too — `build:npm` refuses to stage without a bundle.
+      # too — `build:installer` refuses to stage without a bundle.
       - name: Install build dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Stage the npm packages
-        run: mise run build:npm
+        run: mise run build:installer
 
       - name: Verify every platform package staged
         run: |

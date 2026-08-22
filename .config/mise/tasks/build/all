@@ -17,12 +17,12 @@ cd "$MISE_PROJECT_ROOT"
 # Both published targets are macOS, so this needs nothing but a Mac and the two
 # rustup targets.
 line_sep "-"
-mise run build:cross ${DEBUG_FLAG}
+mise run build:statusline ${DEBUG_FLAG}
 
 line_sep "-"
-mise run build:npm ${DEBUG_FLAG}
+mise run build:installer ${DEBUG_FLAG}
 
-# `build:npm` warns rather than fails when a target is missing, because staging
+# `build:installer` warns rather than fails when a target is missing, because staging
 # one package is a legitimate thing to want. Here it is not: this task exists to
 # produce a complete, publishable set.
 line_sep "-"
