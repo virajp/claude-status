@@ -1,16 +1,16 @@
 ---
 convention:
   commitTypes:
-    - feat
-    - fix
-    - perf
-    - refactor
-    - test
-    - docs
-    - ops
-    - blueprint
-    - merge
-    - wip
+    - feat # a new feature
+    - fix # a bug fix
+    - perf # code change that improves performance
+    - refactor # code change that neither fixes a bug nor adds a feature
+    - test # test, unit test, integration test, etc.
+    - docs # documentation, README, CHANGELOG, etc.
+    - ops # .config, .claude, .vscode, folder
+    - blueprint # a blueprint, plan, or specification
+    - merge # a merge commit
+    - wip # work in progress, not yet ready for review
   commitScopes:
     # the binary's modules, mirroring src/
     - cli # argument surface, stdin routing, the stdout boundary
