@@ -6,6 +6,7 @@
 //! would either reject a config the old bar accepted or degenerate into the
 //! same optionality with more code.
 
+pub mod autoseed;
 pub mod color;
 pub mod defaults;
 pub mod layers;
@@ -91,6 +92,16 @@ impl Config {
 
     pub fn project_name(&self) -> Option<&str> {
         self.get("projectName").and_then(Value::as_str).filter(|s| !s.is_empty())
+    }
+
+    /// Whether a render may create the repo config layer it did not find.
+    ///
+    /// Opt-**out**: the shipped defaults carry `true`, so the fallback here has
+    /// to agree with them or a config that failed to parse would silently
+    /// behave differently from one that never existed. Only a literal `false`
+    /// disables it; a missing key or a non-boolean means the default.
+    pub fn auto_configure_repo(&self) -> bool {
+        self.get("autoConfigureRepo").and_then(Value::as_bool).unwrap_or(true)
     }
 
     /// The layout: a list of lines, each a list of entries. An entry is a

@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
 use crate::config::Config;
+use crate::config::autoseed;
 use crate::config::layers::{self, Layers};
 use crate::git::GitFacts;
 use crate::payload::MainFacts;
@@ -64,6 +65,24 @@ fn refresh_spend() -> String {
     let spend_config = spend::SpendConfig::from_config(&config);
     spend::refresh::run(&path, spend_config.refresh_minutes, time::now_ms(), false);
     String::new()
+}
+
+/// Creates the repo config layer, when every condition to do so is met.
+///
+/// Split out so the three gates read as one list rather than as nested `if`s in
+/// the middle of the render: opt-in, in a repo, and the layer genuinely absent.
+/// The flag is read from the merged config, which at this point is the embedded
+/// and user layers — the repo layer cannot enable its own creation.
+fn maybe_seed_repo_config(layers: &Layers, root: Option<&std::path::Path>) -> Option<PathBuf> {
+    if !layers.config.auto_configure_repo() {
+        return None;
+    }
+    let repo_layer_loaded =
+        layers.sources.iter().any(|s| s.label == layers::LABEL_REPO && s.loaded);
+    if repo_layer_loaded {
+        return None;
+    }
+    autoseed::ensure(root?)
 }
 
 /// Renders the main bar, catching a panic into the fallback line.
@@ -198,7 +217,18 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
     };
     narrate(&format!("repo root: {root:?}, branch: {branch:?}"));
 
-    let layers = layers::load(home().as_deref(), root.as_deref());
+    let mut layers = layers::load(home().as_deref(), root.as_deref());
+
+    // The repo layer, created rather than merely read — opt-in, and only here.
+    // `--subagent` and the caps hook resolve a root too and stay read-only, so
+    // there is exactly one writer. Re-reading afterwards costs one file read on
+    // the single render that created it, and buys the project name appearing on
+    // that render rather than the next.
+    if let Some(created) = maybe_seed_repo_config(&layers, root.as_deref()) {
+        narrate(&format!("seeded repo config layer: {created:?}"));
+        layers = layers::load(home().as_deref(), root.as_deref());
+    }
+
     for source in &layers.sources {
         narrate(&format!("config layer {}: {:?} loaded={}", source.label, source.path, source.loaded));
     }

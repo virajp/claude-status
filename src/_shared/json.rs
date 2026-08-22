@@ -43,14 +43,30 @@ pub fn read_json_file(path: &Path) -> Option<Value> {
 ///
 /// Best-effort — the caller treats failure as "nothing was written".
 pub fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
+    write_bytes_atomic(path, &serde_json::to_vec(value)?)
+}
+
+/// The same write, indented and newline-terminated.
+///
+/// For the files a *person* opens: the spend cache is machine-only and stays
+/// compact, but a config the user is invited to edit should not arrive as one
+/// line.
+pub fn write_json_atomic_pretty(path: &Path, value: &Value) -> std::io::Result<()> {
+    let mut bytes = serde_json::to_vec_pretty(value)?;
+    bytes.push(b'\n');
+    write_bytes_atomic(path, &bytes)
+}
+
+/// Write-then-rename, so an interrupted write cannot truncate the target and a
+/// concurrent reader never sees a half-written file.
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir)?;
 
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = dir.join(format!("{file_name}.{}.tmp", std::process::id()));
 
-    let bytes = serde_json::to_vec(value)?;
-    match fs::write(&tmp, &bytes).and_then(|()| fs::rename(&tmp, path)) {
+    match fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, path)) {
         Ok(()) => Ok(()),
         Err(e) => {
             let _ = fs::remove_file(&tmp);
