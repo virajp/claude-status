@@ -271,10 +271,11 @@ Two traps here, both learned the hard way:
 > **The file is renamed** from `statusline.json` to `claude-status.json`, for
 > consistency with the tool's identity. The note below advises against exactly
 > this, and the migration is the price: `--install` moves the old file,
-> preserving the user's theming, and `--uninstall` puts it back. The binary only
-> ever knows the new name, so no per-render stat is spent on a legacy path.
-> Until the Phase 5 cutover **both files exist on purpose** — the JS bar is
-> still live and still reads the old name. Neither is stale.
+> preserving the user's theming. (It said `--uninstall` puts it back; the
+> 2026-08-22 amendment below withdraws that.) The binary only ever knows the new
+> name, so no per-render stat is spent on a legacy path. Until the Phase 5
+> cutover **both files exist on purpose** — the JS bar is still live and still
+> reads the old name. Neither is stale.
 
 > **Amended 2026-08-22** (`repo-autoconfig` cycle). Layer 3 may now be
 > **created** by a render, and `projectName` leaves layers 1 and 2 entirely.
@@ -299,9 +300,25 @@ Two traps here, both learned the hard way:
 > at the `ai-plugins` repo, and one kept under that URL is validated against the
 > wrong document for the rest of its life. So `$schema` is repointed and the
 > file written under the new name, the old one removed only once the new one is
-> on disk. Every other key is carried across untouched. A legacy file that is
-> **not a JSON object** has nothing to set `$schema` on and is moved as-is. This
-> applies at both levels and in both writers — the binary and the installer.
+> on disk. Every other key is carried across untouched, with one exception:
+> migrating the **user** layer drops `projectName`. The JS bar read that key
+> from this same file, but here it is repo-level only, and one kept at layer 2
+> would name every repo the user opens after whichever one they set it in —
+> exactly what the paragraph above says layer 2 must never do. It is dropped
+> rather than moved, because nothing in the user layer records which repo it was
+> meant for, and `--configure` derives the right name from the repo it runs in.
+> A legacy file that is **not a JSON object** has nothing to set `$schema` on
+> and is moved as-is. This applies at both levels and in both writers — the
+> binary and the installer.
+>
+> **`--uninstall` removes; it does not restore a migrated file.** A config the
+> install migrated in is this project's file and is removed under its own name,
+> guarded by the digest the receipt recorded — an edit since the install keeps
+> it. The legacy `statusline.json` it came from is **not** recreated. Bringing
+> it back would leave the user holding a config for a tool they no longer have,
+> and the receipt therefore records no `movedFrom` for anything. The restore
+> discipline still governs `settings.json` **keys**, which are prior state this
+> installer overwrote, not files of its own.
 >
 > Four constraints make the render-path write safe:
 >
@@ -1016,9 +1033,10 @@ things cannot derive it, and each is kept in step by hand:
 
 Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
-user's previous bar rather than deleting it and leaving them with none. And
-replacing a statusline the installer did not write must require explicit
-consent.
+`settings.json` keys it overwrote — the user's previous bar comes back rather
+than being deleted and leaving them with none. Files it wrote are removed, not
+restored to some earlier name; the two are different obligations. And replacing
+a statusline the installer did not write must require explicit consent.
 
 ---
 
@@ -1138,8 +1156,9 @@ claude-status --debug
   trace of them. Cursor never had a status surface; the other two are
   discontinued.
 - **The npm receipt/uninstall machinery**, unless §9 lands on npm. The
-  *discipline* (record prior state, restore rather than delete) is worth
-  keeping; the implementation is not.
+  *discipline* (record the prior state of anything you overwrite, and restore it
+  rather than leaving a default in its place) is worth keeping; the
+  implementation is not.
 
 ## 14. Before you write code
 

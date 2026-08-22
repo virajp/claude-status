@@ -121,8 +121,8 @@ export async function install(
       });
       did(`config   ${tilde(paths.config, paths)} (seeded)`);
       // Said out loud, because it is the one path that removes a file without
-      // carrying anything out of it. Not recorded as `movedFrom`: the bytes are
-      // gone, so an uninstall could not put them back and must not claim to.
+      // carrying anything out of it. Nothing in the receipt points back at it —
+      // the bytes are gone, and an uninstall must not claim otherwise.
       if (outcome.discarded) {
         did(
           `config   discarded ${
@@ -132,11 +132,13 @@ export async function install(
       }
       break;
     case "migrated":
+      // Recorded as an ordinary file of ours: uninstall removes it under this
+      // name and does not revive the legacy one. The digest is what tells an
+      // untouched migration from one the user has since edited.
       entries.push({
         kind: "file",
         path: paths.config,
         existedBefore: false,
-        movedFrom: outcome.from,
         sha256: outcome.sha256,
       });
       did(
@@ -144,6 +146,15 @@ export async function install(
           tilde(paths.config, paths)
         } (migrated)`,
       );
+      // Said out loud, because it is the one key the migration takes away.
+      // `projectName` is repo-level only, and one left in the user layer would
+      // name every repo after whichever one it was written for.
+      if (outcome.droppedProjectName) {
+        did(
+          "config   dropped projectName — it is repo-level only; "
+            + "run --configure inside a repo to set it there",
+        );
+      }
       // Named, not counted. A user who theming-edited that file deserves to
       // see which keys the installer put back into it.
       if (outcome.added.length > 0) {

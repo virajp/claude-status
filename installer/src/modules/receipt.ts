@@ -14,12 +14,18 @@ import {
 } from "../_shared/io.js";
 import type { Paths } from "../_shared/paths.js";
 
-/** A file we wrote. `previous: null` means we created it, so uninstall deletes it. */
+/**
+ * A file we wrote. `existedBefore: false` means we created it, so uninstall
+ * deletes it.
+ *
+ * There is deliberately no record of where a migrated file came from. Uninstall
+ * removes this project's files and puts nothing else back — reviving the JS
+ * bar's `statusline.json` years after it stopped being read would be this
+ * installer resurrecting another tool's config, not undoing its own work.
+ */
 export interface FileEntry {
   kind: "file";
   path: string;
-  /** Where this file came from, when the install moved it here. */
-  movedFrom?: string;
   /** The digest we wrote, so uninstall can tell "untouched" from "user-edited". */
   sha256?: string;
   existedBefore: boolean;

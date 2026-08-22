@@ -1,5 +1,11 @@
 /**
- * `--uninstall`: put back what was there before.
+ * `--uninstall`: remove this project's files, and restore the `settings.json`
+ * keys it changed.
+ *
+ * Only ours. A file this install migrated in is still ours — it is removed
+ * under the new name, and the legacy name it came from is *not* revived. That
+ * file was the JS bar's, and putting it back would leave the user with a config
+ * for a tool they no longer have.
  *
  * Order is load-bearing. The `settings.json` keys are restored **before** the
  * binary is removed, so a failure part-way through never leaves Claude Code
@@ -15,7 +21,6 @@ import {
 import {
   existsSync,
   readFileSync,
-  renameSync,
   rmSync,
   say,
   sha256,
@@ -82,18 +87,6 @@ export function uninstall(
       e.kind === "file"
     )
   ) {
-    if (entry.movedFrom) {
-      // Migrated in, so move it back under its old name rather than deleting a
-      // file that carries the user's theming.
-      if (existsSync(entry.path)) {
-        if (!opts.dryRun) {
-          renameSync(entry.path, entry.movedFrom);
-        }
-        did(`restored ${tilde(entry.movedFrom, paths)}`);
-      }
-      continue;
-    }
-
     if (entry.existedBefore) {
       step(`kept     ${tilde(entry.path, paths)} (predates this install)`);
       continue;

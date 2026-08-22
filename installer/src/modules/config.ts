@@ -27,7 +27,14 @@ export type ConfigAction =
   | { action: "kept"; }
   /** `discarded` names a legacy file that held nothing worth migrating. */
   | { action: "seeded"; sha256: string; discarded?: string; }
-  | { action: "migrated"; from: string; sha256: string; added: string[]; };
+  | {
+    action: "migrated";
+    from: string;
+    sha256: string;
+    added: string[];
+    /** `projectName` was carried by the legacy file and left behind. */
+    droppedProjectName: boolean;
+  };
 
 /**
  * The published schema for **this** repo's config format.
@@ -53,6 +60,8 @@ export const SCHEMA_URL =
  * Nothing is ever overwritten — only absent keys are added. `projectName` needs
  * no special case here: it is repo-level only and the template does not carry
  * it, which `the template carries no projectName` in the installer suite pins.
+ * A migrated file that arrives *with* one has already had it dropped by
+ * {@link migratedContent} before it gets here.
  */
 export function topUp(
   migrated: Record<string, unknown>,
@@ -95,9 +104,10 @@ export function defaultsPath(): string {
  *   exists. Overwriting a config the user is currently using would throw away
  *   their theming to fix a problem they do not have.
  * - Only the legacy name there → **migrated**: `$schema` repointed at this
- *   repo, the template's missing top-level keys added, the old file removed.
- *   Never a rename — a file left pointing at the `ai-plugins` schema is
- *   validated against the wrong document for the rest of its life.
+ *   repo, `projectName` dropped, the template's missing top-level keys added,
+ *   the old file removed. Never a rename — a file left pointing at the
+ *   `ai-plugins` schema is validated against the wrong document for the rest of
+ *   its life, and a name kept at user level is inherited by every repo.
  * - A legacy file that is not a JSON object → **discarded** for the seed. There
  *   is no key to set `$schema` on, and the JS bar could not parse it either.
  * - Neither → seeded from the shipped defaults.
@@ -128,6 +138,7 @@ export function seedOrMigrate(paths: Paths, dryRun = false): ConfigAction {
       from: paths.legacyConfig,
       sha256: digestOf(legacy.text),
       added: legacy.added,
+      droppedProjectName: legacy.droppedProjectName,
     };
   }
 
@@ -144,6 +155,7 @@ export function seedOrMigrate(paths: Paths, dryRun = false): ConfigAction {
       from: paths.legacyConfig,
       sha256: sha256(paths.config),
       added: legacy.added,
+      droppedProjectName: legacy.droppedProjectName,
     };
   }
 
@@ -166,7 +178,15 @@ export function seedOrMigrate(paths: Paths, dryRun = false): ConfigAction {
 
 /**
  * What a migrated config should end up holding: itself with `$schema` repointed
- * at this repo, plus the template's missing top-level keys.
+ * at this repo and `projectName` dropped, plus the template's missing top-level
+ * keys.
+ *
+ * `projectName` is repo-level only. The JS bar read it from this same file, so
+ * a legacy config plausibly carries one — and carrying it into the user layer
+ * would name *every* repo after whichever one the user set it in, which is
+ * precisely what the schema says the user layer must not do. It is dropped
+ * rather than moved: the installer has no idea which repo it was meant for, and
+ * `--configure` derives the right name from the repo it is run in anyway.
  *
  * `usable: false` means the legacy file is **not a JSON object** — hand-broken,
  * an array, a bare scalar. There is no key to set `$schema` on, so nothing in
@@ -176,7 +196,12 @@ export function seedOrMigrate(paths: Paths, dryRun = false): ConfigAction {
  */
 function migratedContent(
   path: string,
-): { text: string; added: string[]; usable: boolean; } {
+): {
+  text: string;
+  added: string[];
+  usable: boolean;
+  droppedProjectName: boolean;
+} {
   const original = readFileSync(path, "utf8");
 
   let parsed: unknown;
@@ -184,31 +209,45 @@ function migratedContent(
     parsed = JSON.parse(original);
   }
   catch {
-    return { text: original, added: [], usable: false };
+    return {
+      text: original,
+      added: [],
+      usable: false,
+      droppedProjectName: false,
+    };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { text: original, added: [], usable: false };
+    return {
+      text: original,
+      added: [],
+      usable: false,
+      droppedProjectName: false,
+    };
   }
 
   const template = JSON.parse(readFileSync(defaultsPath(), "utf8")) as Record<
     string,
     unknown
   >;
-  const { config, added } = topUp(
-    { ...parsed as Record<string, unknown>, $schema: SCHEMA_URL },
-    template,
-  );
+  const legacy: Record<string, unknown> = {
+    ...parsed as Record<string, unknown>,
+    $schema: SCHEMA_URL,
+  };
+  const droppedProjectName = "projectName" in legacy;
+  delete legacy["projectName"];
+  const { config, added } = topUp(legacy, template);
 
   // Byte-identical output when nothing actually changed — a file already
   // carrying this schema and every template key is left exactly as written,
   // rather than reformatted for no reason.
   const rewritten = `${JSON.stringify(config, null, 2)}\n`;
   const unchanged = added.length === 0
+    && !droppedProjectName
     && (parsed as Record<string, unknown>)["$schema"] === SCHEMA_URL;
 
   return unchanged
-    ? { text: original, added, usable: true }
-    : { text: rewritten, added, usable: true };
+    ? { text: original, added, usable: true, droppedProjectName }
+    : { text: rewritten, added, usable: true, droppedProjectName };
 }
 
 /** The digest of text that has not been written yet, for the dry run. */

@@ -660,6 +660,25 @@ describe("config migration", () => {
     );
   });
 
+  it("drops a projectName the legacy user config carried", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "statusline.json"),
+      JSON.stringify({ projectName: "whichever-repo", defaultFg: "aqua" }),
+    );
+
+    const { stdout } = run(home, ["--install"]);
+
+    const config = json(join(home, ".config", "claude-status.json"));
+    assert.ok(
+      !("projectName" in config),
+      "a name kept at user level names every repo the user opens",
+    );
+    assert.equal(config.defaultFg, "aqua", "every other key is carried across");
+    assert.match(stdout, /dropped projectName/);
+  });
+
   it("adds whole top-level keys without reaching inside one the user owns", () => {
     const home = newHome();
     mkdirSync(join(home, ".config"), { recursive: true });
@@ -742,19 +761,44 @@ describe("config migration", () => {
     });
   });
 
-  it("restores the old name on uninstall", () => {
+  it("removes the migrated config on uninstall without reviving the old name", () => {
     const home = newHome();
     mkdirSync(join(home, ".config"), { recursive: true });
     const legacy = join(home, ".config", "statusline.json");
     cpSync(ASSET, legacy);
-    const original = sha(legacy);
 
     run(home, ["--install"]);
     run(home, ["--uninstall"]);
 
-    assert.ok(existsSync(legacy), "the migration is reversed");
-    assert.equal(sha(legacy), original);
-    assert.ok(!existsSync(join(home, ".config", "claude-status.json")));
+    assert.ok(
+      !existsSync(join(home, ".config", "claude-status.json")),
+      "an unedited config of ours is ours to remove",
+    );
+    assert.ok(
+      !existsSync(legacy),
+      "the JS bar's file is not resurrected — uninstall removes, it does not restore",
+    );
+  });
+
+  it("keeps a migrated config the user has edited since", () => {
+    const home = newHome();
+    mkdirSync(join(home, ".config"), { recursive: true });
+    const legacy = join(home, ".config", "statusline.json");
+    cpSync(ASSET, legacy);
+
+    run(home, ["--install"]);
+    const config = join(home, ".config", "claude-status.json");
+    writeFileSync(
+      config,
+      JSON.stringify({ ...json(config), defaultFg: "aqua" }),
+    );
+    run(home, ["--uninstall"]);
+
+    assert.ok(
+      existsSync(config),
+      "an edit since the install is the user's work",
+    );
+    assert.equal(json(config).defaultFg, "aqua");
   });
 });
 

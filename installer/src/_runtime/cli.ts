@@ -64,7 +64,7 @@ export function helpText(version: string): string {
 
 USAGE
   npx @askviraj/claude-status --install     install the status line
-  npx @askviraj/claude-status --uninstall   remove it and restore what was there
+  npx @askviraj/claude-status --uninstall   remove it, restoring the keys it changed
   npx @askviraj/claude-status --configure   add a repo-level config to this repo
   npx @askviraj/claude-status --help        this help
   npx @askviraj/claude-status --version     print this installer's version
@@ -77,7 +77,8 @@ MODIFIERS
 WHAT --install DOES
   ~/.claude/bin/claude-status        the binary Claude Code runs
   ~/.config/claude-status.json       your config, seeded if absent
-                                     (migrated from statusline.json if found)
+                                     (migrated from statusline.json if found,
+                                     minus projectName — that is repo-level)
   ~/.claude/settings.json            adds statusLine, subagentStatusLine and
                                      the PostToolUse caps hook
   ~/.config/claude-status/           a receipt of what was there before
@@ -86,8 +87,9 @@ WHAT --install DOES
   terminal to ask in.
 
 WHAT --uninstall DOES
-  Restores every key and file the receipt recorded, then removes the binary.
-  A config you have edited since installing is left alone.
+  Restores every settings.json key the receipt recorded, then removes the files
+  this installer wrote. A config you have edited since installing is left alone,
+  and a statusline.json it migrated is not brought back.
 
 WHAT --configure DOES
   Run it from inside a repo. It writes that repo's config layer, which the bar
