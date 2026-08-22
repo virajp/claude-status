@@ -14,11 +14,12 @@ something runnable.
 
 ## Active
 
-| Plan                                                                      | Target repo     | Requires     | Landed | Status     |
-| ------------------------------------------------------------------------- | --------------- | ------------ | ------ | ---------- |
-| [2026-08-21-2121-macos-only](./2026-08-21-2121-macos-only.md)             | `claude-status` | —            | —      | active     |
-| [2026-08-21-2122-release](./2026-08-21-2122-release.md)                   | `claude-status` | `macos-only` | —      | superseded |
-| [2026-08-22-2147-github-artifacts](./2026-08-22-2147-github-artifacts.md) | `claude-status` | —            | —      | active     |
+| Plan                                                                      | Target repo     | Requires           | Landed | Status     |
+| ------------------------------------------------------------------------- | --------------- | ------------------ | ------ | ---------- |
+| [2026-08-21-2121-macos-only](./2026-08-21-2121-macos-only.md)             | `claude-status` | —                  | —      | active     |
+| [2026-08-21-2122-release](./2026-08-21-2122-release.md)                   | `claude-status` | `macos-only`       | —      | superseded |
+| [2026-08-22-2147-github-artifacts](./2026-08-22-2147-github-artifacts.md) | `claude-status` | —                  | —      | superseded |
+| [release-fix](./release-fix/index.md)                                     | `claude-status` | `github-artifacts` | —      | active     |
 
 **Execution order** — `macos-only`, then `release`. They are separated because
 `release` is the only cycle here whose steps are **not** reversible by editing a
