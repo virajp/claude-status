@@ -422,8 +422,12 @@ fn describe_entry(entry: &serde_json::Value) -> String {
     }
 }
 
-/// Reads the two keys Claude Code invokes this binary through, so a stale
+/// Reads the three keys Claude Code invokes this binary through, so a stale
 /// `settings.json` after an upgrade is visible rather than merely puzzling.
+///
+/// All three are always reported, `<not set>` included — HELP tells the user to
+/// run `--debug` to see what is wired, and a key omitted from the report is
+/// indistinguishable from a key the report does not know about.
 fn claude_wiring() -> Vec<String> {
     let Some(home) = home() else {
         return vec!["$HOME is unset".to_string()];
@@ -433,13 +437,36 @@ fn claude_wiring() -> Vec<String> {
         return vec![format!("{} is missing or unreadable", path.display())];
     };
 
-    ["statusLine", "subagentStatusLine"]
+    let mut rows: Vec<String> = ["statusLine", "subagentStatusLine"]
         .iter()
         .map(|key| match settings.get(key).and_then(|k| k.get("command")).and_then(|c| c.as_str()) {
             Some(command) => format!("{key:20} {command}"),
             None => format!("{key:20} <not set>"),
         })
-        .collect()
+        .collect();
+
+    let hook = caps_hook_command(&settings).unwrap_or("<not set>");
+    rows.push(format!("{:20} {hook}", "hooks.PostToolUse"));
+    rows
+}
+
+/// This binary's `PostToolUse` command, in its current or its previous form.
+///
+/// Claude Code's shape here is a list of groups, each with its own `hooks`
+/// list. The `ai-plugins` installer wired the same actuator as
+/// `node …/context-caps.js`, so that is **ours in its old form** and showing it
+/// is the point of the report — an upgrade that left it behind runs the old
+/// actuator alongside the new one. Anyone else's hook is not ours to report.
+fn caps_hook_command(settings: &serde_json::Value) -> Option<&str> {
+    settings
+        .get("hooks")?
+        .get("PostToolUse")?
+        .as_array()?
+        .iter()
+        .filter_map(|group| group.get("hooks")?.as_array())
+        .flatten()
+        .filter_map(|entry| entry.get("command")?.as_str())
+        .find(|command| command.contains("--caps-hook") || command.contains("context-caps.js"))
 }
 
 /// Representative facts for the sample render, so `--debug` shows a full bar
@@ -528,6 +555,85 @@ mod tests {
     // calling `dispatch` for either would inherit the real process's stdin and
     // `$HOME` — the hazard the spend cycle recorded when two of these tests
     // quietly became live-fetch tests.
+
+    /// Writes a `~/.claude/settings.json` into a throwaway home and reports
+    /// what `claude_wiring` makes of it. The guard restores `$HOME` on drop, so
+    /// a failing assertion cannot strand it — the hazard the note above records.
+    #[cfg(test)]
+    fn wiring_for(settings: serde_json::Value) -> (tempfile::TempDir, Vec<String>) {
+        let home = tempfile::TempDir::new().unwrap();
+        let dir = home.path().join(".claude");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), settings.to_string()).unwrap();
+
+        let mut env = crate::_shared::env_lock();
+        env.set("HOME", home.path().to_str().unwrap());
+        let rows = claude_wiring();
+        (home, rows)
+    }
+
+    #[test]
+    fn the_wiring_report_covers_the_caps_hook_as_well_as_the_two_surfaces() {
+        // HELP tells users to run --debug "to see what is currently wired", and
+        // names three keys. A report covering two of them cannot answer that.
+        let (_home, rows) = wiring_for(serde_json::json!({
+            "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
+            "subagentStatusLine": { "type": "command", "command": "/bin/claude-status --subagent" },
+            "hooks": {
+                "PostToolUse": [
+                    { "hooks": [{ "type": "command", "command": "/bin/claude-status --caps-hook" }] },
+                ],
+            },
+        }));
+
+        let report = rows.join("\n");
+        assert!(report.contains("--statusline"), "{report}");
+        assert!(report.contains("--subagent"), "{report}");
+        assert!(report.contains("--caps-hook"), "the caps hook must be reported: {report}");
+    }
+
+    #[test]
+    fn an_unwired_caps_hook_reports_as_unset_rather_than_vanishing() {
+        let (_home, rows) = wiring_for(serde_json::json!({
+            "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
+        }));
+
+        let report = rows.join("\n");
+        assert_eq!(rows.len(), 3, "all three keys are always reported: {report}");
+        assert!(report.contains("PostToolUse"), "{report}");
+    }
+
+    #[test]
+    fn a_stale_node_caps_hook_is_shown_rather_than_reported_absent() {
+        // The `ai-plugins` installer wired `node …/context-caps.js`. That is
+        // this tool's actuator in its previous form, and the whole point of the
+        // report is that a stale settings.json is visible after an upgrade.
+        let (_home, rows) = wiring_for(serde_json::json!({
+            "hooks": {
+                "PostToolUse": [
+                    { "matcher": "*", "hooks": [{ "type": "command", "command": "node /h/.claude/hooks/context-caps.js" }] },
+                ],
+            },
+        }));
+
+        let report = rows.join("\n");
+        assert!(report.contains("context-caps.js"), "a stale hook must be visible: {report}");
+    }
+
+    #[test]
+    fn another_tools_post_tool_use_hook_is_not_mistaken_for_ours() {
+        let (_home, rows) = wiring_for(serde_json::json!({
+            "hooks": {
+                "PostToolUse": [
+                    { "hooks": [{ "type": "command", "command": "/usr/bin/some-other-linter --fix" }] },
+                ],
+            },
+        }));
+
+        let report = rows.join("\n");
+        assert!(!report.contains("some-other-linter"), "a foreign hook is not ours to report: {report}");
+        assert!(report.contains("PostToolUse"), "{report}");
+    }
 
     #[test]
     fn the_fallback_line_is_the_documented_bytes() {
