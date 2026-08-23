@@ -31,15 +31,17 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
   usage and, when you cross a cap, tells Claude to wrap up and hand off rather
   than letting a session run past the line. It ships at **65%** context, 90% of
   the 5-hour window, 80% of the 7-day one and 90% of a monthly budget — and all
-  four are yours to change, globally or per repo, like any other setting.
+  four are yours to change in your own config. A repo you cloned cannot raise
+  them.
 - **Your subagents, at a glance too.** The same binary draws a second panel for
   subagent sessions — a row each with the agent's name, model, what it's working
   on, tokens and elapsed time, and a status glyph that colours the row: running,
   done, errored, still queued. Styled from the same config as the main bar.
 - **Git-aware.** Branch, worktree and dirty markers, resolved straight from the
   filesystem.
-- **Make it yours.** Every colour, glyph, segment and row order is config. Per
-  machine, and per repo when a project wants its own look.
+- **Make it yours.** Every colour, glyph, segment and row order is config, in
+  one file that's yours. A repo can tell the bar what it's called, and nothing
+  else — so a project you cloned can't change how your bar looks.
 - **Quick, and quiet.** It never phones home on a render, and it only ever
   writes the bar to stdout.
 
@@ -49,10 +51,18 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
 npx @askviraj/claude-status --install
 ```
 
-That's it. The binary lands at `~/.claude/bin/claude-status`, you get a starter
-config at `~/.config/claude-status.json`, and Claude Code gets wired up for you.
-The binary ships inside the package, so the install needs no network access at
-all — it works on a plane.
+That's it. The binary lands at `~/.claude/bin/claude-status` and Claude Code
+gets wired up for you. The binary ships inside the package, so the install needs
+no network access at all — it works on a plane.
+
+The bar draws in full from the defaults baked into the binary, so no config file
+is needed at all — `~/.config/claude-status/config.json` is yours to write when
+you want something different.
+
+> **Today the installer still writes one for you**, a full copy of those
+> defaults, which pins every value at the version you installed. That is being
+> removed along with the npm installer itself; until then, deleting that file
+> costs you nothing and lets new defaults reach you on upgrade.
 
 Restart Claude Code and the bar is there.
 
@@ -107,14 +117,22 @@ being absent rather than set to some default.
 Configuration is three layers, merged low to high:
 
 1. **Defaults baked into the binary** — so a fresh machine draws a full bar with
-   no config file at all.
-2. **`~/.config/claude-status.json`** — yours, created at install.
-3. **`<repo-root>/.config/claude-status.json`** — per-repo overrides, which win.
+   no config file at all. This is a supported state, not a fallback.
+2. **`~/.config/claude-status/config.json`** — yours. Holds only what you
+   changed, so anything you leave alone follows the binary forward when you
+   upgrade.
+3. **`<repo-root>/.config/claude-status.json`** — per repo. Sets `projectName`
+   and nothing else; any other key in it is ignored, and `claude-status --debug`
+   will tell you which.
 
 Nothing here is fragile: a layer that's missing, malformed or not a JSON object
 is simply ignored, and the bar still draws. Objects merge key by key. Arrays and
-scalars replace wholesale, so a repo that overrides `lines` gets the layout it
-asked for rather than yours plus its own.
+scalars replace wholesale, so overriding `lines` in your user config gets you
+the layout you asked for rather than yours plus the default.
+
+**Drawing the bar never writes to disk.** Whatever it needs, it reads. The only
+thing this tool writes on its own is the spend cache under
+`~/.cache/claude-status/`, and that only from a background refresh.
 
 ```jsonc
 {
@@ -142,12 +160,18 @@ npx @askviraj/claude-status --configure
 That writes layer 3 and names the project after its directory. An existing file
 is kept as-is and only gains `projectName` if it was missing.
 
-Mostly you won't need to. `autoConfigureRepo` is **on by default**, so the first
-render inside a new repo creates that layer for you by the same rules. Set
-`"autoConfigureRepo": false` in layer 2 if you'd rather it never happened. Only
-the main bar ever writes — the subagent panel and the caps hook are strictly
-read-only — and if writing fails for any reason the render carries on without
-complaint, because stdout belongs to the bar.
+Or write it yourself — the whole file is two keys:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
+  "projectName": "widget-service",
+}
+```
+
+Nothing creates this file for you on the render path. That used to happen, and
+it meant the one command that runs every four seconds was also the one command
+that wrote to your repo.
 
 `projectName` lives **only** at the repo level, by design. It isn't in the
 defaults or your user config, so a repo you haven't configured quietly omits the

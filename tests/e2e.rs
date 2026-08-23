@@ -54,9 +54,13 @@ impl Home {
     /// A throwaway `$HOME` carrying a config layer and a fresh spend cache.
     fn new(config: &str) -> Self {
         let dir = TempDir::new().unwrap();
-        let config_dir = dir.path().join(".config");
+        // `~/.config/claude-status/config.json` — a directory, not the bare
+        // `~/.config/claude-status.json` this used to be. There is no fallback
+        // to the old path, so a fixture left at it would silently test the
+        // embedded defaults instead of the config it seeded.
+        let config_dir = dir.path().join(".config").join("claude-status");
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(config_dir.join("claude-status.json"), config).unwrap();
+        std::fs::write(config_dir.join("config.json"), config).unwrap();
 
         // A cache stamped now, so nothing could decide it needs refreshing.
         let cache_dir = dir.path().join(".cache").join("claude-status");
@@ -88,6 +92,20 @@ impl Home {
 /// Runs the binary with stdin piped, returning both streams separately.
 fn run(home: &Home, args: &[&str], stdin: &str, extra_env: &[(&str, &str)]) -> Output {
     run_in(args, stdin, Some(home.path()), None, extra_env)
+}
+
+/// A throwaway directory git will accept as a repo root, carrying `layer` as
+/// its `<root>/.config/claude-status.json`.
+///
+/// A bare `.git/HEAD` rather than `git init`: the root walk looks for the
+/// directory, and a real init is a subprocess per test for nothing.
+fn fake_repo(layer: &str) -> TempDir {
+    let repo = TempDir::new().unwrap();
+    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    std::fs::write(repo.path().join(".config").join("claude-status.json"), layer).unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    repo
 }
 
 /// The shipped defaults, with spend refresh disabled.
@@ -305,8 +323,19 @@ fn a_user_config_may_raise_a_cap_as_well_as_lower_it() {
     assert!(out.contains("cap 50%"), "the user cap applied: {out}");
 }
 
+/// Replaces `a_repo_config_overrides_the_user_one_outright`, whose capability
+/// the `config-relocation` cycle removed. It is **inverted rather than
+/// deleted**: the two tests together were the whole guard on the repo layer's
+/// width, and dropping one would leave the narrowing untested at the surface
+/// where it matters most.
+///
+/// The **caps hook** is the sharpest case, and the reason this is an e2e test
+/// rather than a unit one. A repo raising its own cap does not draw a bar
+/// oddly — it suppresses the halt directive that stops an agent running past
+/// its context budget, which is exactly the thing a file inside the repo should
+/// not decide on the user's behalf.
 #[test]
-fn a_repo_config_overrides_the_user_one_outright() {
+fn a_repo_config_can_no_longer_override_a_user_cap() {
     let home = Home::new(r#"{ "projectName": "e2e", "spend": { "refreshMinutes": 0, "show": "never" }, "caps": { "context": 50 } }"#);
     let usage = home.path().join("usage");
     seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
@@ -321,15 +350,57 @@ fn a_repo_config_overrides_the_user_one_outright() {
     let user = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
     assert!(user.contains("cap 50%"), "the user cap applied: {user}");
 
-    // The repo RAISES it to 90 — which now wins, where the old tighten-only
-    // rule would have ignored it. 70% is under 90, so nothing fires.
+    // The repo tries to raise it to 90. It used to win outright; it is not
+    // merged at all now, so the user's 50 still fires on the same 70%.
     std::fs::remove_file(usage.join("s1.state.json")).unwrap();
     std::fs::write(repo.join(".config").join("claude-status.json"), r#"{"caps":{"context":90}}"#).unwrap();
-    assert_eq!(
-        stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR")),
-        "",
-        "a repo may loosen a cap now, and layer 3 wins outright",
-    );
+    let after = stdout(&caps_run(&home, &usage, &stdin, "CLAUDE_STATUS_USAGE_DIR"));
+    assert!(after.contains("cap 50%"), "the repo raised a cap it may no longer touch: {after}");
+}
+
+/// Criterion 5, whole: the name applies, the other key does not, and `--debug`
+/// names the one it dropped.
+#[test]
+fn a_repo_config_sets_the_project_name_and_nothing_else() {
+    let home = Home::new(&safe_config());
+    let repo = fake_repo(r#"{ "projectName": "from-the-repo", "gauge": { "width": 3 } }"#);
+
+    // `--statusline` resolves the repo root from the **payload's** cwd, not the
+    // process's, so `FIXTURE`'s `/tmp/demo` would find no repo at all.
+    let payload = serde_json::json!({
+        "model": { "display_name": "Opus 4.8" },
+        "workspace": { "current_dir": repo.path() },
+        "context_window": { "used_percentage": 26, "context_window_size": 1_000_000 },
+    })
+    .to_string();
+
+    let bar = stdout(&run_in(&["--statusline"], &payload, Some(home.path()), Some(repo.path()), &[]));
+    assert!(bar.contains("from-the-repo"), "the one key it may set did not apply: {}", bar.escape_debug());
+    let cells = bar.chars().filter(|c| *c == '\u{25b0}' || *c == '\u{25b1}').count();
+    assert_eq!(cells, 10, "the repo widened the gauge it may not touch: {}", bar.escape_debug());
+
+    // And the user is told, because `--debug` is the only place they can find
+    // out why the file they wrote is doing nothing.
+    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    let line = report
+        .lines()
+        .find(|l| l.trim_start().starts_with("ignored"))
+        .unwrap_or_else(|| panic!("--debug never named the ignored key:\n{report}"));
+    assert!(line.contains("gauge"), "{line:?}");
+    assert!(line.contains("projectName"), "it says what the file IS allowed to set: {line:?}");
+    assert!(!line.contains("$schema"), "a `$schema` pointer is not an ignored setting: {line:?}");
+}
+
+/// A repo config carrying only what it may set says nothing extra — otherwise
+/// every correctly written file would put a line in `--debug`.
+#[test]
+fn a_well_formed_repo_config_is_reported_as_ignoring_nothing() {
+    let home = Home::new(&safe_config());
+    let repo = fake_repo(r#"{ "$schema": "https://example.invalid/s.json", "projectName": "tidy" }"#);
+
+    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    assert!(report.contains("repo     loaded"), "the repo layer never loaded:\n{report}");
+    assert!(!report.contains("ignored"), "a tidy repo config was reported as dropping something:\n{report}");
 }
 
 #[test]
@@ -481,7 +552,10 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
     for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SAMPLE RENDER"] {
         assert!(text.contains(section), "missing {section}");
     }
-    assert!(text.contains("claude-status.json"), "it names the config path it looked at");
+    assert!(
+        text.contains(".config/claude-status/config.json"),
+        "it names the user config path it looked at: {text}",
+    );
     assert!(out.status.success());
 
     // The `SAMPLE RENDER` carve-out contract §4a calls load-bearing: that
@@ -556,9 +630,19 @@ fn the_usage_mirror_is_written_when_the_env_var_is_set() {
 fn nothing_is_written_when_the_usage_env_var_is_unset() {
     let home = Home::new(&safe_config());
     let usage = TempDir::new().unwrap();
+    let dir = usage.path().to_str().unwrap();
+
+    // The `TempDir` is proved to be the directory the mirror *would* use before
+    // it is used as evidence that nothing arrived in it. Without this half the
+    // test creates a directory it never tells the child about and then asserts
+    // it is empty — which it would be however the mirror behaved.
+    let with = run(&home, &["--statusline"], FIXTURE, &[("AI_PLUGINS_USAGE_DIR", dir)]);
+    assert!(with.status.success());
+    assert!(usage.path().join("abc123.json").exists(), "the fixture does not name the directory the mirror uses");
+    std::fs::remove_file(usage.path().join("abc123.json")).unwrap();
+
     let out = run(&home, &["--statusline"], FIXTURE, &[]);
     assert!(out.status.success());
-
     assert_eq!(std::fs::read_dir(usage.path()).unwrap().count(), 0, "the mirror is inert without the env var");
 }
 
@@ -754,6 +838,293 @@ fn run_in(args: &[&str], stdin: &str, home: Option<&Path>, cwd: Option<&Path>, e
     child.wait_with_output().unwrap()
 }
 
+/// `~/.cache/claude-status/`, relative to `$HOME` — the one directory this tool
+/// may write to.
+fn cache_prefix() -> String {
+    format!(".cache{}claude-status", std::path::MAIN_SEPARATOR)
+}
+
+/// Whether a run is expected to fork the detached spend-refresh child.
+///
+/// Passed explicitly rather than detected, because the two cases need opposite
+/// bounds and a helper that guessed would be free to guess "no" and wait for
+/// nothing — which is exactly the bug this enum replaced.
+#[derive(Clone, Copy, PartialEq)]
+enum Child {
+    /// `refreshMinutes` is non-zero and the cache is missing or stale.
+    Expected,
+    /// `refreshMinutes` is `0`, so `schedule::decide` returns `Disabled`
+    /// before it even looks at the cache.
+    NotExpected,
+}
+
+/// Waits for the detached spend-refresh child, so a snapshot taken afterwards
+/// includes everything it wrote.
+///
+/// A render that decides to refresh forks a detached child and returns
+/// **without waiting for it**, so the parent exits — and the test snapshots —
+/// while the child is still opening files.
+///
+/// # Why this does not watch the lock
+///
+/// The obvious handle is `spend.json.lock`, and it is the wrong one. It is
+/// created `O_EXCL` by the child and unlinked by `LockGuard::drop`, so
+/// **absence is the state both before and after** the child runs. A helper that
+/// returned on `!lock.exists()` returns on its first poll, inside the
+/// fork→create window, having waited for nothing — and reads as if it waited.
+/// That is not a race being lost; it is a guard that never looked. The previous
+/// version of this function did exactly that, and neutering it entirely turned
+/// no test red.
+///
+/// # What it watches instead
+///
+/// The **cache file's bytes**. Every terminal path in `refresh::run_reported`
+/// writes it — including the failure paths, which is what a closed-port fixture
+/// takes — and unlike the lock it is never removed, so a change to it is
+/// monotonic and cannot be missed between two polls.
+///
+/// [`Child::Expected`] waits for that change **and** for the lock to be gone,
+/// then panics if neither arrives inside the deadline: a run that stops
+/// spawning must fail loudly rather than make every caller vacuous.
+/// [`Child::NotExpected`] watches briefly for the opposite and panics if a
+/// child appears. Its window is a sanity check and not a proof — the proof that
+/// `refreshMinutes: 0` cannot spawn is `schedule::decide`'s own unit test — so
+/// its bound is short on purpose.
+fn settle(home: &Path, expect: Child) {
+    let cache = home.join(".cache").join("claude-status").join("spend.json");
+    let lock = home.join(".cache").join("claude-status").join("spend.json.lock");
+    let before = std::fs::read(&cache).ok();
+    let touched = |b: &Option<Vec<u8>>| std::fs::read(&cache).ok() != *b || lock.exists();
+
+    match expect {
+        Child::Expected => {
+            for _ in 0..500 {
+                if std::fs::read(&cache).ok() != before && !lock.exists() {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("no refresh child wrote {} within 5s — did this run stop spawning one?", cache.display());
+        }
+        Child::NotExpected => {
+            for _ in 0..25 {
+                assert!(!touched(&before), "a refresh child spawned where none was expected");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+}
+
+/// Every path under `root`, relative and sorted, with each file's bytes.
+///
+/// Content and not merely names: "nothing was created" is the easy half, and
+/// an in-place rewrite of a file that already existed would pass a name-only
+/// check while being exactly the kind of write criterion 6 is about.
+fn snapshot(root: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+    fn walk(dir: &Path, base: &Path, out: &mut Vec<(String, Option<Vec<u8>>)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let rel = path.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+            if path.is_dir() {
+                out.push((format!("{rel}/"), None));
+                walk(&path, base, out);
+            } else {
+                out.push((rel, Some(std::fs::read(&path).unwrap_or_default())));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+/// **Criterion 1.** The zero-config state, made a supported and tested one
+/// rather than a degraded accident.
+///
+/// `$HOME` is a genuinely empty directory — no config, no cache, no
+/// credentials — and the cwd is outside any git repo. A full bar renders, and
+/// `$HOME` gains nothing outside `~/.cache/claude-status/`.
+///
+/// **The criterion says "nothing is created anywhere under that `$HOME`", and
+/// that is not quite achievable**: an empty `$HOME` means an empty spend cache,
+/// which is exactly the condition that makes a render spawn the detached
+/// refresh child, and that child creates `~/.cache/claude-status/`. Criterion 6
+/// permits precisely that directory, so the two criteria disagree by the cache
+/// and this test resolves it criterion 6's way. The `.cache` exemption is
+/// therefore named rather than assumed, and `settle` makes the child's writes
+/// land *before* the snapshot rather than after it.
+#[test]
+fn with_an_empty_home_and_no_repo_a_full_bar_renders_and_nothing_is_created() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    assert!(snapshot(home.path()).is_empty(), "the fixture is not empty to begin with");
+
+    // **A sixth neutralisation, and this test is the reason it is needed.**
+    // The module note above lists five, and the fourth — a seeded
+    // `.claude/.credentials.json` — is unavailable here by construction: an
+    // empty `$HOME` is the whole point. `creds::load` falls through to
+    // `from_keychain`, which shells out to `security`, and the macOS keychain
+    // is not scoped by `$HOME`. Emptying `PATH` makes `security` unresolvable
+    // so the probe cannot run at all, which is a harder guarantee than seeding
+    // a file. `git` goes with it, which costs nothing: the cwd is not a repo.
+    let empty_path = TempDir::new().unwrap();
+    let env = [("PATH", empty_path.path().to_str().unwrap())];
+
+    let out = run_in(&["--statusline"], FIXTURE, Some(home.path()), Some(cwd.path()), &env);
+
+    assert!(out.status.success(), "exit code {:?}", out.status.code());
+    let bar = stdout(&out);
+    // A *full* bar, not a fallback line and not one lonely segment. The
+    // embedded layout is two rows; the second is git-only and this cwd is not a
+    // repo, so the first row is what must be complete.
+    assert!(!bar.starts_with("\u{26a1} Claude"), "the panic fallback rendered: {}", bar.escape_debug());
+    assert!(bar.contains("Opus 4.8"), "{}", bar.escape_debug());
+    assert!(bar.contains("259k/1M (26%)"), "the gauge segment is missing: {}", bar.escape_debug());
+    assert!(bar.contains("$46.51"), "the cost segment is missing: {}", bar.escape_debug());
+    assert!(bar.contains('\u{25b0}'), "the embedded gauge glyph came through");
+
+    // `Expected`, and it is load-bearing: an empty `$HOME` means no spend
+    // cache, which is precisely the condition that makes a render fork the
+    // refresh child. Snapshotting before it lands is how this test passed for
+    // the wrong reason twice — first by racing it, then by watching a lock
+    // whose absence meant nothing.
+    settle(home.path(), Child::Expected);
+    let created: Vec<String> = snapshot(home.path())
+        .into_iter()
+        .map(|(p, _)| p)
+        .filter(|p| !p.starts_with(&cache_prefix()) && p != ".cache/")
+        .collect();
+    assert_eq!(created, Vec::<String>::new(), "the render created something outside the cache");
+    assert_eq!(snapshot(cwd.path()), Vec::new(), "the render created something in the cwd");
+}
+
+/// **Criterion 6**, run rather than reasoned about.
+///
+/// A render is traced by comparing the whole of `$HOME` before and after, byte
+/// for byte, with `~/.cache/claude-status/` excused — that is the one place a
+/// render may write, and it is excused *by name* so a write anywhere else
+/// cannot hide behind the exemption.
+///
+/// **The criterion names one carve-out and needs two.** `$AI_PLUGINS_USAGE_DIR`
+/// is the second: `--statusline` writes the usage mirror there and the caps
+/// hook writes `<sid>.state.json` beside it, both of which the criterion's
+/// wording forbids and neither of which this cycle may touch — §8 is a live
+/// contract with another repository and the plan puts it explicitly out of
+/// scope. So the usage directory is pointed **outside `$HOME`** and asserted
+/// separately: the mirror must land there, and `$HOME` must still gain nothing.
+///
+/// Setting it rather than leaving it unset is the point. Unset, the mirror is
+/// inert and the test would be claiming "no mode writes outside the cache"
+/// while never exercising the one code path that does.
+///
+/// This is the filesystem-level check rather than a syscall trace because
+/// `dtrace` needs SIP disabled on macOS, which no CI machine and few laptops
+/// have. It is weaker in one specific way and the gap is worth naming: a write
+/// that opens a file, changes nothing and closes it is invisible here. It
+/// catches everything that leaves a mark.
+///
+/// Every mode is covered, not just `--statusline`. `--statusline` is the one
+/// that used to write, but a rule that holds for one surface and not the
+/// others is not the invariant this cycle bought.
+#[test]
+fn no_mode_writes_outside_the_cache_directory() {
+    let prefix = cache_prefix();
+    let outside_cache = |root: &Path| {
+        snapshot(root).into_iter().filter(|(p, _)| !p.starts_with(&prefix) && p != ".cache/").collect::<Vec<_>>()
+    };
+
+    // `spawns` is the third column and the one that took two attempts to get
+    // right. `safe_config()` sets `refreshMinutes: 0`, so every row using it
+    // returns `Decision::Disabled` before the cache is even read and **no child
+    // is ever forked** — which meant this test's `settle` call was inert in
+    // every iteration, and its claim to cover "a mode that wrote nothing itself
+    // but spawned something that did" was false.
+    //
+    // The `Child::Expected` rows fix that: a non-zero interval, and the seeded
+    // cache deleted so the schedule has nothing fresh to be satisfied by. The
+    // `NotExpected` rows are kept rather than converted — a mode that started
+    // forking a child it never used to would be a regression too, and only
+    // those rows can catch it.
+    for (args, stdin, spawns) in [
+        (&["--statusline"][..], FIXTURE, Child::NotExpected),
+        (&["--statusline"][..], FIXTURE, Child::Expected),
+        (&["--subagent"][..], SUBAGENT_FIXTURE, Child::NotExpected),
+        (&["--refresh-spend"][..], "", Child::NotExpected),
+        (&["--debug"][..], "", Child::NotExpected),
+        (&["--caps-hook"][..], r#"{"session_id":"s1"}"#, Child::NotExpected),
+        (&["--help"][..], "", Child::NotExpected),
+        (&["--version"][..], "", Child::NotExpected),
+    ] {
+        let config = match spawns {
+            Child::Expected => r#"{ "projectName": "traced", "spend": { "refreshMinutes": 15, "show": "never" } }"#,
+            Child::NotExpected => &safe_config(),
+        };
+        let home = Home::new(config);
+        if spawns == Child::Expected {
+            // The seeded cache is stamped `now`, so the schedule would call it
+            // fresh and decline to refresh. Removing it is what makes the fork
+            // happen. The keychain stays neutralised — `Home::new` seeds the
+            // credentials file, so `creds::load` never reaches `security`.
+            std::fs::remove_file(home.path().join(".cache").join("claude-status").join("spend.json")).unwrap();
+        }
+        // Inside a repo, because that is where a render used to create a file.
+        let repo = fake_repo(r#"{ "projectName": "traced" }"#);
+        let repo_before = snapshot(repo.path());
+        let before = outside_cache(home.path());
+
+        // The §8 carve-out, deliberately outside `$HOME` so the two are
+        // separable: whatever lands here is the usage mirror, and whatever
+        // lands under `$HOME` outside the cache is a violation.
+        let usage = TempDir::new().unwrap();
+        let env = [("AI_PLUGINS_USAGE_DIR", usage.path().to_str().unwrap())];
+
+        let out = run_in(args, stdin, Some(home.path()), Some(repo.path()), &env);
+        assert!(out.status.success(), "{args:?} exited {:?}", out.status.code());
+
+        // After the child, not before it. A mode that wrote nothing itself but
+        // spawned something that did would otherwise pass.
+        settle(home.path(), spawns);
+        assert_eq!(outside_cache(home.path()), before, "{args:?} wrote under $HOME outside the cache");
+        assert_eq!(snapshot(repo.path()), repo_before, "{args:?} wrote inside the repo");
+    }
+
+    // Not vacuous: §8's writer has to be live, or every assertion above holds
+    // for a run in which nothing could have written to the usage directory in
+    // the first place. `--statusline` with a `session_id` is what mirrors.
+    let home = Home::new(&safe_config());
+    let usage = TempDir::new().unwrap();
+    let env = [("AI_PLUGINS_USAGE_DIR", usage.path().to_str().unwrap())];
+    run_in(&["--statusline"], FIXTURE, Some(home.path()), None, &env);
+    assert!(
+        usage.path().join("abc123.json").exists(),
+        "the usage mirror never fired, so the carve-out above was never exercised",
+    );
+}
+
+/// **Criterion 4**, at the surface. The unit test in `layers.rs` proves the
+/// path is not read; this proves the binary agrees, which is the claim a user
+/// who moved their file is actually making.
+#[test]
+fn a_user_config_at_the_old_bare_path_is_ignored_by_the_binary() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let old = home.path().join(".config").join("claude-status.json");
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    std::fs::write(&old, r#"{ "projectName": "from-the-old-path", "lines": [["project"]] }"#).unwrap();
+
+    let bar = stdout(&run_in(&["--statusline"], FIXTURE, Some(home.path()), Some(cwd.path()), &[]));
+    assert!(!bar.contains("from-the-old-path"), "the old path was still read: {}", bar.escape_debug());
+    assert!(bar.contains("Opus 4.8"), "and the embedded layout rendered instead: {}", bar.escape_debug());
+
+    // Not merely unread — untouched. A future "helpfully migrate it" would
+    // land here, and this cycle deliberately has no migration.
+    assert!(old.exists(), "the old file was moved or removed");
+}
+
 #[test]
 fn with_no_home_the_bar_still_renders() {
     // Invariant 3 outranks the new clause: a render never fails visibly, even
@@ -838,13 +1209,12 @@ fn with_no_home_the_caps_hook_stays_silent() {
 }
 
 #[test]
-fn debug_reports_a_hostile_repo_config_without_obeying_it() {
-    // `--debug` is the fourth surface contract §4a names, and the widest input
-    // to it is the repo-level config layer — read from whatever repository the
-    // user changed into. Two of the values below land in two *different*
-    // sections of the report (EFFECTIVE LAYOUT and the spend gate table), which
-    // is exactly why the filter is one sweep over the assembled report rather
-    // than a call at each write: both were missed that way.
+fn debug_reports_a_hostile_config_without_obeying_it() {
+    // `--debug` is the fourth surface contract §4a names. Two of the values
+    // below land in two *different* sections of the report (EFFECTIVE LAYOUT
+    // and the spend gate table), which is exactly why the filter is one sweep
+    // over the assembled report rather than a call at each write: both were
+    // missed that way.
     //
     // The third, `symbols.spend`, reaches the VERDICT line only through
     // `hidden_verdict`, which needs `Outcome::Updated` — a successful fetch,
@@ -852,77 +1222,103 @@ fn debug_reports_a_hostile_repo_config_without_obeying_it() {
     // test is ever pointed at a stub server the value is already in place; it
     // is **not** load-bearing here, and this comment says so rather than
     // letting a future reader assume it is covered.
+    //
+    // **The payload is in the user layer, not the repo layer.** It was the repo
+    // layer, on the grounds that a repo config was the widest input to the
+    // report — true until `config-relocation` narrowed it to `projectName`.
+    // None of these three keys reaches the report from a repo file any more, so
+    // left there this test would assert "no escape in the report" about a
+    // report that had never been shown one.
     let esc = '\u{1b}';
-    let home = Home::new(&safe_config());
-    let repo = TempDir::new().unwrap();
-    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
     // Built with `serde_json` rather than written as raw text: a literal ESC
     // byte inside a JSON string is **invalid JSON**, so a hand-written fixture
     // fails to parse, the layer loads as "not found", and the assertions below
     // pass having exercised nothing. It has to be an escape sequence on disk.
-    std::fs::write(
-        repo.path().join(".config").join("claude-status.json"),
-        serde_json::json!({
+    let home = Home::new(
+        &serde_json::json!({
             // `describe_entry` prints a segment's id or name, so that is where
             // a layout entry can carry one into EFFECTIVE LAYOUT.
-            "lines": [[format!("{esc}]52;c;cGF5bG9hZA=="), { "name": format!("{esc}[41mcost") }]],
+            //
+            // `project` rides along because `lines` **replaces** the layout
+            // wholesale: without it the row is two unknown segments, both
+            // omitted, and the SAMPLE RENDER is empty — so the repo's
+            // `projectName` would have nowhere to be drawn and the assertion
+            // about it below would be checking an empty string.
+            "lines": [[format!("{esc}]52;c;cGF5bG9hZA=="), { "name": format!("{esc}[41mcost") }, "project"]],
             // Straight into gate 4's row of the spend table.
-            "spend": { "show": format!("{esc}[2J{esc}[H") },
+            "spend": { "refreshMinutes": 0, "show": format!("{esc}[2J{esc}[H") },
             "symbols": { "spend": format!("{esc}[41mFAKE") },
         })
         .to_string(),
-    )
-    .unwrap();
-    // A git root, so the repo layer is actually loaded.
-    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    );
 
-    // `run_in` rather than a fourth hand-rolled builder: the cwd has to be the
-    // hostile repo so its config layer loads, and the home has to be the
-    // seeded one so the spend section still runs.
+    // The repo layer still gets a payload, in the one key it may still set.
+    // A cloned repository has not stopped being attacker-controlled; it has
+    // stopped being *wide*. `projectName` reaches the SAMPLE RENDER through the
+    // `project` segment, which is the one part of the report deliberately not
+    // covered by the report-wide sweep.
+    let repo = fake_repo(&serde_json::json!({ "projectName": format!("{esc}[2Jowned") }).to_string());
+
     let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
 
     let report = stdout(&out);
     // SAMPLE RENDER is renderer output and legitimately carries SGR codes, so
     // assert against everything before it.
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
-    // Proof the fixture actually landed. Without it the layer can fail to parse,
-    // load as "not found", and the escape assertion below passes having
-    // exercised nothing — which is exactly what this test did at first.
+    // Proof the fixtures actually landed. Without this the layer can fail to
+    // parse, load as "not found", and the escape assertion below passes having
+    // exercised nothing — which is what this test did at first, and what it
+    // silently went back to doing when the repo layer was narrowed.
+    assert!(diagnostics.contains("user     loaded"), "the user layer never loaded: {diagnostics}");
     assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
     assert!(!diagnostics.contains(esc), "an escape reached the report: {}", diagnostics.escape_debug());
     assert!(diagnostics.contains("EFFECTIVE LAYOUT"), "the report was not produced at all: {report}");
     assert!(report.contains("SAMPLE RENDER"), "the sample render must still be appended");
+
+    // The repo's name is *rendered*, not merely dropped — the sanitiser is what
+    // makes it safe, so it has to have arrived to have been sanitised.
+    let sample = report.split("SAMPLE RENDER").nth(1).expect("the section is present");
+    assert!(sample.contains("owned"), "the repo's projectName never reached the sample: {}", sample.escape_debug());
+    // The **ESC-prefixed** sequence, not the bare text. `\x1b[2J` erases the
+    // display; a literal `[2J` with the ESC stripped is inert characters on a
+    // segment, which is precisely what the sanitiser is supposed to leave
+    // behind. Asserting on the bare text would call a working filter a failure.
+    // The renderer emits its own `\x1b[` SGR codes here, so this section cannot
+    // be checked for escapes wholesale the way the diagnostics above are.
+    assert!(
+        !sample.contains("\u{1b}[2J"),
+        "an erase-display survived into the sample: {}",
+        sample.escape_debug(),
+    );
 }
 
 #[test]
-fn a_repo_config_cannot_forge_lines_in_the_debug_report() {
+fn a_config_cannot_forge_lines_in_the_debug_report() {
     // The **newline** attack, which needs no escape at all and which the
     // report-wide sweep cannot stop: that sweep exempts `\n` because the report
     // is many lines, so a dynamic value carrying one forges a line — or a whole
     // section header — in the diagnostic a user reads when trying to work out
     // what is wrong with their machine. It is why every value in the report
     // also goes through the row filter.
-    let home = Home::new(&safe_config());
-    let repo = TempDir::new().unwrap();
-    std::fs::create_dir_all(repo.path().join(".config")).unwrap();
-    std::fs::write(
-        repo.path().join(".config").join("claude-status.json"),
-        serde_json::json!({
+    //
+    // The payload moved from the repo layer to the **user** layer when the repo
+    // layer was narrowed to `projectName`: neither `lines` nor `spend.show`
+    // reaches the report from a repo config any more, so mounting it there
+    // would have quietly stopped testing anything. The repo layer's own new
+    // vector is the sibling test below.
+    let home = Home::new(
+        &serde_json::json!({
+            "spend": { "refreshMinutes": 0, "show": "auto\n\n  VERDICT  everything is fine, nothing to see" },
             "lines": [["model\nCLAUDE WIRING (~/.claude/settings.json)\n  statusLine: FORGED"]],
-            "spend": { "show": "auto\n\n  VERDICT  everything is fine, nothing to see" },
         })
         .to_string(),
-    )
-    .unwrap();
-    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-    std::fs::write(repo.path().join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    );
 
-    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
+    let out = run_in(&["--debug"], "", Some(home.path()), None, &[]);
     let report = stdout(&out);
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
 
-    assert!(diagnostics.contains("repo     loaded"), "the repo layer never loaded: {diagnostics}");
+    assert!(diagnostics.contains("user     loaded"), "the user layer never loaded: {diagnostics}");
 
     // The text itself surviving is correct and expected — the report is
     // *reporting* what the config says. What must not survive is the
@@ -936,6 +1332,36 @@ fn a_repo_config_cannot_forge_lines_in_the_debug_report() {
     // Exactly one line *begins* each real section header. Counting substrings
     // would count the inert copy inside the `line 0:` row above, which is the
     // report faithfully quoting the config and is not a forgery.
+    let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
+    assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged: {diagnostics}");
+    assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged: {diagnostics}");
+}
+
+/// The vector the narrowing **created**, which had no equivalent before it.
+///
+/// A repo layer's ignored keys are now reported by name, and a JSON key may
+/// contain a newline. So the repo layer went from being able to forge a report
+/// line through its *values* to being able to forge one through its *key
+/// names* — a smaller surface, but a new one, and the report's row filter is
+/// what has to cover it.
+#[test]
+fn a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report() {
+    let home = Home::new(&safe_config());
+    let repo = fake_repo(
+        &serde_json::json!({
+            "projectName": "victim",
+            "gauge\n  VERDICT  everything is fine, nothing to see": 1,
+            "caps\nCLAUDE WIRING (~/.claude/settings.json)\n  statusLine: FORGED": 1,
+        })
+        .to_string(),
+    );
+
+    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+
+    let forged = diagnostics.lines().find(|l| l.contains("FORGED")).expect("the key is still reported");
+    assert!(forged.trim_start().starts_with("ignored"), "it broke out onto its own line: {forged:?}");
+
     let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
     assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged: {diagnostics}");
     assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged: {diagnostics}");

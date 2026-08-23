@@ -38,13 +38,23 @@ impl Powerline {
     /// The three separators are **sanitized here, once**, rather than at each
     /// of the ~10 places a row emits one.
     ///
-    /// They are the widest attacker-controlled surface on the bar: they come
-    /// from `powerline.cap` / `sep` / `sepThin` in the config, the repo-level
-    /// layer of which is `<repo-root>/.config/claude-status.json` — read from
-    /// whatever repository you `cd` into. They are also written **outside** any
-    /// segment's SGR bracket, so an escape here is not even contained by the
-    /// colour codes around it. Cloning a hostile repo and changing directory is
-    /// the whole attack.
+    /// They come from `powerline.cap` / `sep` / `sepThin` in the config, and
+    /// they are written **outside** any segment's SGR bracket — so an escape
+    /// here is not even contained by the colour codes around it. That is why
+    /// they are filtered at all, and it has not changed.
+    ///
+    /// **What has changed is the reach.** This used to say they were the widest
+    /// attacker-controlled surface on the bar, because the repo-level layer
+    /// could set them and cloning a hostile repo was the whole attack. Since
+    /// the `config-relocation` cycle a repo layer may set `projectName` and
+    /// nothing else, so a cloned repository cannot reach these keys at all —
+    /// pinned by `a_cloned_repo_can_no_longer_reach_the_separators_at_all`
+    /// below. They now come from the user layer, which is a file the user
+    /// wrote or synced from a dotfiles repo.
+    ///
+    /// The filter stays exactly as it was. A narrower input is still an input,
+    /// and the position outside the SGR bracket is what makes these the
+    /// sharpest place to get it wrong.
     ///
     /// `thin_fg` needs no such treatment: it goes through `config.color`, which
     /// yields an `Rgb`, and a colour cannot carry an escape.
@@ -131,17 +141,27 @@ mod tests {
         assert_eq!(render(&[], &pl()), "");
     }
 
+    /// The separators land **outside** any segment's SGR bracket, so an escape
+    /// in one is not merely ugly: it can close the renderer's own sequences
+    /// early, repaint the TUI above the bar, or emit OSC 52 to the clipboard.
+    ///
+    /// **This used to be planted in the repo layer, and the premise has
+    /// narrowed.** Cloning a hostile repo was the whole attack because a repo
+    /// config could set anything; since `config-relocation` it may set
+    /// `projectName` and nothing else, so `powerline` is unreachable from a
+    /// cloned repository — see the sibling test below, which pins that.
+    ///
+    /// The payload therefore moves to the **user** layer, which still carries
+    /// these keys and is still not trustworthy input: a `~/.config` directory
+    /// is the thing people commit to a dotfiles repo and sync between machines,
+    /// which is a supply chain of exactly one hop.
     #[test]
-    fn a_hostile_repo_config_cannot_put_escapes_in_the_separators() {
-        // The repo-level config layer is `<repo-root>/.config/claude-status.json`
-        // — cloning a hostile repo and changing into it is the whole attack, and
-        // these three strings land OUTSIDE any segment's SGR bracket.
-        // Written as a real repo-level config file, so this exercises the
-        // actual layer a cloned repository controls.
-        let repo = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(repo.path().join(".config")).unwrap();
+    fn a_hostile_user_config_cannot_put_escapes_in_the_separators() {
+        let home = tempfile::TempDir::new().unwrap();
+        let path = crate::config::layers::user_config_path(home.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
-            repo.path().join(".config").join("claude-status.json"),
+            path,
             serde_json::json!({
                 "powerline": {
                     // OSC 52 writes to the clipboard; CSI repaints the TUI above.
@@ -154,9 +174,13 @@ mod tests {
         )
         .unwrap();
 
-        let config = crate::config::layers::load(None, Some(repo.path())).config;
+        let layers = crate::config::layers::load(Some(home.path()), None);
+        // Not vacuous: the layer has to have been read for the assertions below
+        // to mean anything. A fixture at the wrong path loads as "not found",
+        // hands back the shipped glyphs, and passes having tested nothing.
+        assert!(layers.sources.iter().any(|s| s.label == crate::config::layers::LABEL_USER && s.loaded));
 
-        let pl = Powerline::from_config(&config);
+        let pl = Powerline::from_config(&layers.config);
         assert!(!pl.cap.contains('\u{1b}'), "cap: {:?}", pl.cap);
         assert!(!pl.sep.contains('\u{1b}'), "sep: {:?}", pl.sep);
         assert!(!pl.sep_thin.contains('\u{9b}'), "sepThin: {:?}", pl.sep_thin);
@@ -165,6 +189,34 @@ mod tests {
         let row = render(&[seg("x", BLUE), seg("y", AQUA)], &pl);
         assert!(!row.contains("\u{1b}]"), "no OSC in {row:?}");
         assert!(!row.contains("\u{1b}[2J"), "no erase-display in {row:?}");
+    }
+
+    /// What the test above gave up, asserted rather than assumed.
+    ///
+    /// The narrowing removed a whole attack surface, and a removed surface is
+    /// worth a test of its own: if the repo layer ever widens again, this goes
+    /// red and the sibling above stops being the only place the separators are
+    /// checked against a cloned repository.
+    #[test]
+    fn a_cloned_repo_can_no_longer_reach_the_separators_at_all() {
+        let repo = tempfile::TempDir::new().unwrap();
+        let path = crate::config::layers::repo_config_path(repo.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            serde_json::json!({ "powerline": { "cap": "\u{1b}]52;c;cGF5bG9hZA==\u{7}" } }).to_string(),
+        )
+        .unwrap();
+
+        let layers = crate::config::layers::load(None, Some(repo.path()));
+        assert_eq!(
+            layers.sources.iter().find(|s| s.label == crate::config::layers::LABEL_REPO).unwrap().ignored,
+            ["powerline"],
+            "the repo layer reached `powerline` again",
+        );
+
+        let pl = Powerline::from_config(&layers.config);
+        assert_eq!(pl.cap, "\u{e0b6}", "the shipped cap, not the repo's");
     }
 
     #[test]

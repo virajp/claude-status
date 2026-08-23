@@ -29,7 +29,15 @@ mod tests {
         // Takes the lock even though it only reads: the tests that *unset*
         // `HOME` would otherwise make this one flake.
         let _guard = crate::_shared::env_lock();
-        assert!(home().is_some(), "a test process always has $HOME");
+
+        // Asserted against `$HOME` itself, not merely `is_some()`. The doc
+        // comment above warns against substituting a platform config directory,
+        // and on macOS `dirs::config_dir()` is `~/Library/Application Support`
+        // — which is `Some`, so an `is_some()` assertion would wave through
+        // exactly the substitution the warning exists to prevent.
+        let expected = std::env::var("HOME").expect("a test process always has $HOME");
+        assert_eq!(home(), Some(PathBuf::from(&expected)));
+        assert!(!expected.contains("Application Support"), "$HOME is not a platform config directory");
     }
 
     #[test]

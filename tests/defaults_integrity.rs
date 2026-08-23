@@ -142,16 +142,14 @@ fn the_non_glyph_scalars_hold() {
     assert_eq!(str_at(&d, "worktreePattern"), "worktree");
     assert_eq!(at(&d, "spend.refreshMinutes").as_u64(), Some(15));
     assert_eq!(str_at(&d, "spend.show"), "auto");
-    // Opt-**out**: the shipped default creates a missing repo layer, and a user
-    // who does not want that writes `false` into their own config.
-    assert_eq!(at(&d, "autoConfigureRepo").as_bool(), Some(true));
 }
 
 /// The one key the defaults must **not** carry.
 ///
-/// `projectName` is repo-level only. Shipping it embedded is what made every
-/// repo without its own config render the same placeholder name, which is
-/// exactly the thing `autoConfigureRepo` exists to replace with a real one.
+/// `projectName` is repo-level only — it is the only key
+/// `<repo-root>/.config/claude-status.json` may set. Shipping it embedded is
+/// what made every repo without its own config render the same placeholder
+/// name.
 #[test]
 fn the_defaults_carry_no_project_name() {
     assert_eq!(defaults().as_object().unwrap().get("projectName"), None);

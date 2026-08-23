@@ -2,22 +2,66 @@
 //!
 //! **Deviation from the contract:** it describes two file layers, and a machine
 //! with neither renders blank. Here the shipped defaults are embedded as a
-//! third, lowest layer, so a cold start still draws a full bar. Output is
-//! byte-identical for every install whose user file *is* the seeded defaults,
-//! which is all of them.
+//! third, lowest layer, so a cold start still draws a full bar — and with the
+//! `config-relocation` cycle that is the *supported* state rather than a
+//! degraded one: no file has to exist anywhere for the bar to be complete.
+//!
+//! The two file layers are **not symmetric**, and that asymmetry is the whole
+//! shape of this module:
+//!
+//! - The **user** layer is the whole config. It lives at
+//!   `~/.config/claude-status/config.json`.
+//! - The **repo** layer may set [`REPO_LAYER_KEY`] and nothing else. It lives at
+//!   `<repo-root>/.config/claude-status.json`.
+//!
+//! Both used to be built from one shared expression and merged by one shared
+//! loop. They are written out separately now because they no longer agree on
+//! either half — neither the path nor what the file is allowed to say.
 
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::config::Config;
 use crate::config::defaults::DEFAULTS_JSON;
 use crate::json::{deep_merge, read_json_file};
 
-/// The per-user and per-repo file name. Note this is **not** the JS bar's
-/// `statusline.json`: the two live side by side until the Phase 5 cutover, and
-/// `--install` migrates the old file.
-pub const CONFIG_FILE_NAME: &str = "claude-status.json";
+/// The directory the user's config lives in, under `~/.config`.
+///
+/// A **directory** rather than the bare `~/.config/claude-status.json` this
+/// used to be, for two reasons: the tool will accumulate more than one thing to
+/// store, and a directory is one thing to delete when someone wants the tool
+/// gone. There is deliberately **no fallback to the old path** — nothing has
+/// ever been released, so a fallback would be compatibility with a state that
+/// never existed, paid for on every render as an extra stat.
+pub const USER_CONFIG_DIR_NAME: &str = "claude-status";
+
+/// The user config's file name inside [`USER_CONFIG_DIR_NAME`].
+pub const USER_CONFIG_FILE_NAME: &str = "config.json";
+
+/// The per-repo file name. It stays a bare file under the repo's `.config/`,
+/// where a repo's tool configs already live, and it keeps the tool's name
+/// because it is one file among many others' rather than a directory of its
+/// own.
+pub const REPO_CONFIG_FILE_NAME: &str = "claude-status.json";
+
+/// The only key a repo layer may set.
+///
+/// The repo layer existed to name the project. Letting it override styling
+/// made every repo a place where the bar could look different for reasons
+/// nobody could find — so §3's three-layer merge is deliberately **narrowed**
+/// here, and the narrowing is a reduction of the contract rather than a
+/// clarification of it.
+///
+/// (The cycle plan cites this as §2 throughout. §2 is *Input contracts*; the
+/// merge is §3. Corrected here rather than copied.)
+pub const REPO_LAYER_KEY: &str = "projectName";
+
+/// Not a setting: a pointer that buys the file editor completions. The shipped
+/// defaults carry one, so a hand-written repo config carrying one is expected
+/// rather than a mistake. It is neither merged nor reported as ignored —
+/// reporting it would put a line in `--debug` for every correctly written file.
+const SCHEMA_KEY: &str = "$schema";
 
 /// Where one layer came from and whether it contributed, for `--debug`.
 pub struct LayerSource {
@@ -28,11 +72,21 @@ pub struct LayerSource {
     pub label: &'static str,
     pub path: Option<PathBuf>,
     pub loaded: bool,
+    /// Keys the layer carried that were **dropped rather than merged**, in the
+    /// order the file listed them.
+    ///
+    /// Only the repo layer can populate this, and only since it was narrowed
+    /// to [`REPO_LAYER_KEY`]. It exists because a silently ignored key is the
+    /// worst of the three possible answers: erroring would break the
+    /// never-fail rule (§1, invariant 3), merging is what the narrowing
+    /// forbids, and dropping it without saying so leaves the user editing a
+    /// file that does nothing. So `--debug` names them.
+    pub ignored: Vec<String>,
 }
 
 /// The defaults compiled into the binary. Never has a path.
 pub const LABEL_EMBEDDED: &str = "embedded";
-/// `~/.config/claude-status.json`. No path means no `$HOME`.
+/// `~/.config/claude-status/config.json`. No path means no `$HOME`.
 pub const LABEL_USER: &str = "user";
 /// `<repo-root>/.config/claude-status.json`. No path means no git root.
 pub const LABEL_REPO: &str = "repo";
@@ -42,34 +96,92 @@ pub struct Layers {
     pub sources: Vec<LayerSource>,
 }
 
-/// Merges `embedded → $HOME/.config → <repo-root>/.config`.
+/// `~/.config/claude-status/config.json`.
 ///
 /// `home` is `$HOME` read directly and joined with `.config` literally — **not**
 /// `dirs::config_dir()`, which on macOS resolves to `~/Library/Application
-/// Support` and would miss every existing install.
+/// Support`. That is a platform convention this tool does not follow: the
+/// config directory is the thing people commit to a dotfiles repo and sync
+/// between machines, and `~/.config` is where such a repo expects to find it.
+pub fn user_config_path(home: &Path) -> PathBuf {
+    home.join(".config").join(USER_CONFIG_DIR_NAME).join(USER_CONFIG_FILE_NAME)
+}
+
+/// `<repo-root>/.config/claude-status.json`.
+///
+/// Written by a human and by nothing else. Nothing in this binary creates it —
+/// see the module note on [`load`].
+pub fn repo_config_path(root: &Path) -> PathBuf {
+    root.join(".config").join(REPO_CONFIG_FILE_NAME)
+}
+
+/// Merges `embedded → user → repo`.
+///
+/// **This function reads. It never writes**, and neither does anything it
+/// calls. A `--statusline` render used to be able to create the repo layer it
+/// did not find; that is gone, and the invariant it buys is worth naming — a
+/// status line that redraws every four seconds provably touches nothing on disk
+/// during a render. That is easier to reason about than any amount of care
+/// about *when* it writes.
 pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
     let embedded: Value = serde_json::from_str(DEFAULTS_JSON).unwrap_or_else(|_| Value::Object(Default::default()));
     let mut merged = embedded;
-    let mut sources = vec![LayerSource { label: LABEL_EMBEDDED, path: None, loaded: true }];
+    let mut sources = vec![LayerSource {
+        label: LABEL_EMBEDDED,
+        path: None,
+        loaded: true,
+        ignored: Vec::new(),
+    }];
 
-    for (label, base) in [(LABEL_USER, home), (LABEL_REPO, repo_root)] {
-        let path = base.map(|b| b.join(".config").join(CONFIG_FILE_NAME));
-        // A layer must be an *object*. A file holding `null`, a number or an
-        // array parses fine but would replace the whole merged config
-        // wholesale and blank the bar — the old implementation coerced any
-        // falsy parse to `{}`, and a one-byte file must not cost the defaults.
-        let layer = path.as_deref().and_then(read_json_file).filter(Value::is_object);
-        let loaded = match layer {
-            Some(layer) => {
-                deep_merge(&mut merged, &layer);
-                true
-            }
-            None => false,
-        };
-        sources.push(LayerSource { label, path, loaded });
-    }
+    // The user layer: the whole config, merged as it stands.
+    let user_path = home.map(user_config_path);
+    let user = user_path.as_deref().and_then(read_json_file).filter(Value::is_object);
+    let user_loaded = match user {
+        Some(layer) => {
+            deep_merge(&mut merged, &layer);
+            true
+        }
+        None => false,
+    };
+    sources.push(LayerSource { label: LABEL_USER, path: user_path, loaded: user_loaded, ignored: Vec::new() });
+
+    // The repo layer: one key, and a list of what it was not allowed to say.
+    let repo_path = repo_root.map(repo_config_path);
+    let repo = repo_path.as_deref().and_then(read_json_file).filter(Value::is_object);
+    let (repo_loaded, ignored) = match repo {
+        Some(Value::Object(entries)) => {
+            let (kept, ignored) = narrow(entries);
+            deep_merge(&mut merged, &Value::Object(kept));
+            (true, ignored)
+        }
+        // `filter(Value::is_object)` above leaves only objects, so this arm is
+        // the `None` case alone.
+        _ => (false, Vec::new()),
+    };
+    sources.push(LayerSource { label: LABEL_REPO, path: repo_path, loaded: repo_loaded, ignored });
 
     Layers { config: Config::new(merged), sources }
+}
+
+/// Splits a repo layer into the one key it may set and the keys it may not.
+///
+/// Ignoring rather than erroring, because the never-fail rule still holds
+/// (§1, invariant 3): a repo config carrying a stale `gauge` block must cost
+/// that block and never the bar. The dropped keys are returned rather than
+/// discarded so `--debug` can name them.
+fn narrow(entries: Map<String, Value>) -> (Map<String, Value>, Vec<String>) {
+    let mut kept = Map::new();
+    let mut ignored = Vec::new();
+    for (key, value) in entries {
+        match key.as_str() {
+            REPO_LAYER_KEY => {
+                kept.insert(key, value);
+            }
+            SCHEMA_KEY => {}
+            _ => ignored.push(key),
+        }
+    }
+    (kept, ignored)
 }
 
 #[cfg(test)]
@@ -79,33 +191,64 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::SegmentEntry;
 
-    /// Writes a config layer under `<base>/.config/` and returns `base`.
-    fn seed(base: &Path, layer: &str) -> PathBuf {
-        let dir = base.join(".config");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join(CONFIG_FILE_NAME), layer).unwrap();
+    /// Writes the user layer under `<base>/.config/claude-status/` and returns
+    /// `base`, to be passed as `home`.
+    fn seed_user(base: &Path, layer: &str) -> PathBuf {
+        let path = user_config_path(base);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, layer).unwrap();
         base.to_path_buf()
+    }
+
+    /// Writes the repo layer under `<base>/.config/` and returns `base`, to be
+    /// passed as `repo_root`.
+    fn seed_repo(base: &Path, layer: &str) -> PathBuf {
+        let path = repo_config_path(base);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, layer).unwrap();
+        base.to_path_buf()
+    }
+
+    fn source<'a>(layers: &'a Layers, label: &str) -> &'a LayerSource {
+        layers.sources.iter().find(|s| s.label == label).unwrap()
     }
 
     #[test]
     fn with_no_files_the_embedded_defaults_render_a_full_bar() {
         let layers = load(None, None);
-        // `projectName` is deliberately NOT embedded — it is repo-level only —
-        // so the probe into the embedded layer is a key that ships in it.
+
+        // Asserted as *equality with the whole default*, not as three sampled
+        // fields. Sampling `defaultFg == "white"` proves nothing here: it is
+        // also what `Config::default()` carries, so the probe passes whether
+        // the embedded layer was read or dropped on the floor.
+        //
+        // Equality is not a discriminator either — see the note on
+        // `a_non_object_user_layer_can_only_be_caught_by_its_loaded_flag` — but
+        // it is at least exact, and it pins the *whole* cold-start state
+        // rather than a corner of it.
+        assert_eq!(layers.config, Config::default());
         assert_eq!(layers.config.project_name, None, "the defaults carry no project name");
-        assert_eq!(layers.config.default_fg, Some(json!("white")));
-        assert_eq!(layers.config.gauge.width, 10);
         assert_eq!(layers.config.lines.len(), 2, "a cold start still has a layout");
-        assert!(layers.sources.iter().filter(|s| s.loaded).count() == 1);
+
+        // The layer *structure* is the part that is genuinely discriminating:
+        // both file layers must be reported, with no path to look at and
+        // nothing loaded.
+        let labels: Vec<&str> = layers.sources.iter().map(|s| s.label).collect();
+        assert_eq!(labels, [LABEL_EMBEDDED, LABEL_USER, LABEL_REPO]);
+        assert!(source(&layers, LABEL_EMBEDDED).loaded);
+        for label in [LABEL_USER, LABEL_REPO] {
+            let s = source(&layers, label);
+            assert!(!s.loaded, "{label} loaded with no file");
+            assert_eq!(s.path, None, "{label} named a path with no base to build one from");
+        }
     }
 
     #[test]
     fn the_repo_layer_beats_the_user_layer_beats_embedded() {
         let dir = tempfile::TempDir::new().unwrap();
-        let home = seed(&dir.path().join("home"), r#"{ "projectName": "from-user", "defaultFg": "aqua" }"#);
-        let repo = seed(&dir.path().join("repo"), r#"{ "projectName": "from-repo" }"#);
+        let home = seed_user(&dir.path().join("home"), r#"{ "projectName": "from-user", "defaultFg": "aqua" }"#);
+        let repo = seed_repo(&dir.path().join("repo"), r#"{ "projectName": "from-repo" }"#);
 
         let layers = load(Some(&home), Some(&repo));
         assert_eq!(layers.config.project_name.as_deref(), Some("from-repo"));
@@ -117,42 +260,147 @@ mod tests {
     #[test]
     fn a_malformed_layer_is_ignored_rather_than_fatal() {
         let dir = tempfile::TempDir::new().unwrap();
-        let home = seed(&dir.path().join("home"), "{ this is not json");
+        let home = seed_user(&dir.path().join("home"), "{ this is not json");
 
         let layers = load(Some(&home), None);
         assert_eq!(layers.config.default_fg, Some(json!("white")), "the render succeeds on the embedded layer");
-        let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
+        let user = source(&layers, LABEL_USER);
         assert!(!user.loaded, "the layer is reported as not loaded");
         assert!(user.path.is_some(), "but the path it looked at is still reported");
     }
 
+    /// The regression `7152c8a` fixed, at the layer it actually lands on.
+    ///
+    /// **The user position has no in-process discriminator, and that is a
+    /// property of the design rather than of this test.** If a non-object user
+    /// layer replaced the merged tree wholesale, `Config::new` would fall back
+    /// to `Config::default()` — which is, by
+    /// `the_embedded_defaults_deserialize_to_the_default_config`, *exactly*
+    /// what the surviving embedded layer produces. Every value assertion
+    /// therefore holds in both outcomes. `loaded` and the stderr diagnostic
+    /// are the only things that differ, so `loaded` is what is asserted, and
+    /// the case with real data at stake is the sibling test below.
     #[test]
-    fn a_valid_but_non_object_layer_does_not_wipe_the_defaults() {
+    fn a_non_object_user_layer_can_only_be_caught_by_its_loaded_flag() {
         for body in ["null", "0", "[]", "\"x\""] {
             let dir = tempfile::TempDir::new().unwrap();
-            let home = seed(dir.path(), body);
+            let home = seed_user(dir.path(), body);
 
             let layers = load(Some(&home), None);
-            assert_eq!(layers.config.default_fg, Some(json!("white")), "{body} blanked the bar");
-            assert_eq!(layers.config.lines.len(), 2);
-            let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
-            assert!(!user.loaded, "{body} should not count as a loaded layer");
+            assert!(!source(&layers, LABEL_USER).loaded, "{body} should not count as a loaded layer");
+        }
+    }
+
+    /// The same filter one layer up, where a wipe would cost something a test
+    /// can see: the repo layer merges **last**, so a non-object one replacing
+    /// the tree wholesale would take the user's whole config with it.
+    #[test]
+    fn a_non_object_repo_layer_does_not_wipe_the_user_layer() {
+        for body in ["null", "0", "[]", "\"x\""] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let home = seed_user(&dir.path().join("home"), r#"{ "defaultFg": "aqua", "gauge": { "width": 3 } }"#);
+            let repo = seed_repo(&dir.path().join("repo"), body);
+
+            let layers = load(Some(&home), Some(&repo));
+            assert_eq!(layers.config.default_fg, Some(json!("aqua")), "{body} wiped the user layer");
+            assert_eq!(layers.config.gauge.width, 3, "{body} wiped the user layer");
+            assert!(!source(&layers, LABEL_REPO).loaded, "{body} should not count as a loaded layer");
         }
     }
 
     #[test]
-    fn a_repo_layer_replaces_the_layout_wholesale() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let repo = seed(dir.path(), r#"{ "lines": [["model"]] }"#);
+    fn the_user_path_is_a_directory_under_dot_config() {
+        let layers = load(Some(Path::new("/fake/home")), None);
+        assert_eq!(
+            source(&layers, LABEL_USER).path.as_deref(),
+            Some(Path::new("/fake/home/.config/claude-status/config.json")),
+        );
+    }
 
-        let layers = load(None, Some(&repo));
-        assert_eq!(layers.config.lines, vec![vec![SegmentEntry::Id("model".into())]]);
+    /// The path this config used to live at. There is deliberately no
+    /// fallback, so a file left there is invisible — and a test says so, because
+    /// "we removed the fallback" and "we forgot to remove the old path" look
+    /// identical from the outside.
+    #[test]
+    fn a_config_at_the_old_bare_path_is_ignored() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let old = dir.path().join(".config").join("claude-status.json");
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        fs::write(&old, r#"{ "defaultFg": "aqua", "projectName": "old" }"#).unwrap();
+
+        let layers = load(Some(dir.path()), None);
+        assert_eq!(layers.config.default_fg, Some(json!("white")), "the old path was still read");
+        assert_eq!(layers.config.project_name, None, "the old path was still read");
+        assert!(!source(&layers, LABEL_USER).loaded);
     }
 
     #[test]
-    fn the_user_path_is_dot_config_under_home_literally() {
-        let layers = load(Some(Path::new("/fake/home")), None);
-        let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
-        assert_eq!(user.path.as_deref(), Some(Path::new("/fake/home/.config/claude-status.json")));
+    fn the_repo_path_stays_a_bare_file_under_dot_config() {
+        let layers = load(None, Some(Path::new("/fake/repo")));
+        assert_eq!(
+            source(&layers, LABEL_REPO).path.as_deref(),
+            Some(Path::new("/fake/repo/.config/claude-status.json")),
+        );
+    }
+
+    /// The narrowing, at the key it exists to allow.
+    #[test]
+    fn a_repo_layer_may_set_the_project_name() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = seed_repo(dir.path(), r#"{ "projectName": "widget-service" }"#);
+
+        let layers = load(None, Some(&repo));
+        assert_eq!(layers.config.project_name.as_deref(), Some("widget-service"));
+        let source = source(&layers, LABEL_REPO);
+        assert!(source.loaded);
+        assert!(source.ignored.is_empty(), "nothing was dropped");
+    }
+
+    /// Replaces `a_repo_layer_replaces_the_layout_wholesale`, which pinned the
+    /// capability this cycle removes. The layout is the sharpest case: it is
+    /// the one key a repo could use to make the bar unrecognisable.
+    #[test]
+    fn a_repo_layer_no_longer_replaces_the_layout() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = seed_repo(dir.path(), r#"{ "lines": [["model"]] }"#);
+
+        let layers = load(None, Some(&repo));
+        assert_eq!(layers.config.lines, Config::default().lines, "the repo layer overrode the layout");
+        assert_eq!(source(&layers, LABEL_REPO).ignored, ["lines"], "and said so");
+    }
+
+    /// Replaces `a_repo_config_overrides_the_user_one_outright`'s unit half:
+    /// the user layer is what a repo key now loses to, not the other way round.
+    #[test]
+    fn a_repo_key_other_than_the_project_name_is_ignored_and_reported() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = seed_user(&dir.path().join("home"), r#"{ "caps": { "context": 50 }, "defaultFg": "aqua" }"#);
+        let repo = seed_repo(
+            &dir.path().join("repo"),
+            r#"{ "projectName": "kept", "caps": { "context": 90 }, "gauge": { "width": 3 } }"#,
+        );
+
+        let layers = load(Some(&home), Some(&repo));
+        assert_eq!(layers.config.project_name.as_deref(), Some("kept"), "the one key it may set applied");
+        assert_eq!(layers.config.caps.context, 50, "the user's cap survived the repo's");
+        assert_eq!(layers.config.default_fg, Some(json!("aqua")), "and so did the rest of the user layer");
+        assert_eq!(layers.config.gauge.width, 10, "a key neither layer may set here is the shipped one");
+
+        let source = source(&layers, LABEL_REPO);
+        assert!(source.loaded, "the file was read — it just did not get to say most of it");
+        assert_eq!(source.ignored, ["caps", "gauge"], "in the order the file listed them");
+    }
+
+    /// `$schema` is the one key a hand-written repo config is *expected* to
+    /// carry, so reporting it as ignored would put a line in `--debug` for
+    /// every correctly written file.
+    #[test]
+    fn a_repo_layers_schema_pointer_is_neither_merged_nor_reported() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = seed_repo(dir.path(), r#"{ "$schema": "https://example.invalid/s.json", "projectName": "n" }"#);
+
+        let layers = load(None, Some(&repo));
+        assert_eq!(layers.config.project_name.as_deref(), Some("n"));
+        assert!(source(&layers, LABEL_REPO).ignored.is_empty(), "`$schema` is a pointer, not a setting");
     }
 }

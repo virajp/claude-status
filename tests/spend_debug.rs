@@ -37,9 +37,12 @@ const NEITHER: &str = r#"{"five_hour":{"utilization":12}}"#;
 fn home(config: &str, plan: &str) -> TempDir {
     let dir = TempDir::new().unwrap();
 
-    let config_dir = dir.path().join(".config");
+    // `~/.config/claude-status/config.json`. There is no fallback to the old
+    // bare path, so a fixture left at it would silently stop applying and every
+    // assertion below would be testing the embedded defaults instead.
+    let config_dir = dir.path().join(".config").join("claude-status");
     std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("claude-status.json"), config).unwrap();
+    std::fs::write(config_dir.join("config.json"), config).unwrap();
 
     seed_credentials(dir.path(), plan);
     dir
@@ -247,9 +250,12 @@ fn no_credentials_names_both_places_it_looked() {
     // name went unverified precisely on the machines where it mattered, and a
     // real OAuth token was read into the test process on every developer run.
     let dir = TempDir::new().unwrap();
-    let config_dir = dir.path().join(".config");
+    // `~/.config/claude-status/config.json`. There is no fallback to the old
+    // bare path, so a fixture left at it would silently stop applying and every
+    // assertion below would be testing the embedded defaults instead.
+    let config_dir = dir.path().join(".config").join("claude-status");
     std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("claude-status.json"), config_with("always")).unwrap();
+    std::fs::write(config_dir.join("config.json"), config_with("always")).unwrap();
 
     let out = debug_with_path(&dir, CLOSED_PORT_URL, "/nonexistent/claude-status-test-path");
     let (stdout, _) = streams(&out);

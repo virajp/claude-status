@@ -6,12 +6,27 @@
 //! `claude-status.json`, resolved embedded → user → repo like every other key,
 //! with the repo layer winning outright.
 //!
-//! **That is a deliberate loosening.** The tighten-only rule existed so a repo
-//! could not raise its own limits, and dropping it means a repo-level config
-//! can. The tradeoff was taken knowingly: layer 3 is a file you commit and
-//! review in your own repository, at the same trust level as every other
-//! setting it already controls, and a caps key that behaved differently from
-//! its neighbours was a surprise of its own.
+//! **That was a deliberate loosening, and it has since been taken back.** The
+//! tighten-only rule existed so a repo could not raise its own limits.
+//! Dropping it let a repo-level config do exactly that, and the tradeoff was
+//! taken knowingly: layer 3 is a file you commit and review in your own
+//! repository, at the same trust level as every other setting it already
+//! controls, and a caps key that behaved differently from its neighbours was a
+//! surprise of its own.
+//!
+//! **Reversed by the `config-relocation` cycle**, which narrowed the repo layer
+//! to `projectName`. Caps are not narrowed there — they are **removed from
+//! layer 3 entirely**, so `caps` now resolves through embedded → user and
+//! stops. The argument above still holds for a repo you wrote; it does not
+//! hold for one you cloned, and the caps hook is not a rendering decision. A
+//! repo raising its own context cap does not draw an odd bar — it suppresses
+//! the directive that stops an agent running past its budget, which is not a
+//! thing a file inside the repository should decide on the user's behalf.
+//!
+//! This is a **second reversal**, distinct from the styling one, and it is the
+//! larger of the two: styling lost a capability nobody was using, while caps
+//! lose one this module argued for on the record. Pinned by
+//! `a_repo_config_can_no_longer_override_a_user_cap` in `tests/e2e.rs`.
 
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -24,7 +39,13 @@ use crate::config::Config;
 pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 90, seven_day: 80, spend: 90 };
 
 /// The thresholds a breach is measured against, as percentages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// [`serde::Serialize`] is derived where [`Deserialize`] is hand-written: reading has
+/// to degrade each key independently, but writing has one shape and no
+/// forgiveness to preserve. `rename_all` is what keeps the two halves agreeing
+/// on `fiveHour`/`sevenDay`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Caps {
     pub context: u32,
     pub five_hour: u32,

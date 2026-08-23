@@ -72,9 +72,12 @@ fn stub() -> Stub {
 fn home(config: &str, cache: Option<&str>) -> TempDir {
     let dir = TempDir::new().unwrap();
 
-    let config_dir = dir.path().join(".config");
+    // `~/.config/claude-status/config.json`. There is no fallback to the old
+    // bare path, so a fixture left at it would silently stop applying and every
+    // assertion below would be testing the embedded defaults instead.
+    let config_dir = dir.path().join(".config").join("claude-status");
     std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("claude-status.json"), config).unwrap();
+    std::fs::write(config_dir.join("config.json"), config).unwrap();
 
     let claude = dir.path().join(".claude");
     std::fs::create_dir_all(&claude).unwrap();

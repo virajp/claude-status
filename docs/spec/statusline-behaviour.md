@@ -256,9 +256,10 @@ Two traps here, both learned the hard way:
 **Three** layers, deep-merged **low → high**:
 
 1. The **shipped defaults, embedded in the binary**. Always present.
-2. `~/.config/claude-status.json` — the per-user config. Seeded with the full
-   defaults at install; the user's thereafter.
-3. `<repo-root>/.config/claude-status.json` — per-repo overrides. **Wins.**
+2. `~/.config/claude-status/config.json` — the per-user config. Holds only what
+   differs from layer 1.
+3. `<repo-root>/.config/claude-status.json` — the per-repo layer. May set
+   `projectName` and nothing else. **Wins**, for that one key.
 
 > **Amended 2026-08-19** (`main-bar` cycle), on two counts.
 >
@@ -277,8 +278,13 @@ Two traps here, both learned the hard way:
 > cutover **both files exist on purpose** — the JS bar is still live and still
 > reads the old name. Neither is stale.
 
-> **Amended 2026-08-22** (`repo-autoconfig` cycle). Layer 3 may now be
-> **created** by a render, and `projectName` leaves layers 1 and 2 entirely.
+> **Amended 2026-08-22** (`repo-autoconfig` cycle), and **largely reversed on
+> 2026-08-23** — see the `config-relocation` amendment below. Everything in this
+> box about `autoConfigureRepo`, the render-path write and the `statusline.json`
+> migration describes behaviour that no longer exists. It is kept because the
+> `projectName`-is-repo-level-only decision it records is still in force, and
+> because a reversal is easier to trust when the thing reversed is still
+> legible.
 >
 > `autoConfigureRepo` — a boolean, **default `true`** — lets a `--statusline`
 > render that finds no layer 3 write one: a repo-level `statusline.json` is
@@ -378,10 +384,100 @@ only the user layer.
 > Types are what let the code **name a default**, which is what makes storing
 > only non-defaults possible. Nothing a user can see changes in this cycle.
 
-> Keep the config **file name, location and schema identical** to the current
+> ~~Keep the config **file name, location and schema identical** to the current
 > implementation. Existing users should be able to point Claude at the new
 > binary and see the same bar. Any schema change is a migration you have to
-> design; there is no reason to take that on in v1.
+> design; there is no reason to take that on in v1.~~
+>
+> **Retracted 2026-08-23** (`config-relocation` cycle). The instruction was
+> sound while it was written and its premise turned out to be false: there is no
+> existing user. `claude-status` has never been released, so "point Claude at
+> the new binary and see the same bar" describes nobody, and the migration the
+> note warns about is a migration from a state that never existed. The file
+> name, location and schema have all moved in the amendment below, and no
+> fallback path was written for any of them — for the same reason.
+
+> **Amended 2026-08-23** (`config-relocation` cycle). Where the config lives,
+> what it may contain, and the end of the render-path write.
+>
+> **The user config is `~/.config/claude-status/config.json`.** A directory
+> rather than a bare file, because the tool will accumulate more than one thing
+> to store and because a directory is one thing to delete. **There is no
+> fallback to `~/.config/claude-status.json`**, and a file left there is ignored
+> rather than migrated.
+>
+> **The cache does not move, and the split is the point.**
+> `~/.cache/claude-status/` holds the spend cache and its lock, and belongs
+> there rather than beside the config: a spend figure derived from an account
+> token is machine-local and regenerable, while the config directory is the
+> thing people commit to a dotfiles repo and sync between machines. A cache that
+> followed the config would arrive on the second machine stale, keyed to the
+> first machine's account. Recorded here so it is not later "tidied" into the
+> config directory.
+>
+> **A config written *by the binary* holds only non-defaults.** A key appears
+> only where its value differs from the binary's, so an unset key follows the
+> binary forward across upgrades. The output always carries `$schema` — not a
+> setting, but the pointer that makes the file editable.
+>
+> **This property is not yet delivered end to end, and the gap is on purpose.**
+> The installer still seeds `assets/claude-status.defaults.json` **verbatim**
+> (`installer/src/modules/config.ts`, pinned by a test asserting the seeded file
+> is sha-identical to the asset), so every install performed through it still
+> freezes every shipped value at whatever version happened to be installed —
+> exactly the freeze this rule exists to end. The `config-relocation` cycle
+> changed the binary's writer and deliberately left the installer alone;
+> [distribution/01](../plans/2026-08-23-distribution/01-drop-npm.md) deletes the
+> installer outright and owns retiring both the seeding and the test that pins
+> it. Until then the freeze outlives this cycle, and a reader must not take the
+> paragraph above as describing the whole system.
+>
+> Open maps are diffed **entry by entry**. `palette`, `symbols`, `typeSymbols`,
+> `segments` and `subagent.statuses` all have non-empty defaults, so emitting a
+> whole map because one entry changed would silently freeze the rest at today's
+> values while looking like it worked.
+>
+> **Layer 3 may set `projectName` and nothing else.** Any other key is
+> **ignored** — not merged, and not an error, because the never-fail rule above
+> still holds — and `--debug` names the keys it dropped, which is the only place
+> a user can find out why the file they wrote is doing nothing. This is a
+> **reduction** of the three-layer merge described at the top of this section,
+> not a clarification of it: the layer used to be able to override anything. The
+> layer existed to name the project, and letting it override styling made every
+> repo a place where the bar could look different for reasons nobody could find.
+> Nobody loses a working setup — nothing has shipped.
+>
+> **That narrowing reverses two earlier decisions, not one.** They are recorded
+> separately because they were taken for different reasons and cost different
+> amounts:
+>
+> 1. **Styling.** The layer could override `lines`, `palette`, `segments` and
+>    the rest. The capability goes; nobody was using it.
+> 2. **Caps.** The `caps` cycle removed a tighten-only clamp **knowingly**, so a
+>    repo could raise its own limits — argued on the grounds that layer 3 is a
+>    file you commit and review in your own repository. `caps` is now not
+>    readable from layer 3 **at all**: it resolves embedded → user and stops.
+>    That argument held for a repo you wrote and never held for one you cloned,
+>    and the caps hook is not a rendering decision — a repo raising its own
+>    context cap does not draw an odd bar, it suppresses the directive that
+>    stops an agent running past its budget. This is the larger of the two
+>    reversals: it un-takes a tradeoff that was argued for on the record, rather
+>    than one that was merely inherited.
+>
+> **A render reads. It never writes.** `autoConfigureRepo` and the render-path
+> creation of layer 3 are both gone, together with the `statusline.json`
+> migration: the JS bar's config is another tool's file, and with nothing
+> released there is no user holding one this binary was ever going to read. A
+> repo config exists only if a human writes one. The invariant that buys is
+> worth naming — a status line that redraws every four seconds provably touches
+> nothing on disk during a render, which is easier to reason about than any
+> amount of care about *when* it writes.
+>
+> With no config file anywhere, the bar renders from the embedded defaults, and
+> that is a **supported, tested state** rather than a degraded one.
+>
+> Discoverability moves entirely to `--help` and the website as a result. The
+> repo layer being supported is not the same as anyone knowing it exists.
 
 ### Colour specs
 
@@ -400,8 +496,24 @@ background.
 The full defaults are committed beside this plan as
 [`statusline-defaults.reference.json`](./statusline-defaults.reference.json) — a
 **byte-faithful copy** of the current `tools/statusline/statusline.json`. Read
-it from there. It is what gets seeded into `~/.config/statusline.json`, and it
-is the product's visual identity: Gruvbox palette, Nerd Font glyphs.
+it from there. It is the product's visual identity: Gruvbox palette, Nerd Font
+glyphs.
+
+> **Corrected 2026-08-23** (`config-relocation` cycle). This sentence used to
+> end "It is what gets seeded into `~/.config/statusline.json`", which was wrong
+> on both counts and had already been flagged by the drift audit
+> ([DRIFT-2026-08-23.md](./DRIFT-2026-08-23.md)). There is no
+> `~/.config/statusline.json` — the user config is
+> `~/.config/claude-status/config.json` — and **nothing in the binary seeds it
+> at all**: the asset is embedded as the lowest merge layer, so a machine with
+> no config file renders a full bar without one ever being written. The
+> installer still copies the asset verbatim, which is a separate matter and is
+> recorded under §3.
+>
+> The "byte-faithful copy" claim above is also no longer literally true: the
+> asset has since gained `caps` and dropped `autoConfigureRepo`. It is kept
+> because the instruction that follows — never retype the glyphs — is what the
+> paragraph is actually for.
 
 > **Do not retype the glyphs.** Almost every symbol in that file is a Nerd Font
 > **private-use codepoint**, which renders as nothing or as a box in most
@@ -599,6 +711,20 @@ steerable by indirect prompt injection) all reach the bar unreviewed. So does
 **`<repo-root>/.config/claude-status.json`**, which is read from whatever
 repository the user changes into: cloning a hostile repo is the entire attack,
 with no further interaction.
+
+> **Amended 2026-08-23** (`config-relocation` cycle). That repo file is
+> **narrower than this paragraph describes**, and the paragraph is left standing
+> because the rule it states is unchanged. Layer 3 may now set `projectName` and
+> nothing else, so a cloned repository reaches exactly one string on the bar
+> rather than any key it likes — notably **not** the powerline separators, which
+> sit outside every segment's SGR bracket and were the sharpest target.
+>
+> **This narrows an input; it removes none.** `projectName` is still drawn,
+> still written by whoever wrote the repo, and every other source above never
+> passed through a config layer at all. Nothing here is relaxed as a result. The
+> repo layer also gained a *new* surface in the same cycle: `--debug` reports
+> the keys it ignored **by name**, and a JSON key may contain a newline, so the
+> report's row filter now covers key names as well as values.
 
 **Only the renderer emits escape sequences.** Every dynamic value is stripped of
 control characters before it is written. This applies to the main bar, the

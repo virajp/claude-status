@@ -549,7 +549,23 @@ describe("--install", () => {
 
     // The seeded config must be byte-identical to the shipped asset — every
     // Nerd Font glyph intact.
-    assert.equal(sha(join(home, ".config", "claude-status.json")), sha(ASSET));
+    //
+    // NOTE: this assertion pins behaviour the `config-relocation` cycle set out
+    // to REMOVE. Seeding the full asset freezes every shipped value at the
+    // installed version, so a later release changing a default reaches nobody —
+    // which is exactly why the binary's own writer now emits only non-defaults
+    // (`src/modules/config/write.rs`). The installer was deliberately left
+    // alone: `docs/plans/2026-08-23-distribution/01-drop-npm.md` deletes it
+    // outright and owns retiring this seeding along with this test.
+    //
+    // **A green run here is not an endorsement.** Its path was updated by the
+    // config-relocation cycle so it kept passing across the move; the property
+    // it asserts is still the one being retired. Delete it with the seeding —
+    // do not "restore" it if a future cycle makes it fail.
+    assert.equal(
+      sha(join(home, ".config", "claude-status", "config.json")),
+      sha(ASSET),
+    );
 
     const settings = json(join(home, ".claude", "settings.json"));
     assert.match(settings.statusLine.command, /claude-status --statusline$/);
@@ -617,7 +633,7 @@ describe("--install", () => {
   it("is idempotent — a second install does not disturb an edited config", () => {
     const home = newHome();
     run(home, ["--install"]);
-    const configPath = join(home, ".config", "claude-status.json");
+    const configPath = join(home, ".config", "claude-status", "config.json");
     writeFileSync(configPath, JSON.stringify({ projectName: "mine" }));
 
     const { code } = run(home, ["--install"]);
@@ -645,7 +661,7 @@ describe("config migration", () => {
 
     assert.ok(!existsSync(legacy), "the old name is gone");
     assert.equal(
-      sha(join(home, ".config", "claude-status.json")),
+      sha(join(home, ".config", "claude-status", "config.json")),
       original,
       "the theming survives verbatim",
     );
@@ -665,7 +681,7 @@ describe("config migration", () => {
 
     run(home, ["--install"]);
 
-    const config = json(join(home, ".config", "claude-status.json"));
+    const config = json(join(home, ".config", "claude-status", "config.json"));
     assert.match(
       config.$schema,
       /virajp\/claude-status\/main\/schemas\/claude-status\.schema\.json$/,
@@ -684,7 +700,7 @@ describe("config migration", () => {
 
     const { stdout } = run(home, ["--install"]);
 
-    const config = json(join(home, ".config", "claude-status.json"));
+    const config = json(join(home, ".config", "claude-status", "config.json"));
     assert.equal(
       config.defaultFg,
       "aqua",
@@ -718,7 +734,8 @@ describe("config migration", () => {
       "projectName is repo-level only and must not ship in the defaults",
     );
     assert.ok(
-      !("projectName" in json(join(home, ".config", "claude-status.json"))),
+      !("projectName"
+        in json(join(home, ".config", "claude-status", "config.json"))),
       "the user layer must not gain a name the repo layer owns",
     );
   });
@@ -733,7 +750,7 @@ describe("config migration", () => {
 
     const { stdout } = run(home, ["--install"]);
 
-    const config = json(join(home, ".config", "claude-status.json"));
+    const config = json(join(home, ".config", "claude-status", "config.json"));
     assert.ok(
       !("projectName" in config),
       "a name kept at user level names every repo the user opens",
@@ -753,7 +770,7 @@ describe("config migration", () => {
     run(home, ["--install"]);
 
     assert.deepEqual(
-      json(join(home, ".config", "claude-status.json")).segments,
+      json(join(home, ".config", "claude-status", "config.json")).segments,
       { cost: { bg: "red" } },
       "a customised object is left exactly as written",
     );
@@ -761,8 +778,10 @@ describe("config migration", () => {
 
   it("does not top up a claude-status.json that was already there", () => {
     const home = newHome();
-    mkdirSync(join(home, ".config"), { recursive: true });
-    const config = join(home, ".config", "claude-status.json");
+    // `.config/claude-status/` and not just `.config/`: the user config moved
+    // into a directory of its own, so seeding it means creating that directory.
+    const config = join(home, ".config", "claude-status", "config.json");
+    mkdirSync(dirname(config), { recursive: true });
     writeFileSync(config, JSON.stringify({ defaultFg: "aqua" }));
     const before = sha(config);
 
@@ -777,7 +796,7 @@ describe("config migration", () => {
     run(home, ["--install"]);
 
     assert.equal(
-      sha(join(home, ".config", "claude-status.json")),
+      sha(join(home, ".config", "claude-status", "config.json")),
       sha(ASSET),
       "the seed path must stay a byte copy — the glyphs do not survive a re-encode",
     );
@@ -793,7 +812,7 @@ describe("config migration", () => {
       const { stdout } = run(home, ["--install"]);
 
       assert.equal(
-        sha(join(home, ".config", "claude-status.json")),
+        sha(join(home, ".config", "claude-status", "config.json")),
         sha(ASSET),
         `${body} should have been replaced by the seeded defaults`,
       );
@@ -804,13 +823,13 @@ describe("config migration", () => {
 
   it("leaves the old file alone when both names exist", () => {
     const home = newHome();
-    mkdirSync(join(home, ".config"), { recursive: true });
+    mkdirSync(join(home, ".config", "claude-status"), { recursive: true });
     writeFileSync(
       join(home, ".config", "statusline.json"),
       JSON.stringify({ projectName: "old" }),
     );
     writeFileSync(
-      join(home, ".config", "claude-status.json"),
+      join(home, ".config", "claude-status", "config.json"),
       JSON.stringify({ projectName: "new" }),
     );
 
@@ -819,9 +838,12 @@ describe("config migration", () => {
     assert.deepEqual(json(join(home, ".config", "statusline.json")), {
       projectName: "old",
     });
-    assert.deepEqual(json(join(home, ".config", "claude-status.json")), {
-      projectName: "new",
-    });
+    assert.deepEqual(
+      json(join(home, ".config", "claude-status", "config.json")),
+      {
+        projectName: "new",
+      },
+    );
   });
 
   it("removes the migrated config on uninstall without reviving the old name", () => {
@@ -834,7 +856,7 @@ describe("config migration", () => {
     run(home, ["--uninstall"]);
 
     assert.ok(
-      !existsSync(join(home, ".config", "claude-status.json")),
+      !existsSync(join(home, ".config", "claude-status", "config.json")),
       "an unedited config of ours is ours to remove",
     );
     assert.ok(
@@ -850,7 +872,7 @@ describe("config migration", () => {
     cpSync(ASSET, legacy);
 
     run(home, ["--install"]);
-    const config = join(home, ".config", "claude-status.json");
+    const config = join(home, ".config", "claude-status", "config.json");
     writeFileSync(
       config,
       JSON.stringify({ ...json(config), defaultFg: "aqua" }),
@@ -942,7 +964,7 @@ describe("--uninstall", () => {
   it("keeps a config the user edited after installing", () => {
     const home = newHome();
     run(home, ["--install"]);
-    const configPath = join(home, ".config", "claude-status.json");
+    const configPath = join(home, ".config", "claude-status", "config.json");
     writeFileSync(configPath, JSON.stringify({ projectName: "mine" }));
 
     run(home, ["--uninstall"]);
@@ -972,7 +994,7 @@ describe("--uninstall", () => {
       "it reports what it will not infer",
     );
     assert.ok(
-      existsSync(join(home, ".config", "claude-status.json")),
+      existsSync(join(home, ".config", "claude-status", "config.json")),
       "a config it cannot prove it created is left alone",
     );
   });
