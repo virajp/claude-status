@@ -16,27 +16,29 @@ from re-discovering the same ground.
 
 ## Nothing pending
 
-**Every entry has graduated.** All four were cut into plans on 2026-08-23 and
-now live in the two folders under [`docs/plans/`](./index.md):
+**Every entry has graduated.** The four that were here were cut into plans on
+2026-08-23 and now live in the three folders under [`docs/plans/`](./index.md):
 
-| Was                                 | Became                                                                                                   |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `$schema` in every generated config | [config-ergonomics/02-schema-and-validation](./2026-08-23-config-ergonomics/02-schema-and-validation.md) |
-| Config validation in `--debug`      | [config-ergonomics/02-schema-and-validation](./2026-08-23-config-ergonomics/02-schema-and-validation.md) |
-| A Homebrew formula                  | [distribution/02-homebrew-formula](./2026-08-23-distribution/02-homebrew-formula.md)                     |
-| Remove the npm installer            | [distribution/03-retire-installer](./2026-08-23-distribution/03-retire-installer.md) — **blocked**       |
+| Was                                 | Became                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `$schema` in every generated config | [config-and-cli/04](./2026-08-23-config-and-cli/04-schema-and-validation.md) |
+| Config validation in `--debug`      | [config-and-cli/04](./2026-08-23-config-and-cli/04-schema-and-validation.md) |
+| A Homebrew formula                  | [distribution/02](./2026-08-23-distribution/02-homebrew-formula.md)          |
+| Remove the npm installer            | [distribution/01](./2026-08-23-distribution/01-drop-npm.md)                  |
 
-Planning the two config entries turned up something neither had accounted for:
-there are **no Rust config types** to hang a schema or a validator off. `Config`
-wraps a `serde_json::Value` and every reader goes through a dotted string path.
-So a third plan exists that no backlog entry asked for —
-[config-ergonomics/01-typed-config](./2026-08-23-config-ergonomics/01-typed-config.md)
-— and the two config entries merged into the plan that follows it.
+Planning turned up more than the entries asked for, and the extra plans are
+worth knowing about because no backlog entry predicted them:
 
-An entry graduating is not a promise it will run.
-[`03-retire-installer`](./2026-08-23-distribution/03-retire-installer.md) is
-written and **blocked**: it executes when the maintainer confirms the Homebrew
-tap is proven in real use.
+- **There were no Rust config types** to hang a schema or a validator off, so
+  [config-and-cli/01](./2026-08-23-config-and-cli/01-typed-config.md) exists to
+  create them.
+- **Retiring the installer stopped being a port and became a deletion**, once
+  `--configure` moved into the binary
+  ([config-and-cli/03](./2026-08-23-config-and-cli/03-cli-surface.md)) and it
+  was settled that nothing needs migrating.
+- **A website was commissioned** — [website/](./2026-08-23-website/index.md) —
+  which is now part of the install flow rather than marketing, since both the
+  formula's caveats and `--help` point at it.
 
 ## Closed
 

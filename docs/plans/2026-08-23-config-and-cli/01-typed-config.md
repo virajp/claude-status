@@ -9,7 +9,7 @@ covers: [
   docs/spec/statusline-behaviour.md,
 ]
 requires: []
-timestamp: 2026-08-23T10:01:00Z
+timestamp: 2026-08-23T14:01:00Z
 tags: [ config, serde, refactor, render ]
 ---
 
@@ -21,9 +21,8 @@ Contract §3 (Configuration). The merged config becomes a set of deserialized
 Rust types instead of a `serde_json::Value` read through dotted string paths.
 
 **This cycle changes no behaviour.** Every rendered byte, every fallback, every
-stderr warning is identical before and after. It exists so that
-[plan 2](./02-schema-and-validation.md) has something to generate a schema from
-and validate against.
+stderr warning is identical before and after. It exists because three later
+plans need something this codebase cannot currently do: name a default.
 
 ## Current state (actual)
 
@@ -73,14 +72,15 @@ would go blank.
 layer that parses but is not an object is skipped entirely, because replacing
 the merged config with a number would blank the bar.
 
-**The schema is hand-written and unrelated to the code.**
-`schemas/claude-status.schema.json`, 301 lines, `additionalProperties: false` at
-the top level. Nothing checks it against the accessors.
-
 **Four config keys are open maps, not fixed shapes.** `palette`, `symbols`,
-`typeSymbols` and `segments` all declare `additionalProperties: <type>` — their
-keys are user-chosen colour names, data types and segment ids. `powerline`,
-`spend`, `caps` and `subagent` are closed (`additionalProperties: false`).
+`typeSymbols` and `segments` all declare `additionalProperties: <type>` in the
+schema — their keys are user-chosen colour names, data types and segment ids.
+`powerline`, `spend`, `caps` and `subagent` are closed
+(`additionalProperties: false`).
+
+**Nothing can currently answer "is this the default?"** — there is no
+representation of the defaults beyond the embedded JSON blob merged underneath
+everything else. That is the gap the next three plans need closed.
 
 ## Target state (per contract)
 
@@ -88,35 +88,48 @@ The merged `Value` is deserialized **once** into a `Config` whose fields are
 typed. Readers keep the same method names and signatures wherever possible, so
 call sites move rather than change.
 
-Contract §3's forgiveness rule is unchanged and now has a stronger guarantee
-behind it: a layer that is missing, malformed, or not a JSON object is ignored
-rather than fatal, and **a merged config that will not deserialize is ignored
-too** — the embedded defaults render instead.
+Every type implements `Default`, and that `Default` is the same value the
+embedded JSON carries — proven by a test, not by inspection. This is what
+[plan 2](./02-config-relocation.md) needs in order to write a file containing
+only what differs from it.
+
+Contract §3's forgiveness rule is unchanged and gains a case: a merged config
+that will not deserialize is ignored too, and the embedded defaults render.
 
 ## Delta — ordered steps
 
 ### 1. Define the types, mirroring the schema's open/closed split
 
-Closed objects become structs with `#[serde(deny_unknown_fields)]` deferred to
-plan 2 — this cycle derives `Deserialize` only, so an unknown key is still
-silently ignored and behaviour does not move.
-
-Open maps become `BTreeMap<String, T>`: `palette`, `symbols`, `typeSymbols`,
-`segments`. `BTreeMap` and not `HashMap` so `--debug`'s output is ordered and
-diffable.
+Closed objects become structs. Open maps become `BTreeMap<String, T>`:
+`palette`, `symbols`, `typeSymbols`, `segments`. `BTreeMap` rather than
+`HashMap` so `--debug`'s output is ordered and diffable.
 
 `lines` is `Vec<Vec<SegmentEntry>>`, where `SegmentEntry` is an untagged enum of
 a bare id string or a style-override object — the one place the schema is
 genuinely heterogeneous.
 
+**No `deny_unknown_fields` in this cycle.** An unknown key stays silently
+ignored, so behaviour does not move while the types land.
+[Plan 4](./04-schema-and-validation.md) turns strictness on, and does it in a
+way that cannot blank a config.
+
 ### 2. Put `#[serde(default)]` on everything, without exception
 
 Every field is optional at every layer, because a user layer is a partial
-override. A missing field must produce the type's default, never an error. This
-is the single largest source of regression risk in the cycle and is worth a test
-that deserializes `{}` and asserts the result equals the embedded defaults.
+override. A missing field must produce the type's default, never an error.
 
-### 3. Move each coercion from its accessor into the type
+### 3. Make `Default` agree with the embedded JSON, and prove it
+
+Each type's `Default` returns what `DEFAULTS_JSON` carries for that key. A test
+deserializes `DEFAULTS_JSON` and asserts the result equals `Config::default()` —
+**field by field, not by serialising both to strings**, so a mismatch names the
+field.
+
+This test is the contract plan 2 depends on. If it can be made to pass only by
+weakening it, plan 2's "store only non-defaults" is unsound and that is a Gaps
+entry, not a workaround.
+
+### 4. Move each coercion from its accessor into the type
 
 The table above is the checklist. Three shapes:
 
@@ -130,22 +143,19 @@ The table above is the checklist. Three shapes:
   compiles a regex and writes to stderr on failure; that belongs in a method,
   not in a `Deserialize` impl. The typed field holds the raw pattern string.
 
-### 4. Deserialize after the merge, and never before
+### 5. Deserialize after the merge, and never before
 
-`layers::load` keeps returning the merged `Value` internally, then calls
+`layers::load` keeps merging `Value` internally, then calls
 `serde_json::from_value` once at the end. The merge, the object-only filter and
 the `FORBIDDEN_KEYS` strip all happen first and all stay untyped.
 
-### 5. Make a deserialize failure fall back, not fail
+### 6. Make a deserialize failure fall back, not fail
 
-If `from_value` errors on the merged tree, fall back to deserializing the
-embedded defaults alone and emit one stderr diagnostic naming the error.
+If `from_value` errors on the merged tree, use `Config::default()` and emit one
+stderr diagnostic naming the error. Step 3 is what makes this safe: the fallback
+is a value in code, not a second parse that could also fail.
 
-**The embedded defaults must be infallible.** Deserializing them is the fallback
-path, so if *they* fail there is nothing left. A test asserts `DEFAULTS_JSON`
-deserializes cleanly; that test is what makes the fallback safe to rely on.
-
-### 6. Replace the accessors and delete `get`
+### 7. Replace the accessors and delete `get`
 
 Call sites move from `config.get("gauge.width")` to `config.gauge.width`.
 `Config::get` and its dotted-path fold are deleted — leaving them would keep a
@@ -154,29 +164,29 @@ second, unchecked way to read the config alive.
 `Config::color` and `Config::worktree_matcher` survive as methods; they compute
 rather than fetch.
 
-### 7. Docs
+### 8. Docs
 
 Contract §3 gains a note that the config is deserialized into types after the
 merge, and that a merged config which will not deserialize falls back to the
-embedded layer. The forgiveness rule itself is unchanged — this names a case it
-already covered in spirit.
+embedded defaults.
 
 ## Acceptance criteria (from contract)
 
-1. Given every reference fixture in `docs/spec` §12, when the bar is rendered
-   before and after this cycle, then the output is **byte-identical**.
-2. Given `{}` as the merged config, when it is deserialized, then the result
-   equals the embedded defaults.
-3. Given `DEFAULTS_JSON`, when it is deserialized, then it succeeds — the
-   fallback path is proven, not assumed.
+1. Given `tests/golden/`, when `cargo test --test golden` runs, then every
+   golden matches **without** being regenerated — this is the real gate, and
+   `UPDATE_GOLDEN=1` must not be used in this cycle.
+2. Given `DEFAULTS_JSON`, when it is deserialized, then it equals
+   `Config::default()` field by field.
+3. Given `{}` as the merged config, when it is deserialized, then the result
+   equals `Config::default()`.
 4. Given a merged config that will not deserialize, when the bar renders, then
-   the embedded defaults render, one diagnostic is written to **stderr**, and
-   stdout carries a full bar.
+   the defaults render, one diagnostic goes to **stderr**, and stdout carries a
+   full bar.
 5. Given `gauge.width` of `0`, then the width is 10; given `100000`, then it is
    `MAX_GAUGE_WIDTH`.
 6. Given an empty `gauge.filled`, an empty `projectName` and an empty
    `worktreePattern`, then each falls back exactly as it does today — the
-   empty-string cases are separately tested from the missing-key cases.
+   empty-string cases tested separately from the missing-key cases.
 7. Given an uncompilable `worktreePattern`, then the default matcher is used and
    the warning goes to stderr, with stdout unchanged.
 8. Given the repo after this cycle, when `grep -rn 'config.get("' src/` runs,
@@ -186,36 +196,43 @@ already covered in spirit.
 
 **The forgiving semantics are the whole risk.** `serde`'s defaults are about
 *absence*; most of these coercions are about a *present but useless* value — an
-empty glyph, a zero width, an empty pattern. A `#[serde(default)]` does not fire
-for those. Step 3 splits them deliberately for that reason, and criterion 6
-tests the empty case separately from the missing case because they take
-different paths.
+empty glyph, a zero width, an empty pattern. `#[serde(default)]` does not fire
+for those. Step 4 splits them deliberately, and criterion 6 tests the empty case
+separately from the missing case because they take different paths.
 
-**A hot path is being rewritten for a diagnostic feature.** This binary redraws
-every four seconds and the third invariant is that it never fails to render.
-Nothing in this cycle is user-visible, so criterion 1 — byte-identical output
-across the whole fixture set — is the real gate, not the unit tests.
+**Criterion 1 is the one that matters.** The goldens are exact ANSI strings
+containing Nerd Font private-use codepoints; `tests/golden.rs` says outright
+that they are generated and never hand-written. Regenerating them during this
+cycle would convert a rendering regression into a passing test. If a golden
+genuinely must change, that is a Gaps entry with the reason.
 
-**Typing may find that the schema and the code already disagree.** They have
-never been checked against each other. If a key the accessors read is absent
-from the schema, or vice versa, this cycle surfaces it. That is a good outcome
-but it is a **contract question**, not a refactor decision: record it in Gaps
-and route it rather than silently picking whichever side looks right.
+**Criterion 2 may not hold on the first attempt, and that is informative.** The
+embedded defaults and the accessors' fallbacks have never been checked against
+each other. Where they disagree, the *embedded JSON* wins — it is what renders
+today — and the disagreement is recorded rather than quietly resolved in favour
+of whichever was easier to write.
+
+**Typing may find the schema and the code already disagree.** They have never
+been compared. A key the accessors read but the schema omits, or vice versa, is
+a **contract question**: record it and route it, do not pick a side.
 
 **Open maps cannot be typo-checked, and never will be.** A misspelled key in
 `palette`, `symbols`, `typeSymbols` or `segments` is by definition a legal
-entry. Plan 2 inherits this limit; it is named here because it is a property of
+entry. Plan 4 inherits this limit; it is named here because it is a property of
 the config's shape, not of the validator.
 
 ## Out of scope for this cycle
 
-- **`deny_unknown_fields`, schema generation and the `--debug` validation
-  section.** All of it is [plan 2](./02-schema-and-validation.md). This cycle
-  deliberately keeps unknown keys silently ignored so that behaviour does not
-  move while the types land.
+- **Anything a user can see.** Criterion 1 is the bar. If this cycle changes
+  output, it has failed regardless of how good the change is.
+- **`deny_unknown_fields`, schema generation, the `--debug` validation
+  section.** [Plan 4](./04-schema-and-validation.md).
+- **Moving files, changing paths, or storing only non-defaults.**
+  [Plan 2](./02-config-relocation.md).
+- **Deleting `autoseed.rs` or `autoConfigureRepo`.** Also plan 2 — they are
+  typed here like everything else, then removed there.
 - **Changing any default, key name or coercion.** A coercion that looks wrong is
   a Gaps entry, not an edit.
-- **The `$schema` URL and SchemaStore.** Plan 2.
 
 ## Gaps surfaced during execution
 
