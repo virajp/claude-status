@@ -23,3 +23,8 @@ node_modules/
 # vwf plans — executed cycles, kept on disk for the local record but not in the
 # repo. The active plans and docs/plans/index.md carry what a reader needs.
 docs/plans/archived/
+
+# Claude Code — the worktree pool and machine-local settings only. Everything
+# else under .claude/ is shared configuration and belongs in the repo.
+.claude/worktrees/
+.claude/settings.local.json
