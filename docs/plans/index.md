@@ -14,28 +14,40 @@ something runnable.
 
 ## Active
 
-| Plan                                                    | Target repo     | Requires     | Landed | Status                       |
-| ------------------------------------------------------- | --------------- | ------------ | ------ | ---------------------------- |
-| [2026-08-21-2122-release](./2026-08-21-2122-release.md) | `claude-status` | `macos-only` | —      | needs re-planning, see below |
+Two folders, independent of each other. Nothing in one blocks anything in the
+other.
 
-Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md).
+### [config-ergonomics](./2026-08-23-config-ergonomics/index.md)
 
-### `release` is unexecuted and out of date
+| # | Plan                                                                                | Requires | Status |
+| - | ----------------------------------------------------------------------------------- | -------- | ------ |
+| 1 | [typed-config](./2026-08-23-config-ergonomics/01-typed-config.md)                   | —        | active |
+| 2 | [schema-and-validation](./2026-08-23-config-ergonomics/02-schema-and-validation.md) | 1        | active |
 
-It is the only plan left, and it is the one thing that has never happened: the
-first publish. Its **substance** still stands — npm requires a manual publish
-before a Trusted Publisher can be configured, and the two criteria carried
-forward from `distribution` are still open.
+Gives the config real Rust types, then makes those types the single source for
+the JSON schema and for a `--debug` validation section.
 
-Its **steps** do not. It was written against a three-package, two-target world.
-Since then `macos-only` cut six targets to two, `github-artifacts` collapsed
-three npm packages to one, and `release-fix` cut two targets to one and put the
-binary back inside that package. So its "reserve three names", its "register
-OIDC for the three packages" and its `optionalDependencies` reasoning all
-describe a shape the repo no longer has.
+### [distribution](./2026-08-23-distribution/index.md)
 
-**Re-plan it before running it.** The one-package, one-target version is a
-materially shorter cycle than the doc describes.
+| # | Plan                                                                 | Requires | Status      |
+| - | -------------------------------------------------------------------- | -------- | ----------- |
+| 1 | [release](./2026-08-23-distribution/01-release.md)                   | —        | active      |
+| 2 | [homebrew-formula](./2026-08-23-distribution/02-homebrew-formula.md) | 1        | active      |
+| 3 | [retire-installer](./2026-08-23-distribution/03-retire-installer.md) | 2        | **blocked** |
+
+Ships the first release, adds a Homebrew tap, and — once the tap is proven —
+moves the wiring into the binary and retires the npm installer.
+
+**Plan 3 is gated on a person.** It runs when the maintainer confirms the tap is
+proven in real use, not when plan 2 merges. It removes the only install path
+that has ever worked.
+
+**Execution order across both folders** — `distribution/01-release` is the only
+irreversible cycle in the tree and the only one anything external depends on. If
+capacity is limited, it goes first.
+
+Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — currently
+empty, every entry having graduated into the two folders above.
 
 ## Archived
 
@@ -62,28 +74,36 @@ Filename timestamps record when each plan was written, not when it ran:
 `caps-hook` was added after `distribution` and preceded it, and `distribution`
 ran partly ahead of its `requires:` on request.
 
-**`distribution` was archived with two acceptance criteria open**, deliberately
-— one binary per platform from a real publish, and a machine with no Node and no
-Rust running it. Both are carried forward verbatim into
-[`release`](./2026-08-21-2122-release.md), which is where they can be closed.
-
-**`macos-only` was archived with one open**, on the same terms: npm 11 has no
-way to simulate a foreign host, so the `EBADPLATFORM` proof also moves to
-`release`. The field is in place and correct; only the proof is outstanding.
+**Three acceptance criteria were archived open**, all deliberately, and all
+carried forward into
+[`distribution/01-release`](./2026-08-23-distribution/01-release.md): one binary
+per platform from a real publish and a no-Node-no-Rust machine running it (from
+`distribution`), and the `EBADPLATFORM` proof (from `macos-only`, where npm 11
+had no way to simulate a foreign host).
 
 **`github-artifacts` executed in full and was then deliberately reversed** by
 `release-fix`, which moved the binary back inside the npm package. It is
-archived as executed rather than as abandoned — every step landed — and the
-reversal is reasoned out in its own `release-fix/index.md`.
+archived as executed rather than as abandoned — every step landed.
+
+## Superseded, never executed
+
+`2026-08-21-2122-release.md` was **deleted** in this round rather than archived.
+It was written for three npm packages and two targets, a shape three later
+cycles removed, and it never ran — so it belonged neither in the archive (which
+is for executed cycles) nor in the active set. Its substance and its three open
+criteria are carried into
+[`distribution/01-release`](./2026-08-23-distribution/01-release.md); git
+history holds the original.
 
 ## Nothing has shipped
 
 The repo carries no release tag, and the only thing on the registry is a `0.0.1`
-placeholder reserving `@askviraj/claude-status`. The first real release also
-cannot go through CI —
-[npm requires a package to exist before a Trusted Publisher can be configured](https://github.com/npm/cli/issues/8544),
-so the name needs one manual publish first.
-[`release`](./2026-08-21-2122-release.md) owns that, once re-planned.
+placeholder reserving `@askviraj/claude-status`. The release pipeline —
+`verify`, `test`, `build`, `publish` — is complete and has never run on a tag.
+The first publish also cannot go through CI unassisted;
+[npm requires a package to exist before a Trusted Publisher can be configured](https://github.com/npm/cli/issues/8544).
+[`distribution/01-release`](./2026-08-23-distribution/01-release.md) owns all of
+it.
 
 **One name, one target.** After `release-fix`, a complete release is a single
 npm package carrying a single `aarch64-apple-darwin` binary — no wrapper, no
@@ -96,10 +116,14 @@ bar and `context-caps.js` both live there — from `virajp/ai-plugins`, retiring
 the `cli/src/statusline.ts` install path that deploys them to
 `~/.claude/scripts/statusline` and `~/.claude/hooks/context-caps.js`, and
 pointing that repo's docs at this one. A change to a different repository, gated
-on [`release`](./2026-08-21-2122-release.md) having shipped.
+on a shipped release.
 
 It also owns the one simplification this repo cannot make until it lands:
 retiring `$AI_PLUGINS_USAGE_DIR` together with §8's frozen mirror field names —
 once the JS hook is gone, this binary is both the writer and the only reader of
 that file. The transitional `.config/statusline.json` is already gone, deleted
 in `16c3ac3`.
+
+**Code signing and notarisation.** Deferred by §9 and still unowned. It becomes
+more visible with a Homebrew tap — people expect a brew-installed binary to be
+signed — but no plan in the tree claims it.
