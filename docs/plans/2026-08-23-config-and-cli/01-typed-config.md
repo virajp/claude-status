@@ -236,4 +236,94 @@ the config's shape, not of the validator.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+Executed 2026-08-23. Criteria 1–8 all met; 380 → 399 tests. Six gaps, none
+blocking, all in **this plan** rather than the blueprint.
+
+### 1. The plan requires a dependency it never names
+
+Steps 1–4 are built on `#[derive(Deserialize)]`, `#[serde(default)]` and
+`deserialize_with`, but **`serde` was not a dependency** — the repo had only
+`regex-lite`, `ureq` and `serde_json`. Worse, `Cargo.toml:29-31` documented the
+*opposite* decision: "No `serde` derive: every field of every payload is
+optional, so derives buy nothing and cost the proc-macro."
+
+Adding it was unavoidable, and the comment is updated. But a cycle that adds a
+proc-macro to a repo whose whole distribution story is one self-contained binary
+should say so in the plan, not discover it in step 1.
+
+### 2. "Use `BTreeMap`" is wrong for one of the open maps
+
+Step 1 prescribes `BTreeMap` for every open map "so `--debug`'s output is
+ordered and diffable". For `subagent.statuses` that is a **behaviour change**:
+`Cargo.toml:31-33` records that `preserve_order` "is what keeps *statuses are
+tried in config order* true", and `task_mark` walks them first-match-wins over
+overlapping unanchored patterns, with the *last* empty-`match` entry winning the
+fallback slot. `BTreeMap` sorts, silently re-ranking a user's buckets.
+
+It would not have been caught: the shipped order
+(`done, error, pending,
+running`) is alphabetical **by coincidence**, so every
+golden still passes. Shipped as `serde_json::Map`, with a test.
+
+### 3. The open-map inventory is short by one
+
+Step 1 lists four open maps. The schema declares **five** — `subagent.statuses`
+is `additionalProperties: <object>`, nested inside the otherwise-closed
+`subagent`.
+
+### 4. Criterion 8's grep cannot see two of the call sites
+
+`grep -rn 'config.get("' src/` is blind to call sites passing a **variable**
+key, and there were two: `caps/config.rs:52` (all four `caps.*` reads) and
+`subagent.rs:201` (`subagent.segments.{key}`). The criterion can be satisfied
+with both unconverted. Both were converted, coercions intact — but the check as
+written does not prove it.
+
+### 5. The three fallback-vs-asset disagreements the plan predicted
+
+Risks called these ("the embedded defaults and the accessors' fallbacks have
+never been checked against each other"). Exactly three exist:
+
+| Accessor      | Fallback | Asset                                                            |
+| ------------- | -------- | ---------------------------------------------------------------- |
+| `symbol()`    | `""`     | 20 glyphs — deliberate, documented as "a guard, not a behaviour" |
+| `powerline()` | `""`     | `cap`/`sep`/`sepThin`/`thinFg` — **no justifying comment**       |
+| `lines()`     | `vec![]` | the shipped 2-row layout — **a blank bar**                       |
+
+Per the plan the embedded JSON wins, so every typed `Default` carries the
+asset's value. The accessors' fallbacks are preserved as the *coercion* for a
+present-but-unusable value, which is a different thing. Recorded, not resolved:
+`powerline()`'s and `lines()`' fallbacks are still arguably wrong, and neither
+is this cycle's to change.
+
+### 6. The regression this cycle nearly shipped
+
+Worth recording because the suite could not catch it. Typing a field plainly
+(`symbols: BTreeMap<String, String>`) makes a wrong-typed value fail
+deserialization — which, via step 6's whole-tree fallback, **discards the entire
+merged config**, user and repo layers both. The old accessors degraded each
+value independently and kept the rest of the layer. One mistyped symbol would
+have cost a user their whole theme.
+
+Eight field groups were affected. Fixed with per-field tolerant deserializers.
+The tell: `autoConfigureRepo: "no"` asserts `true`, which holds **both** when
+the field degrades and when the tree is discarded and `Default` supplies `true`
+— so the obvious test passes either way. Every such test now carries a **sibling
+key** that must survive.
+
+**Step 4 should say this explicitly:** moving a coercion into a type is not
+optional per-field, because the failure mode is not a wrong value but a
+discarded config.
+
+### Also noted, not acted on
+
+- **`auto_configure_repo` had zero test coverage** and one call site. A naive
+  `#[serde(default)]` yields `bool::default()` = `false`, flipping the shipped
+  opt-out into an opt-in with the whole suite still green. Now tested.
+- **`MAX_GAUGE_WIDTH` caps the repeat count, not the byte total**
+  (`_shared/fmt.rs:220`). `gauge.filled` is an unbounded config string, so 1000
+  × a 1 MB glyph is still a 1 GB allocation. Pre-existing.
+- **`_shared/fmt.rs:216`** still coerces `width == 0 → 10`, now unreachable from
+  the config path. Left as defensive depth for direct callers of a `pub fn`.
+- **`symbols.repo` is dead** — a 20th key nothing reads and the schema does not
+  describe.
