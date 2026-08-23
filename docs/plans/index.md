@@ -14,7 +14,7 @@ something runnable.
 
 ## Active
 
-Nine plans in three folders.
+Ten plans in four folders.
 
 ### [config-and-cli](./2026-08-23-config-and-cli/index.md)
 
@@ -47,6 +47,17 @@ Delete the npm installer, ship a Homebrew tap, cut `v0.1.0`.
 
 `claude-status.virajp.dev` — Zola on Cloudflare Pages, then a schema-driven
 config generator with a fixture-gated live preview.
+
+### [spec-retirement](./2026-08-23-spec-retirement/index.md)
+
+| # | Plan                                                                  | Requires       |
+| - | --------------------------------------------------------------------- | -------------- |
+| 1 | [retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md) | all nine above |
+
+Rehome the decision record, the `ai-plugins` contract and the reference
+payloads, then delete the behaviour contract. **Last, and gated on the site
+covering what it replaces** — see [the drift audit](../spec/DRIFT-2026-08-23.md)
+for why it is retired rather than repaired.
 
 ### Cross-folder dependencies
 
