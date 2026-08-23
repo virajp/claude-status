@@ -315,6 +315,35 @@ key** that must survive.
 optional per-field, because the failure mode is not a wrong value but a
 discarded config.
 
+**Amended after the merge — the first pass fixed half of it.** The eight rows
+above are scalar *leaves*. The **blocks** were still derived plainly, so
+`{"gauge": null}`, `{"segments": {"model": 5}}` and ten more still discarded the
+whole config, and a bad block inside a good one (`subagent.segments.head`) wiped
+all six panel rows. Fixed in a follow-up cycle; the same rule applies at every
+level of the tree, not just the leaves.
+
+Two things that pass are worth recording because reasoning about the types
+missed both:
+
+- **Serde's derive reads a JSON array into a struct positionally**, padding a
+  short one from `Default`. `"gauge": [3, "#", "-"]` became a three-wide gauge
+  with invented glyphs, and `["not","an","object"]` as the *root* deserialized
+  into a config whose `projectName` was `"object"`. The old `Value::get` could
+  not reach either — there was no such path. `Config::new` now requires an
+  object root explicitly rather than relying on some field failing, because once
+  every field reads forgivingly nothing is left to object.
+- **A non-object block does not always fall back to the shipped value.**
+  `powerline()` was `as_str().unwrap_or_default()`, so an unreadable block draws
+  a *seamless* bar; an unreadable status table matches *nothing*. Handing back
+  `Default` would have put separators on a bar that never had them.
+
+**The method mattered more than the review.** Both were found by building the
+pre-refactor binary and byte-diffing real CLI output over ~75 configs, not by
+reading the types — and the nested-row case was found only that way, after two
+rounds of static review had signed the cycle off. A future typing cycle should
+budget for a differential run against the previous binary as a gate, not as a
+courtesy.
+
 ### Also noted, not acted on
 
 - **`auto_configure_repo` had zero test coverage** and one call site. A naive
