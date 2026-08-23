@@ -12,10 +12,21 @@
 ///
 /// **Everything on the bar is attacker-nameable.** A branch, a directory under
 /// a worktree, a session name, a model string from the payload, a task
-/// description written by a model, and — the widest of them —
-/// `<repo-root>/.config/claude-status.json`, which is read from whatever
-/// repository you happen to `cd` into. Cloning a hostile repo is enough; there
-/// is no further interaction.
+/// description written by a model, and `<repo-root>/.config/claude-status.json`,
+/// which is read from whatever repository you happen to `cd` into. Cloning a
+/// hostile repo is enough; there is no further interaction.
+///
+/// That repo file used to be **the widest** of them, because it could set any
+/// key the config has. The `config-relocation` cycle narrowed it to
+/// `projectName`, so a cloned repository now reaches exactly one string on the
+/// bar rather than the whole of it — including the powerline separators, which
+/// sit *outside* every segment's SGR bracket and were the sharpest target.
+///
+/// **The narrowing is not a reason to relax here.** It shrank one input; it
+/// removed none. `projectName` is still drawn, still attacker-written, and the
+/// remaining sources — a branch name, a worktree directory, a model-authored
+/// task description — never went through a config layer at all. The filter is
+/// what makes all of them safe, and it is the only thing that does.
 ///
 /// The renderer emits its own SGR escapes and powerline separators around and
 /// between segments, so a value carrying escapes of its own is not merely

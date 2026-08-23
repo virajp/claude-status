@@ -19,11 +19,17 @@ export interface Paths {
   settings: string;
   /** `~/.config` — which this may well be the first tool to create. */
   configDir: string;
-  /** `~/.config/claude-status.json` — the user config layer the bar reads. */
+  /**
+   * `~/.config/claude-status/config.json` — the user config layer the bar
+   * reads. Inside `stateDir`, not beside it: the binary moved it into a
+   * directory of its own in the `config-relocation` cycle, and there is no
+   * fallback to the old bare `~/.config/claude-status.json`, so a config
+   * written to the old path would simply never be read.
+   */
   config: string;
   /** `~/.config/statusline.json` — what the JS bar read, migrated on install. */
   legacyConfig: string;
-  /** `~/.config/claude-status/` — this installer's own state. */
+  /** `~/.config/claude-status/` — the config directory, and this installer's own state. */
   stateDir: string;
   receipt: string;
   /** `~/.claude/scripts/statusline` — the JS bar the `ai-plugins` CLI installed. */
@@ -66,7 +72,7 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): Paths {
     binary: join(claudeDir, "bin", BINARY_NAME),
     settings: join(claudeDir, "settings.json"),
     configDir,
-    config: join(configDir, "claude-status.json"),
+    config: join(stateDir, "config.json"),
     legacyConfig: join(configDir, "statusline.json"),
     stateDir,
     receipt: join(stateDir, "receipt.json"),

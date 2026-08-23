@@ -2,17 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "title": "claude-status config",
-  "description": "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale.",
+  "description": "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --debug. Nothing in the binary ever writes either file.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
-    },
-    "autoConfigureRepo": {
-      "type": "boolean",
-      "default": true,
-      "description": "When true (the default), a `--statusline` render inside a git repo that has no `<repo-root>/.config/claude-status.json` creates one — migrating a repo-level `statusline.json` if it finds one, otherwise seeding `projectName` from the repo directory name. Set it to `false` in your user config to opt out. Only ever read from the embedded and user layers, only ever acted on by `--statusline`, and silent on any failure."
     },
     "caps": {
       "type": "object",

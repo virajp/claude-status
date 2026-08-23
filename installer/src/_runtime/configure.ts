@@ -112,7 +112,20 @@ export function configure(
   // 2. Only the legacy name — migrate it. **Not** a rename: the file carries
   //    the JS bar's `$schema`, and one kept under that URL is validated against
   //    the wrong schema for the rest of its life. Every other key is carried
-  //    across untouched, so the theming survives.
+  //    across untouched.
+  //
+  //    That carrying no longer preserves anything, and the comment here used to
+  //    claim it did ("so the theming survives"). This writes the **repo-level**
+  //    layer, and since the `config-relocation` cycle that layer may set
+  //    `projectName` and nothing else — so a migrated `defaultFg`, `palette` or
+  //    `segments` lands in a file the binary reads, ignores, and reports under
+  //    `--debug` as a dropped key. The keys are preserved as *bytes*, not as
+  //    behaviour.
+  //
+  //    Left as-is deliberately rather than narrowed to `projectName`: dropping
+  //    a user's keys silently would be worse than carrying inert ones they can
+  //    see and delete, and this whole module goes with the installer in
+  //    `docs/plans/2026-08-23-distribution/01-drop-npm.md`.
   if (existsSync(paths.legacyConfig)) {
     const carried = readJson<Record<string, unknown>>(paths.legacyConfig);
     const isObject = carried !== null

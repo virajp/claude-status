@@ -12,7 +12,6 @@ use std::path::PathBuf;
 
 use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
-use crate::config::autoseed;
 use crate::config::layers::{self, Layers};
 use crate::config::{Config, SegmentEntry};
 use crate::git::GitFacts;
@@ -64,24 +63,6 @@ fn refresh_spend() -> String {
     let config = layers::load(home().as_deref(), None).config;
     spend::refresh::run(&path, config.spend.refresh_minutes, time::now_ms(), false);
     String::new()
-}
-
-/// Creates the repo config layer, when every condition to do so is met.
-///
-/// Split out so the three gates read as one list rather than as nested `if`s in
-/// the middle of the render: opt-in, in a repo, and the layer genuinely absent.
-/// The flag is read from the merged config, which at this point is the embedded
-/// and user layers — the repo layer cannot enable its own creation.
-fn maybe_seed_repo_config(layers: &Layers, root: Option<&std::path::Path>) -> Option<PathBuf> {
-    if !layers.config.auto_configure_repo {
-        return None;
-    }
-    let repo_layer_loaded =
-        layers.sources.iter().any(|s| s.label == layers::LABEL_REPO && s.loaded);
-    if repo_layer_loaded {
-        return None;
-    }
-    autoseed::ensure(root?)
 }
 
 /// Renders the main bar, catching a panic into the fallback line.
@@ -227,20 +208,17 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
     };
     narrate(&format!("repo root: {root:?}, branch: {branch:?}"));
 
-    let mut layers = layers::load(home().as_deref(), root.as_deref());
-
-    // The repo layer, created rather than merely read — opt-in, and only here.
-    // `--subagent` and the caps hook resolve a root too and stay read-only, so
-    // there is exactly one writer. Re-reading afterwards costs one file read on
-    // the single render that created it, and buys the project name appearing on
-    // that render rather than the next.
-    if let Some(created) = maybe_seed_repo_config(&layers, root.as_deref()) {
-        narrate(&format!("seeded repo config layer: {created:?}"));
-        layers = layers::load(home().as_deref(), root.as_deref());
-    }
+    // Read, and only read. `--statusline` used to be able to *create* the repo
+    // layer it did not find, which made the one surface that redraws every four
+    // seconds also the one surface that wrote to disk. Every mode is read-only
+    // now, so there is no writer to reason about rather than one careful one.
+    let layers = layers::load(home().as_deref(), root.as_deref());
 
     for source in &layers.sources {
         narrate(&format!("config layer {}: {:?} loaded={}", source.label, source.path, source.loaded));
+        if !source.ignored.is_empty() {
+            narrate(&format!("config layer {} ignored: {}", source.label, source.ignored.join(", ")));
+        }
     }
 
     let mut git_facts = GitFacts {
@@ -348,6 +326,35 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         };
         let state = if source.loaded { "loaded" } else { "not found" };
         let _ = writeln!(out, "  {:8} {state:10} {}", source.label, field(&path));
+
+        // A continuation row, in the same two columns, rather than a fourth
+        // section. The keys a repo layer is not allowed to set are dropped
+        // silently everywhere else — the never-fail rule (§1, invariant 3)
+        // leaves nowhere to complain to —
+        // so this is the **only** place a user editing that file can find out
+        // why it is doing nothing. It sits directly under the path it belongs
+        // to, because the answer to "why is my `gauge` ignored" is the file it
+        // is written in.
+        //
+        // **The `", "` join is ambiguous, and knowingly so.** A JSON key may
+        // contain anything, so one key literally named `x, y, z` renders the
+        // same as three keys, and one named `gauge — a repo layer may set
+        // projectName only` repeats the suffix. Cosmetic only: `field` strips
+        // the control characters, so no key can leave this line, forge a row or
+        // forge a section header — which is what
+        // `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report`
+        // pins. Quoting each key would remove the ambiguity and cost every
+        // ordinary reader clarity for a case nobody hits by accident.
+        if !source.ignored.is_empty() {
+            let _ = writeln!(
+                out,
+                "  {:8} {:10} {} — a repo layer may set {} only",
+                "",
+                "ignored",
+                field(&source.ignored.join(", ")),
+                layers::REPO_LAYER_KEY,
+            );
+        }
     }
 
     let _ = writeln!(out, "\nCLAUDE WIRING (~/.claude/settings.json)");

@@ -27,15 +27,15 @@
 //! read with JavaScript truthiness, so `"bold": 1` still means bold. Typing
 //! those would reject configs that render today.
 
-pub mod autoseed;
 pub mod color;
 pub mod defaults;
 pub mod layers;
 pub mod matcher;
+pub mod write;
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 use crate::caps::Caps;
@@ -59,25 +59,19 @@ const DEFAULT_GAUGE_WIDTH: usize = 10;
 /// uncompilable one. See [`Config::worktree_matcher`].
 const DEFAULT_WORKTREE_PATTERN: &str = "worktree";
 
-/// Opt-**out**. The shipped defaults carry `true`, so this has to agree with
-/// them or a config that failed to parse would silently behave differently
-/// from one that never existed.
-const DEFAULT_AUTO_CONFIGURE_REPO: bool = true;
-
 /// The shipped `subagent.descBudgetFraction`.
 const DEFAULT_DESC_BUDGET_FRACTION: f64 = 0.45;
 
 /// The merged config: embedded → user → repo, deep-merged as `Value` and
 /// deserialized here **once**, after the merge and never before.
-#[derive(Debug, PartialEq, Deserialize)]
+///
+/// [`Serialize`] is the inverse and is used by exactly one caller,
+/// [`write::non_defaults`], which subtracts [`Config::default`] from the
+/// result. Nothing serialises a whole `Config` to a file — that would be the
+/// full-copy seeding this cycle removed.
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
-    /// Whether a render may create the repo config layer it did not find.
-    ///
-    /// Opt-**out**: the shipped defaults carry `true`, so only a literal
-    /// `false` disables it. See `DEFAULT_AUTO_CONFIGURE_REPO`.
-    #[serde(deserialize_with = "auto_configure_repo")]
-    pub auto_configure_repo: bool,
     /// Thresholds the `--caps-hook` actuator measures usage against. Typed by
     /// [`crate::caps`], which owns both the shape and the per-key fallback.
     pub caps: Caps,
@@ -197,7 +191,6 @@ impl Default for Config {
     /// default no config writer can subtract.
     fn default() -> Self {
         Self {
-            auto_configure_repo: DEFAULT_AUTO_CONFIGURE_REPO,
             caps: Caps::default(),
             project_name: None,
             palette: default_palette(),
@@ -216,7 +209,7 @@ impl Default for Config {
 }
 
 /// The row's own glyphs. Closed in the schema, and closed here.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PowerlineConfig {
     /// Absence and a wrong type land in **different** places, and both are the
@@ -260,7 +253,7 @@ impl PowerlineConfig {
 }
 
 /// The fixed-width meter the `context` segment draws.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Gauge {
     #[serde(deserialize_with = "gauge_width")]
@@ -285,7 +278,7 @@ impl Default for Gauge {
 /// `null` deserializes to `None`, which is exactly what the old `??` ladder
 /// did with it — while `false` and `0` arrive as themselves and do **not**
 /// fall through.
-#[derive(Debug, Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SegmentStyle {
     pub bg: Option<Value>,
@@ -338,6 +331,20 @@ impl SegmentEntry {
     }
 }
 
+impl Serialize for SegmentEntry {
+    /// Untagged, mirroring [`From<Value>`]: a bare id is a string, a styled
+    /// entry is its object, and anything else goes back as it arrived. Derived
+    /// it would emit `{"Id": "model"}` and produce a layout no reader — this
+    /// one included — could read back.
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Id(id) => id.serialize(s),
+            Self::Styled(obj) => obj.serialize(s),
+            Self::Other(v) => v.serialize(s),
+        }
+    }
+}
+
 impl From<Value> for SegmentEntry {
     /// Total, and deliberately so — see [`SegmentEntry::Other`].
     fn from(v: Value) -> Self {
@@ -350,7 +357,7 @@ impl From<Value> for SegmentEntry {
 }
 
 /// The subagent panel's own block. Closed in the schema, and closed here.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SubagentConfig {
     #[serde(deserialize_with = "desc_budget_fraction")]
@@ -394,7 +401,7 @@ impl SubagentConfig {
 
 /// The panel's six row segments. Fixed keys, unlike the main bar's open map:
 /// a panel row is built by this program, not by the layout.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SubagentSegments {
     /// Only `fg` and `bold` are ever read: the head's background always comes
@@ -565,14 +572,6 @@ fn empty_glyph<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
 fn glyph<'de, D: Deserializer<'de>>(d: D, fallback: &str) -> Result<String, D::Error> {
     let v = Value::deserialize(d)?;
     Ok(v.as_str().filter(|s| !s.is_empty()).unwrap_or(fallback).to_string())
-}
-
-/// Only a literal `false` disables seeding. A missing key or a non-boolean is
-/// the shipped `true`, as `as_bool().unwrap_or(true)` made it — and it has to
-/// stay a *leaf* fallback: an opt-out that a mistyped neighbouring key could
-/// flip is not an opt-out.
-fn auto_configure_repo<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
-    leaf(d, Value::as_bool, DEFAULT_AUTO_CONFIGURE_REPO)
 }
 
 /// A non-string pattern is the shipped literal, as `as_str()` made it. An
@@ -785,7 +784,6 @@ mod tests {
         let embedded: Config = serde_json::from_str(DEFAULTS_JSON).expect("the embedded defaults deserialize");
         let coded = Config::default();
 
-        assert_eq!(embedded.auto_configure_repo, coded.auto_configure_repo, "autoConfigureRepo");
         assert_eq!(embedded.caps, coded.caps, "caps");
         assert_eq!(embedded.project_name, coded.project_name, "projectName");
         assert_eq!(embedded.palette, coded.palette, "palette");
@@ -855,19 +853,15 @@ mod tests {
     #[test]
     fn an_unknown_key_is_ignored_rather_than_fatal() {
         // `$schema` ships in the asset itself, so this is not hypothetical.
-        let c = cfg(json!({ "$schema": "https://example.invalid/s.json", "nosuchkey": 1 }));
-        assert_eq!(c, Config::default());
-    }
-
-    /// The one field whose default a plain `#[derive(Default)]` would get
-    /// **backwards** — `bool::default()` is `false`, which turns the shipped
-    /// opt-out into an opt-in. It has a single call site and no other test, so
-    /// nothing else in the suite would notice.
-    #[test]
-    fn seeding_the_repo_layer_is_opt_out_and_only_a_literal_false_disables_it() {
-        assert!(cfg(json!({})).auto_configure_repo, "the shipped default is on");
-        assert!(!cfg(json!({ "autoConfigureRepo": false })).auto_configure_repo);
-        assert!(cfg(json!({ "autoConfigureRepo": true })).auto_configure_repo);
+        //
+        // The sibling `projectName` is what makes this a test. `Config::default()`
+        // is *also* what a discarded tree produces, so asserting equality with it
+        // asserts the failure outcome as readily as the success one — and the two
+        // differ by everything the user configured. `projectName` defaults to
+        // `None`, so it is the one key whose presence proves the layer applied.
+        let c = cfg(json!({ "$schema": "https://example.invalid/s.json", "nosuchkey": 1, "projectName": "kept" }));
+        assert_eq!(c.project_name.as_deref(), Some("kept"), "the layer around the unknown keys survived");
+        assert_eq!(Config { project_name: None, ..c }, Config::default(), "and nothing else moved");
     }
 
     // A mistyped scalar costs its own key and nothing else. Each of these
@@ -877,13 +871,6 @@ mod tests {
     // the user, who loses one glyph in the first and their whole theme in the
     // second. `projectName` is the sibling throughout: it defaults to `None`,
     // so its presence proves the layer applied.
-
-    #[test]
-    fn a_non_boolean_auto_configure_repo_costs_only_itself() {
-        let c = cfg(json!({ "autoConfigureRepo": "no", "projectName": "kept" }));
-        assert!(c.auto_configure_repo, "as `as_bool().unwrap_or(true)` made it");
-        assert_eq!(c.project_name.as_deref(), Some("kept"), "the layer around it survived");
-    }
 
     #[test]
     fn a_non_string_symbol_costs_only_that_glyph() {

@@ -65,7 +65,7 @@ impl Verdict {
 /// A field of [`crate::config::Config`] rather than something copied out of it
 /// key by key: the block is closed in the schema, and the module that reads a
 /// block owns its shape.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SpendConfig {
     /// Genuinely zero when set to zero — this is the one numeric config value
