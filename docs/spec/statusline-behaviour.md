@@ -357,6 +357,27 @@ Merge semantics, which must match exactly:
 Repo root is resolved from the render's cwd (see §6). A run outside a repo has
 only the user layer.
 
+> **Amended 2026-08-23** (`typed-config` cycle). The merged config is
+> **deserialized into typed Rust structs**, once, after the merge and never
+> before. The merge itself is unchanged — it still operates on untyped JSON, and
+> the object-only filter and the forbidden-key strip above still happen first.
+>
+> The forgiveness rule gains a case: a merged tree that will not deserialize is
+> ignored too, and the **embedded defaults render**, with one diagnostic on
+> stderr. That fallback is a value in code rather than a second parse, so it
+> cannot itself fail.
+>
+> **A mistyped value costs its own key and nothing else.** Every coercion the
+> untyped accessors performed is preserved per-field, so
+> `"symbols": { "model": 5 }` still renders that one glyph as `""` and leaves
+> the rest of the layer — including the user's theme — applied. The whole-tree
+> fallback in the paragraph above is reached only by a tree that is malformed as
+> a whole, such as a root that is not an object. The distinction matters: the
+> two outcomes differ by everything the user configured.
+>
+> Types are what let the code **name a default**, which is what makes storing
+> only non-defaults possible. Nothing a user can see changes in this cycle.
+
 > Keep the config **file name, location and schema identical** to the current
 > implementation. Existing users should be able to point Claude at the new
 > binary and see the same bar. Any schema change is a migration you have to
