@@ -295,7 +295,7 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
 
 /// The `--debug` report: what this binary sees.
 ///
-/// [Plan 3](docs/plans/2026-08-19-1402-spend.md) adds the spend section, which
+/// The `spend` cycle adds the spend section, which
 /// is the part users actually reach for. This is the config, wiring, layout and
 /// git half.
 fn debug_report() -> String {

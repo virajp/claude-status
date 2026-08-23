@@ -16,55 +16,27 @@ from re-discovering the same ground.
 
 ## Config ergonomics
 
-The three entries below are one theme — making the config file writable by hand
-without guessing — and would likely make one slice rather than three.
+The two entries below are one theme — making the config file writable by hand
+without guessing — and would likely make one slice rather than two.
 
-### `--configure` — seed a repo-level config
+### Pin the `$schema` URL, and publish the schema
 
-**Ask.** A `--configure` argument that runs **only inside a repo**, creates the
-repo-level config, and sets `projectName` to the repository's name.
+**Ask.** Editors should resolve the schema that matches the *installed* binary,
+and ideally find it without the key being present at all.
 
-**Why.** `--install` seeds the user-level config at
-`~/.config/claude-status.json`, and nothing seeds the repo-level layer at
-`<repo-root>/.config/claude-status.json`. Today that file is written by hand or
-not at all, so the `project` segment — which is omitted unless `projectName` is
-set **in config** — silently never appears for most repos.
+**Already true — every generated config carries the key, and a plan should not
+redo that.** `schemas/claude-status.schema.json` exists, is a draft-2020-12
+schema with `additionalProperties: false`, and declares `$schema` as a permitted
+key. All three writers emit it: `assets/claude-status.defaults.json` (what
+`--install` seeds the user layer from, byte-for-byte),
+`installer/src/_runtime/configure.ts` and `src/modules/config/autoseed.rs` (the
+repo layer, seeded and migrated alike — both from a `SCHEMA_URL` constant).
 
-**Already true.** The three-layer merge exists and the repo layer already wins
-([contract §2](../spec/statusline-behaviour.md), readme "Configuration"). Git
-root resolution is already implemented and filesystem-first in
-`src/modules/git.rs`, so "am I in a repo, and what is it called" needs no new
-mechanism. This repo's own `.config/claude-status.json` is exactly the file the
-command would generate, and is a good shape to copy.
-
-**Open questions a plan must answer.** Which binary owns it — this is the
-*binary's* flag, not the npm installer's, so it sits beside `--statusline` /
-`--caps-hook` rather than beside `--install`. What happens when the file already
-exists (refuse? merge? `--force`?). Whether the repo name comes from the
-directory basename or the git remote, which disagree for a fork or a renamed
-checkout. Whether it honours `--dry-run`, which the *installer* has and the
-binary does not.
-
-### `$schema` in every generated config
-
-**Ask.** Both the user-level and repo-level config files should carry a
-`$schema` key so editors offer completion and catch mistakes.
-
-**Already true — most of this is done, and a plan should not redo it.**
-`schemas/claude-status.schema.json` exists, is a draft-2020-12 schema with
-`additionalProperties: false`, and declares `$schema` as a permitted key.
-`assets/claude-status.defaults.json` — the single source the installer seeds
-from, byte-for-byte — already carries
-`"$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json"`,
-and so does this repo's own `.config/claude-status.json`. So a **freshly
-installed user config already has it**.
-
-**What is actually left.** Whatever `--configure` writes must carry it too. And
-the `$id`/`$schema` URL points at the mutable `main` ref, so an editor resolves
-whatever `main` says today rather than the schema matching the installed binary
-— worth deciding whether to pin to a tag once
-[`release`](./2026-08-21-2122-release.md) ships, and whether the schema should
-be published to SchemaStore so editors find it without the key at all.
+**What is actually left.** The `$id`/`$schema` URL points at the mutable `main`
+ref, so an editor resolves whatever `main` says today rather than the schema
+matching the installed binary — worth deciding whether to pin to a tag once
+[`release`](./2026-08-21-2122-release.md) ships. And whether to publish to
+SchemaStore, so editors find it without the key at all.
 
 ### Config validation in `--debug`
 
@@ -93,11 +65,22 @@ config.
 ## Closed
 
 Kept as a record of what was raised and where it went, so a later reader does
-not re-open either.
+not re-open any of them.
+
+- **Nothing seeded the repo-level config layer.** Shipped as the installer's
+  `--configure` (`d97dc4b`), with the binary growing a matching autoseed on the
+  render path (`60f5c0f`) so a repo gets its layer without anyone running a
+  command. It answered its own open questions: the **installer** owns the flag,
+  not the binary; an existing `claude-status.json` is kept and only gains a
+  missing `projectName`; a lone `statusline.json` is rewritten rather than
+  renamed (`c42aabc`) with its `$schema` repointed; the name is the directory
+  basename, not the git remote; and it honours `--dry-run`. `projectName` became
+  repo-level only with `autoConfigureRepo` defaulting on (`03f6773`).
 
 - **An unresolvable `$HOME` had no defined meaning.** Raised by security review
   during `macos-only`, deferred, then fixed in that same cycle. The contract now
   says absent-never-relative and the four callers agree with it.
+
 - **Path-derived segment text reached the row unfiltered.** Same origin, same
   outcome: filtering now sits at the single point every segment's text passes
   through.
