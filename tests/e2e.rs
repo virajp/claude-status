@@ -353,6 +353,30 @@ fn a_vwf_yaml_cap_block_is_no_longer_read() {
 }
 
 #[test]
+fn a_bad_key_elsewhere_in_the_config_cannot_move_a_cap() {
+    // The hook is an **actuator**, not a render, so a config that degrades
+    // wrongly here does not draw a bar oddly — it injects a halt directive into
+    // the agent's loop at the wrong moment. A configured 80 that silently fell
+    // back to the shipped 65 would fire fifteen points early, and nothing on
+    // either stream would say why.
+    let home = Home::new(r#"{ "caps": { "context": 80 }, "symbols": { "model": 5 }, "gauge": null }"#);
+    let usage = home.path().join("usage");
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70}"#);
+
+    let out = caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR");
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "", "70% is under the configured cap of 80, so the hook stays silent");
+
+    // And the cap it is honouring really is the configured one, not the shipped
+    // 65 that a discarded config would have handed back.
+    seed_mirror(&usage, "s2", r#"{"ctxPct":82}"#);
+    let breached = caps_run(&home, &usage, r#"{"session_id":"s2"}"#, "CLAUDE_STATUS_USAGE_DIR");
+    let emitted: serde_json::Value = serde_json::from_str(&stdout(&breached)).expect("one JSON object");
+    let ctx = emitted["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert!(ctx.contains("82%"), "{ctx}");
+}
+
+#[test]
 fn the_caps_hook_is_completely_silent_when_it_has_nothing_to_read() {
     let home = Home::new(&safe_config());
     let usage = home.path().join("usage");
@@ -578,21 +602,31 @@ fn a_hostile_config_still_puts_a_usable_line_on_stdout() {
 }
 
 #[test]
-fn a_config_that_will_not_deserialize_renders_the_defaults_and_says_so_once() {
-    // A scalar where the `gauge` block belongs — a structural mistake, not a
-    // mistyped leaf, so nothing in this layer can be read. The shipped
-    // defaults render in its place, including the layout this layer replaced.
-    let home = Home::new(r#"{ "projectName": "e2e-fixture", "gauge": 5, "lines": [["cost"]] }"#);
+fn a_scalar_where_a_block_belongs_costs_that_block_and_nothing_else() {
+    // A scalar where the `gauge` block belongs. Every dotted read into it was
+    // `None` before this config was typed, so it cost the gauge's keys and left
+    // the layer standing — and it still must. Typing a block plainly would
+    // instead make it a hard error, and the one `from_value` in the program
+    // turns a hard error into a discarded config: this layer's name, its
+    // layout and a user's whole theme, gone over one bad key.
+    let home = Home::new(r#"{ "projectName": "e2e-fixture", "gauge": 5, "lines": [["project", "context"]] }"#);
     let out = run(&home, &["--statusline"], FIXTURE, &[]);
 
     assert!(out.status.success(), "exit code {:?}", out.status.code());
     let bar = stdout(&out);
-    assert!(bar.contains("Opus 4.8"), "a full bar, from the defaults: {}", bar.escape_debug());
-    assert!(bar.contains('\u{1b}'), "and it is still coloured");
-    assert!(!bar.contains("e2e-fixture"), "the layer is ignored whole, not key by key");
 
-    let complaints = stderr(&out).lines().filter(|l| l.contains("could not be read")).count();
-    assert_eq!(complaints, 1, "one diagnostic, not one per key read: {}", stderr(&out));
+    assert!(bar.contains("e2e-fixture"), "the layer survived its bad block: {}", bar.escape_debug());
+    assert!(!bar.contains("Opus 4.8"), "and its two-segment layout applied, so `model` is absent");
+
+    // The gauge itself falls back to the shipped ten-wide meter.
+    let cells = bar.chars().filter(|c| *c == '\u{25b0}' || *c == '\u{25b1}').count();
+    assert_eq!(cells, 10, "the shipped width, not a gauge built from `5`: {}", bar.escape_debug());
+
+    assert!(
+        !stderr(&out).contains("could not be read"),
+        "a bad block is coerced, not reported — the whole-tree guard is not on this path: {}",
+        stderr(&out)
+    );
 }
 
 #[test]

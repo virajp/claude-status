@@ -87,10 +87,12 @@ pub struct Config {
     pub project_name: Option<String>,
     #[serde(deserialize_with = "palette")]
     pub palette: Palette,
+    #[serde(deserialize_with = "powerline_block")]
     pub powerline: PowerlineConfig,
     /// The foreground for a segment that sets no `fg` of its own. A [`Value`]
     /// because it is a colour spec, resolved by [`color::resolve`].
     pub default_fg: Option<Value>,
+    #[serde(deserialize_with = "gauge_block")]
     pub gauge: Gauge,
     /// The raw `worktreePattern`. It is compiled — and can fail to compile —
     /// in [`Config::worktree_matcher`], not here.
@@ -101,15 +103,18 @@ pub struct Config {
     pub symbols: BTreeMap<String, String>,
     /// Owned by [`crate::spend`], for the same reason `caps` is owned by
     /// [`crate::caps`]: the module that reads a block should own its shape.
+    #[serde(deserialize_with = "spend_block")]
     pub spend: SpendConfig,
     /// An open map keyed by a task's `type`, plus the `_default` entry.
     #[serde(deserialize_with = "glyph_table")]
     pub type_symbols: BTreeMap<String, String>,
     /// An open map: the keys are segment ids, and a user may style a segment
     /// this build does not know about.
+    #[serde(deserialize_with = "style_table")]
     pub segments: BTreeMap<String, SegmentStyle>,
     #[serde(deserialize_with = "lines")]
     pub lines: Vec<Vec<SegmentEntry>>,
+    #[serde(deserialize_with = "subagent_block")]
     pub subagent: SubagentConfig,
 }
 
@@ -122,6 +127,18 @@ impl Config {
     /// one outcome the third invariant forbids. The fallback is a value in
     /// code rather than a second parse that could fail in turn.
     pub fn new(root: Value) -> Self {
+        // The object check is explicit, not a side effect of the deserialize
+        // failing. Serde's derive reads a JSON **array** into a struct's fields
+        // *positionally*, so `["not", "an", "object"]` would otherwise arrive
+        // as a config whose third field — `projectName` — is `"object"`. That
+        // held only while some other field still errored; once every field
+        // reads forgivingly, nothing is left to object.
+        if !root.is_object() {
+            crate::_shared::diag(
+                "claude-status: the merged config is not an object; using the shipped defaults",
+            );
+            return Self::default();
+        }
         serde_json::from_value(root).unwrap_or_else(|e| {
             crate::_shared::diag(&format!(
                 "claude-status: the merged config could not be read ({e}); using the shipped defaults"
@@ -229,6 +246,19 @@ impl Default for PowerlineConfig {
     }
 }
 
+impl PowerlineConfig {
+    /// What an **unreadable** `powerline` block renders: nothing.
+    ///
+    /// Not [`Default`], and the difference is the whole point. `powerline()`
+    /// was `as_str().unwrap_or_default()`, so a block that was not an object
+    /// gave `""` for every piece and drew a seamless bar. Handing back the
+    /// shipped glyphs instead would put separators on a bar that never had
+    /// them.
+    fn unstyled() -> Self {
+        Self { cap: String::new(), sep: String::new(), sep_thin: String::new(), thin_fg: None }
+    }
+}
+
 /// The fixed-width meter the `context` segment draws.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(default)]
@@ -333,7 +363,9 @@ pub struct SubagentConfig {
     /// The entries stay [`Value`]: a bucket with no `match` is the fallback,
     /// and a bucket that is not an object has no `match` either, so it lands
     /// there too rather than costing the whole config.
+    #[serde(deserialize_with = "status_table")]
     pub statuses: Map<String, Value>,
+    #[serde(deserialize_with = "subagent_segments_block")]
     pub segments: SubagentSegments,
 }
 
@@ -347,6 +379,19 @@ impl Default for SubagentConfig {
     }
 }
 
+impl SubagentConfig {
+    /// What an **unreadable** `subagent` block renders. The budget fraction is
+    /// the only field whose `None` answer was the shipped value; an absent
+    /// status table matched nothing, and absent segments were unstyled.
+    fn unstyled() -> Self {
+        Self {
+            desc_budget_fraction: DEFAULT_DESC_BUDGET_FRACTION,
+            statuses: Map::new(),
+            segments: SubagentSegments::unstyled(),
+        }
+    }
+}
+
 /// The panel's six row segments. Fixed keys, unlike the main bar's open map:
 /// a panel row is built by this program, not by the layout.
 #[derive(Debug, PartialEq, Deserialize)]
@@ -354,11 +399,17 @@ impl Default for SubagentConfig {
 pub struct SubagentSegments {
     /// Only `fg` and `bold` are ever read: the head's background always comes
     /// from the matched status.
+    #[serde(deserialize_with = "style_block")]
     pub head: SegmentStyle,
+    #[serde(deserialize_with = "style_block")]
     pub name: SegmentStyle,
+    #[serde(deserialize_with = "style_block")]
     pub model: SegmentStyle,
+    #[serde(deserialize_with = "style_block")]
     pub desc: SegmentStyle,
+    #[serde(deserialize_with = "style_block")]
     pub tokens: SegmentStyle,
+    #[serde(deserialize_with = "style_block")]
     pub duration: SegmentStyle,
 }
 
@@ -373,6 +424,112 @@ impl Default for SubagentSegments {
             duration: SegmentStyle::shipped(Some("purple"), None, false),
         }
     }
+}
+
+impl SubagentSegments {
+    /// What an **unreadable** `subagent.segments` block renders: every row
+    /// unstyled. `get("subagent.segments.name")` into a scalar was `None`, and
+    /// `set(&None)` is `None` — the shipped colours were not reachable from
+    /// there.
+    fn unstyled() -> Self {
+        Self {
+            head: SegmentStyle::default(),
+            name: SegmentStyle::default(),
+            model: SegmentStyle::default(),
+            desc: SegmentStyle::default(),
+            tokens: SegmentStyle::default(),
+            duration: SegmentStyle::default(),
+        }
+    }
+}
+
+/// A block that is present but not an object, read as every dotted read into
+/// it read: empty.
+///
+/// `#[serde(default)]` fires only for an **absent** field. A present one is
+/// deserialized, and a derived struct meeting `null`, a number or a string is a
+/// hard error — which the one `from_value` in the program turns into a
+/// discarded config, costing the user every other key they set. `Value::get`
+/// into a scalar was simply `None`, so the old readers lost the block and
+/// nothing else.
+///
+/// `absent` is what those `None`s produced, which is **not** always the shipped
+/// value — see [`PowerlineConfig::unstyled`].
+///
+/// It also closes a path the old code could not reach. Serde's derive accepts a
+/// JSON **array** as a struct's fields *positionally*, and `#[serde(default)]`
+/// pads a short one, so `"gauge": [3, "#", "-"]` would silently become a
+/// three-wide gauge with invented glyphs — a coercion this refactor would have
+/// invented, renderable and silent on both streams. An array is not an object,
+/// so it lands here with everything else.
+fn block<'de, D, T>(d: D, absent: fn() -> T) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let v = Value::deserialize(d)?;
+    if !v.is_object() {
+        return Ok(absent());
+    }
+    // A leaf that will not read is already handled by that leaf's own reader,
+    // so this is a backstop: losing the block still beats losing the config.
+    Ok(T::deserialize(v).unwrap_or_else(|_| absent()))
+}
+
+fn gauge_block<'de, D: Deserializer<'de>>(d: D) -> Result<Gauge, D::Error> {
+    // Every gauge leaf answers `None` with the shipped value, so an unreadable
+    // block and an absent one agree here.
+    block(d, Gauge::default)
+}
+
+fn powerline_block<'de, D: Deserializer<'de>>(d: D) -> Result<PowerlineConfig, D::Error> {
+    block(d, PowerlineConfig::unstyled)
+}
+
+fn subagent_block<'de, D: Deserializer<'de>>(d: D) -> Result<SubagentConfig, D::Error> {
+    block(d, SubagentConfig::unstyled)
+}
+
+fn subagent_segments_block<'de, D: Deserializer<'de>>(d: D) -> Result<SubagentSegments, D::Error> {
+    block(d, SubagentSegments::unstyled)
+}
+
+/// One panel row's style. A non-object entry costs that row and no other: each
+/// was its own `get("subagent.segments.<key>")`, and a scalar there answered
+/// `None` while its neighbours still read.
+fn style_block<'de, D: Deserializer<'de>>(d: D) -> Result<SegmentStyle, D::Error> {
+    block(d, SegmentStyle::default)
+}
+
+fn spend_block<'de, D: Deserializer<'de>>(d: D) -> Result<SpendConfig, D::Error> {
+    // Both spend leaves answer `None` with the shipped value, so an unreadable
+    // block and an absent one agree.
+    block(d, SpendConfig::default)
+}
+
+/// The per-segment style table, forgiving at both levels.
+///
+/// A non-object table drops every entry and an entry that is not an object
+/// drops only itself: `segments.<id>.<key>` was three chained `Value::get`s,
+/// and any of them meeting a scalar yielded `None` without disturbing the rest.
+fn style_table<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, SegmentStyle>, D::Error> {
+    let Value::Object(entries) = Value::deserialize(d)? else {
+        return Ok(BTreeMap::new());
+    };
+    Ok(entries
+        .into_iter()
+        .filter(|(_, v)| v.is_object())
+        .filter_map(|(key, v)| Some((key, SegmentStyle::deserialize(v).ok()?)))
+        .collect())
+}
+
+/// The status buckets. A non-object table matches nothing, which is what an
+/// absent one did: `task_mark` iterates the values, and there were none.
+fn status_table<'de, D: Deserializer<'de>>(d: D) -> Result<Map<String, Value>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::Object(entries) => entries,
+        _ => Map::new(),
+    })
 }
 
 /// The gauge width. A configured `0` means ten, as `||` made it, and anything
@@ -664,18 +821,25 @@ mod tests {
         assert_eq!(cfg(json!({})), Config::default());
     }
 
-    /// Criterion 4. Also the guard on [`Config::new`]: a tree the types reject
+    /// Criterion 4, and the guard on [`Config::new`]: a tree the types reject
     /// must not take the bar down with it.
     ///
-    /// Reaching this takes a **structural** mistake — a scalar where a whole
-    /// block belongs. A mistyped *leaf* does not reach it and must not: see
-    /// the `costs_only_itself` tests below. A root that is not an object does
-    /// not reach it either, because `layers::load` drops such a layer before
-    /// the merge; see `a_valid_but_non_object_layer_does_not_wipe_the_defaults`.
+    /// **Nothing inside an object reaches this.** Every field reads through a
+    /// reader that answers an unusable value with that field's own fallback —
+    /// a mistyped leaf costs its key, a non-object block costs its block — so
+    /// the only tree left that the types reject is one whose **root** is not an
+    /// object.
+    ///
+    /// That makes this a true backstop rather than a path a config file can
+    /// take: `layers::load` already drops a non-object layer before the merge
+    /// (`a_valid_but_non_object_layer_does_not_wipe_the_defaults`), and the
+    /// merge itself starts from the embedded object. It is reachable only
+    /// through this constructor, which is why the guard stays.
     #[test]
     fn a_config_that_will_not_deserialize_falls_back_to_the_defaults() {
-        assert_eq!(cfg(json!({ "gauge": 5 })), Config::default(), "a scalar where a block belongs");
-        assert_eq!(cfg(json!({ "segments": { "model": "blue" } })), Config::default(), "and where a style belongs");
+        for root in [json!(["not", "an", "object"]), json!("a string"), json!(5), json!(null)] {
+            assert_eq!(cfg(root.clone()), Config::default(), "root: {root}");
+        }
     }
 
     #[test]
@@ -868,5 +1032,137 @@ mod tests {
         let model = &c.segments["model"];
         assert_eq!(model.bg, None, "an explicit null is indistinguishable from absent");
         assert_eq!(model.bold, Some(json!(false)), "but false is a value");
+    }
+
+    // A block that is present but not an object costs its own keys and nothing
+    // else. `#[serde(default)]` fires only for an ABSENT field, so without a
+    // reader of its own each of these is a hard error — and the one
+    // `from_value` in the program turns a hard error into a discarded config.
+    //
+    // Every case carries a sibling `projectName`, because the block's own
+    // values cannot tell "this block was ignored" from "the whole tree was
+    // discarded and `Default` supplied the same answer".
+    //
+    // What each block falls back to is what the old dotted read produced, which
+    // is **not** always the shipped value: `Value::get` into a scalar was
+    // `None`, and each accessor turned `None` into its own answer.
+
+    #[test]
+    fn a_non_object_gauge_costs_only_the_gauge() {
+        for bad in [json!(null), json!(5), json!("wide"), json!([3, "#", "-"])] {
+            let c = cfg(json!({ "gauge": bad, "projectName": "kept" }));
+            assert_eq!(c.gauge, Gauge::default(), "as `get(\"gauge.width\")` -> None -> 10 made it");
+            assert_eq!(c.project_name.as_deref(), Some("kept"), "the layer around it survived");
+        }
+    }
+
+    #[test]
+    fn a_non_object_powerline_is_seamless_rather_than_shipped() {
+        // `powerline()` was `as_str().unwrap_or_default()`, so an unreadable
+        // block rendered `""` for every piece — a bar with no separators, not
+        // one with the shipped glyphs back.
+        for bad in [json!(null), json!(5), json!(["A", "B", "C", "red"])] {
+            let c = cfg(json!({ "powerline": bad, "projectName": "kept" }));
+            assert_eq!((c.powerline.cap.as_str(), c.powerline.sep.as_str()), ("", ""), "{bad}");
+            assert_eq!(c.powerline.sep_thin, "", "{bad}");
+            assert_eq!(c.powerline.thin_fg, None, "{bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    #[test]
+    fn a_non_object_segments_table_drops_every_style() {
+        // `get("segments.model.bg")` into a scalar was `None`, so every segment
+        // fell to FALLBACK_BG rather than to its shipped colour.
+        for bad in [json!(null), json!(5), json!([])] {
+            let c = cfg(json!({ "segments": bad, "projectName": "kept" }));
+            assert!(c.segments.is_empty(), "{bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    #[test]
+    fn a_non_object_segment_entry_drops_only_itself() {
+        let c = cfg(json!({
+            "segments": { "model": 5, "cost": null, "branch": ["red"], "spend": { "bg": "red" } },
+            "projectName": "kept",
+        }));
+        for id in ["model", "cost", "branch"] {
+            assert!(!c.segments.contains_key(id), "{id} is unreadable and is dropped");
+        }
+        assert_eq!(c.segments["spend"].bg, Some(json!("red")), "its readable neighbour survived");
+        assert_eq!(c.project_name.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn a_non_object_subagent_block_costs_only_the_panel() {
+        for bad in [json!(null), json!(5), json!([0.45])] {
+            let c = cfg(json!({ "subagent": bad, "projectName": "kept" }));
+            assert_eq!(c.subagent.desc_budget_fraction, 0.45, "{bad}");
+            assert!(c.subagent.statuses.is_empty(), "no bucket matches, as an absent table gave: {bad}");
+            assert_eq!(c.subagent.segments, SubagentSegments::unstyled(), "{bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    #[test]
+    fn a_non_object_statuses_table_matches_nothing() {
+        for bad in [json!(null), json!([]), json!("none")] {
+            let c = cfg(json!({ "subagent": { "statuses": bad }, "projectName": "kept" }));
+            assert!(c.subagent.statuses.is_empty(), "{bad}");
+            assert_eq!(c.subagent.desc_budget_fraction, 0.45, "its sibling key survived: {bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    /// The nested case, and the one static reading missed: a bad *entry* inside
+    /// a good `subagent.segments` block. Backstopping at the block would wipe
+    /// all six rows, where each was its own `get("subagent.segments.<key>")`
+    /// and a scalar cost only itself. Caught by diffing this binary against the
+    /// pre-refactor one, not by reasoning about the types.
+    #[test]
+    fn a_bad_row_inside_a_good_subagent_segments_block_costs_only_that_row() {
+        let c = cfg(json!({ "subagent": { "segments": { "head": null, "name": 5, "model": { "bg": "red" } } } }));
+        assert_eq!(c.subagent.segments.head, SegmentStyle::default(), "unreadable, so unstyled");
+        assert_eq!(c.subagent.segments.name, SegmentStyle::default(), "likewise");
+        assert_eq!(c.subagent.segments.model.bg, Some(json!("red")), "and its readable neighbour applied");
+        assert_eq!(
+            c.subagent.segments.duration.bg,
+            Some(json!("purple")),
+            "a row the layer never mentioned keeps its shipped colour"
+        );
+    }
+
+    #[test]
+    fn a_non_object_subagent_segments_block_is_unstyled() {
+        for bad in [json!(null), json!(5), json!([])] {
+            let c = cfg(json!({ "subagent": { "segments": bad }, "projectName": "kept" }));
+            assert_eq!(c.subagent.segments, SubagentSegments::unstyled(), "{bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    #[test]
+    fn a_non_object_spend_block_costs_only_spend() {
+        for bad in [json!(null), json!("auto"), json!([30, "always"])] {
+            let c = cfg(json!({ "spend": bad, "projectName": "kept" }));
+            assert_eq!(c.spend.refresh_minutes, 15.0, "{bad}");
+            assert_eq!(c.spend.show, "auto", "{bad}");
+            assert_eq!(c.project_name.as_deref(), Some("kept"));
+        }
+    }
+
+    /// Serde's derive reads a JSON **array** into a struct's fields
+    /// positionally, and a container `#[serde(default)]` pads a short one. The
+    /// old code could not reach that path at all — `Value::get("width")` on an
+    /// array is `None` — so accepting one would be a coercion this refactor
+    /// invented, and a silent one: it renders differently with nothing on
+    /// either stream.
+    #[test]
+    fn an_array_is_never_read_as_a_block_positionally() {
+        let c = cfg(json!({ "gauge": [3, "#", "-"], "powerline": ["A"] }));
+        assert_eq!(c.gauge.width, DEFAULT_GAUGE_WIDTH, "not 3");
+        assert_eq!(c.gauge.filled, "\u{25b0}", "not `#`");
+        assert_eq!(c.powerline.cap, "", "not `A`");
     }
 }
