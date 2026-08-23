@@ -27,10 +27,13 @@ pub const LEGACY_USAGE_DIR_ENV: &str = "AI_PLUGINS_USAGE_DIR";
 /// the caps hook — resolve it through here, so the two can never disagree
 /// about which variable won.
 pub fn usage_dir_from_env() -> Option<String> {
-    std::env::var(USAGE_DIR_ENV)
-        .ok()
-        .or_else(|| std::env::var(LEGACY_USAGE_DIR_ENV).ok())
-        .filter(|d| !d.is_empty())
+    // Emptiness is filtered per-arm, not once at the end: `var()` yields
+    // `Ok("")` for an empty variable, so a trailing filter would see `Some("")`
+    // from the new name, never try the legacy one, and only then discard it —
+    // letting an emptied new variable mask a valid legacy one.
+    let non_empty = |key: &str| std::env::var(key).ok().filter(|dir| !dir.is_empty());
+
+    non_empty(USAGE_DIR_ENV).or_else(|| non_empty(LEGACY_USAGE_DIR_ENV))
 }
 
 /// Writes `<dir>/<session_id>.json`, or does nothing.
@@ -247,5 +250,44 @@ mod tests {
         }
         // A path that never asked for the home directory is unaffected.
         assert_eq!(expand_home("/absolute/usage"), Some(PathBuf::from("/absolute/usage")));
+    }
+
+    #[test]
+    fn the_new_variable_wins_and_the_legacy_one_is_the_fallback() {
+        let mut env = crate::_shared::env_lock();
+
+        env.set(USAGE_DIR_ENV, "/new");
+        env.set(LEGACY_USAGE_DIR_ENV, "/legacy");
+        assert_eq!(usage_dir_from_env().as_deref(), Some("/new"), "the new name wins outright");
+
+        env.unset(USAGE_DIR_ENV);
+        assert_eq!(usage_dir_from_env().as_deref(), Some("/legacy"), "unset falls back");
+    }
+
+    #[test]
+    fn an_empty_new_variable_falls_back_rather_than_masking_the_legacy_one() {
+        // `var()` returns `Ok("")` for an empty variable, so an `or_else` chain
+        // that filters emptiness only at the end never reaches the fallback —
+        // it sees `Some("")`, skips the legacy arm, and then filters to `None`.
+        // Emptying the new name is how someone disables it, and doing so must
+        // not silently take the mirror (and the caps hook's only data) with it.
+        let mut env = crate::_shared::env_lock();
+
+        env.set(USAGE_DIR_ENV, "");
+        env.set(LEGACY_USAGE_DIR_ENV, "/legacy");
+        assert_eq!(usage_dir_from_env().as_deref(), Some("/legacy"));
+    }
+
+    #[test]
+    fn the_mirror_is_off_when_neither_variable_carries_a_path() {
+        let mut env = crate::_shared::env_lock();
+
+        env.unset(USAGE_DIR_ENV);
+        env.unset(LEGACY_USAGE_DIR_ENV);
+        assert_eq!(usage_dir_from_env(), None, "neither set");
+
+        env.set(USAGE_DIR_ENV, "");
+        env.set(LEGACY_USAGE_DIR_ENV, "");
+        assert_eq!(usage_dir_from_env(), None, "both empty");
     }
 }
