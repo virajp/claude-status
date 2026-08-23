@@ -15,8 +15,10 @@ pub mod lock;
 pub mod refresh;
 pub mod schedule;
 
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
+use crate::config::SegmentEntry;
 use crate::fmt::{money, to_fixed};
 
 /// Which gate hid the segment, for `--debug` to name.
@@ -59,35 +61,49 @@ impl Verdict {
 }
 
 /// The `spend` block of the merged config.
+///
+/// A field of [`crate::config::Config`] rather than something copied out of it
+/// key by key: the block is closed in the schema, and the module that reads a
+/// block owns its shape.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct SpendConfig {
+    /// Genuinely zero when set to zero — this is the one numeric config value
+    /// where 0 is a meaningful setting rather than "unset". A value that is
+    /// not a number at all is the shipped interval, and costs only itself.
+    #[serde(deserialize_with = "refresh_minutes")]
     pub refresh_minutes: f64,
+    #[serde(deserialize_with = "show")]
     pub show: String,
 }
 
-impl SpendConfig {
-    pub fn from_config(config: &crate::config::Config) -> Self {
-        Self {
-            // Genuinely zero when set to zero — this is the one numeric config
-            // value where 0 is a meaningful setting rather than "unset".
-            refresh_minutes: config.get("spend.refreshMinutes").and_then(Value::as_f64).unwrap_or(15.0),
-            show: config.get("spend.show").and_then(Value::as_str).unwrap_or("auto").to_string(),
-        }
+/// The shipped refresh interval, in minutes.
+const DEFAULT_REFRESH_MINUTES: f64 = 15.0;
+
+/// The shipped `show`. Any other string renders, so `"always"` needs no
+/// special case — see [`verdict`].
+const DEFAULT_SHOW: &str = "auto";
+
+impl Default for SpendConfig {
+    fn default() -> Self {
+        Self { refresh_minutes: DEFAULT_REFRESH_MINUTES, show: DEFAULT_SHOW.into() }
     }
+}
+
+fn refresh_minutes<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    crate::json::leaf(d, Value::as_f64, DEFAULT_REFRESH_MINUTES)
+}
+
+fn show<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    crate::json::leaf(d, |v| Some(v.as_str()?.to_string()), DEFAULT_SHOW.to_string())
 }
 
 /// Is `spend` an entry in any row of the resolved layout?
 ///
 /// Gate 1, and the reason it is first: a user without the segment pays
-/// **nothing** for it — no file read, no fork, no keychain prompt. An entry is
-/// the string itself, or an object keyed by `name` or `id`.
-pub fn in_layout(lines: &[Vec<Value>]) -> bool {
-    lines.iter().flatten().any(|entry| {
-        let id = match entry {
-            Value::String(id) => Some(id.as_str()),
-            obj => obj.get("name").or_else(|| obj.get("id")).and_then(Value::as_str),
-        };
-        id == Some("spend")
-    })
+/// **nothing** for it — no file read, no fork, no keychain prompt.
+pub fn in_layout(lines: &[Vec<SegmentEntry>]) -> bool {
+    lines.iter().flatten().any(|entry| entry.id() == Some("spend"))
 }
 
 /// The four gates, in order.
@@ -96,7 +112,7 @@ pub fn in_layout(lines: &[Vec<Value>]) -> bool {
 /// every one of these was a silent `return` in the old implementation, which is
 /// why a working account with a perfect token was indistinguishable from a
 /// broken one.
-pub fn verdict(cached: Option<&cache::SpendCache>, config: &SpendConfig, lines: &[Vec<Value>], symbol: &str) -> Verdict {
+pub fn verdict(cached: Option<&cache::SpendCache>, config: &SpendConfig, lines: &[Vec<SegmentEntry>], symbol: &str) -> Verdict {
     if !in_layout(lines) {
         return Verdict::Hidden { gate: Gate::NotInLayout };
     }
@@ -152,7 +168,7 @@ pub fn percent_of(data: &extract::Spend) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::modules::spend::cache::SpendCache;
@@ -169,13 +185,18 @@ mod tests {
         SpendConfig { refresh_minutes: 15.0, show: show.to_string() }
     }
 
-    fn lines_with_spend() -> Vec<Vec<Value>> {
-        vec![vec![json!("model"), json!("spend"), json!("cost")]]
+    /// One row, as `Config` would have deserialized it.
+    fn row(entries: [Value; 3]) -> Vec<Vec<SegmentEntry>> {
+        vec![entries.into_iter().map(SegmentEntry::from).collect()]
+    }
+
+    fn lines_with_spend() -> Vec<Vec<SegmentEntry>> {
+        row([json!("model"), json!("spend"), json!("cost")])
     }
 
     #[test]
     fn gate_1_hides_when_spend_is_not_in_the_layout() {
-        let lines = vec![vec![json!("model"), json!("cost")]];
+        let lines = row([json!("model"), json!("cost"), json!("duration")]);
         let cache = cache_with(Some("team"), Some(data()));
         assert_eq!(verdict(Some(&cache), &cfg("always"), &lines, "$"), Verdict::Hidden {
             gate: Gate::NotInLayout
@@ -184,12 +205,13 @@ mod tests {
 
     #[test]
     fn gate_1_finds_spend_however_the_entry_is_spelled() {
-        assert!(in_layout(&[vec![json!("spend")]]));
-        assert!(in_layout(&[vec![json!({ "name": "spend", "bg": "red" })]]));
-        assert!(in_layout(&[vec![json!({ "id": "spend" })]]));
-        assert!(in_layout(&[vec![json!("model")], vec![json!("spend")]]), "any row counts");
-        assert!(!in_layout(&[vec![json!("model")]]));
-        assert!(!in_layout(&[vec![json!({ "bg": "red" })]]), "an entry with no id is not spend");
+        let one = |entry: Value| vec![vec![SegmentEntry::from(entry)]];
+        assert!(in_layout(&one(json!("spend"))));
+        assert!(in_layout(&one(json!({ "name": "spend", "bg": "red" }))));
+        assert!(in_layout(&one(json!({ "id": "spend" }))));
+        assert!(in_layout(&[vec![json!("model").into()], vec![json!("spend").into()]]), "any row counts");
+        assert!(!in_layout(&one(json!("model"))));
+        assert!(!in_layout(&one(json!({ "bg": "red" }))), "an entry with no id is not spend");
         assert!(!in_layout(&[]));
     }
 
@@ -260,7 +282,7 @@ mod tests {
     fn the_gates_are_checked_in_order() {
         // Everything is wrong at once; gate 1 is the one reported, because it
         // is the one that costs nothing to check.
-        let lines = vec![vec![json!("model")]];
+        let lines = vec![vec![SegmentEntry::from(json!("model"))]];
         let broken = cache_with(None, None);
         assert_eq!(verdict(Some(&broken), &cfg("auto"), &lines, "$"), Verdict::Hidden {
             gate: Gate::NotInLayout

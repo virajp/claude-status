@@ -18,6 +18,16 @@ path = "src/main.rs"
 # crate is ~1.5 MB and builds a DFA on a per-render path.
 regex-lite = "0.1.9"
 
+# `derive`, for the config types only. The payloads stay untyped — every field
+# of every payload is optional and a derive would buy nothing there — but the
+# merged *config* is deserialized once into named Rust types, because the code
+# has to be able to name a default. `serde_core` already pulls `serde_derive`
+# in for `serde_json`, so the macro is compiled either way.
+serde = { default-features = false, features = [
+"derive",
+"std",
+], version = "1.0.229" }
+
 # The single network call, in a detached refresh child — never on the render
 # path. No async runtime: one blocking request cannot justify tokio against the
 # startup-time argument that motivated this rewrite. rustls with baked webpki
@@ -26,11 +36,11 @@ regex-lite = "0.1.9"
 # single-binary distribution story.
 ureq = { default-features = false, features = [ "rustls" ], version = "3.4" }
 
-# Untyped `Value` parsing, the deep merge, and cache/mirror serialisation. No
-# `serde` derive: every field of every payload is optional, so derives buy
-# nothing and cost the proc-macro. `preserve_order` (via indexmap) is what keeps
-# "statuses are tried in config order" true. `std` must stay listed explicitly —
-# `preserve_order` does not imply it once default features are off.
+# Untyped `Value` parsing, the deep merge, cache/mirror serialisation, and the
+# one `from_value` that turns the merged config into types. `preserve_order`
+# (via indexmap) is what keeps "statuses are tried in config order" true. `std`
+# must stay listed explicitly — `preserve_order` does not imply it once default
+# features are off.
 serde_json = { default-features = false, features = [
 "std",
 "preserve_order",

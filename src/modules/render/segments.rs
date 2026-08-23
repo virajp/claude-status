@@ -5,9 +5,9 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use crate::config::{Config, FALLBACK_BG};
+use crate::config::{Config, FALLBACK_BG, SegmentEntry};
 use crate::fmt::{gauge, human_duration, human_reset_in, human_tokens, to_fixed};
 use crate::git::GitFacts;
 use crate::payload::{MainFacts, RateLimit};
@@ -20,7 +20,7 @@ pub const KNOWN: [&str; 11] =
 
 /// Builds one line's segments, dropping every one that omits.
 pub fn build_line(
-    entries: &[Value],
+    entries: &[SegmentEntry],
     facts: &MainFacts,
     git: &GitFacts,
     config: &Config,
@@ -29,13 +29,16 @@ pub fn build_line(
     entries.iter().filter_map(|entry| build(entry, facts, git, config, spend)).collect()
 }
 
-fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spend: Option<&str>) -> Option<Segment> {
+fn build(
+    entry: &SegmentEntry,
+    facts: &MainFacts,
+    git: &GitFacts,
+    config: &Config,
+    spend: Option<&str>,
+) -> Option<Segment> {
     // An entry is a bare segment id, or an object keyed by `name` **or** `id`
-    // carrying inline styling overrides.
-    let id = match entry {
-        Value::String(id) => id.as_str(),
-        obj => obj.get("name").or_else(|| obj.get("id"))?.as_str()?,
-    };
+    // carrying inline styling overrides. Anything else names no segment.
+    let id = entry.id()?;
 
     if !KNOWN.contains(&id) {
         // Warn and omit. Never fail the render, and never touch stdout.
@@ -49,26 +52,26 @@ fn build(entry: &Value, facts: &MainFacts, git: &GitFacts, config: &Config, spen
     // at this one point rather than in each builder.
     let text = super::sanitize(&text);
 
-    // Inline override → `segments.<id>` default → hard fallback. An explicit
-    // `null` at either level falls through, as `??` made it, while `false` and
-    // `0` do not.
-    let inline = entry.as_object();
-    let style = |key: &str| {
-        let present = |v: &&Value| !v.is_null();
-        inline
-            .and_then(|o| o.get(key))
-            .filter(present)
-            .or_else(|| config.get(&format!("segments.{id}.{key}")).filter(present))
-    };
-
+    let inline = entry.overrides();
+    let configured = config.segments.get(id);
     let fallback_bg = Value::String(FALLBACK_BG.into());
     Some(Segment {
         text,
-        bg: config.color(style("bg").or(Some(&fallback_bg))),
+        bg: config.color(style(inline, "bg", configured.and_then(|s| s.bg.as_ref())).or(Some(&fallback_bg))),
         // No hard fallback for `fg`: it resolves to `defaultFg` at render time.
-        fg: config.color(style("fg").or_else(|| config.default_fg())),
-        bold: style("bold").is_some_and(truthy),
+        fg: config.color(style(inline, "fg", configured.and_then(|s| s.fg.as_ref())).or(config.default_fg.as_ref())),
+        bold: style(inline, "bold", configured.and_then(|s| s.bold.as_ref())).is_some_and(truthy),
     })
+}
+
+/// Inline override → `segments.<id>` → the caller's hard fallback.
+///
+/// An explicit `null` falls through at **both** levels, as `??` made it, while
+/// `false` and `0` do not. The two levels reject it differently and both have
+/// to: the inline entry is still a `Value`, so its `null` is filtered here,
+/// while a `null` under `segments.<id>` deserialized to `None` already.
+fn style<'a>(inline: Option<&'a Map<String, Value>>, key: &str, configured: Option<&'a Value>) -> Option<&'a Value> {
+    inline.and_then(|o| o.get(key)).filter(|v| !v.is_null()).or(configured)
 }
 
 /// JavaScript truthiness, because `bold` was coerced with `!!` — a config
@@ -99,7 +102,7 @@ fn text_for(id: &str, facts: &MainFacts, git: &GitFacts, config: &Config, spend:
         "spend" => spend.map(str::to_string),
         // Omitted only when absent — `0` renders `0s`.
         "duration" => facts.duration_ms.map(|ms| format!("{} {}", sym("duration"), human_duration(Some(ms)))),
-        "project" => config.project_name().map(|name| format!("{} {name}", sym("project"))),
+        "project" => config.project_name.as_ref().map(|name| format!("{} {name}", sym("project"))),
         "worktree" => git
             .worktree_subpath
             .as_ref()
@@ -124,7 +127,7 @@ fn model(facts: &MainFacts, config: &Config) -> String {
 ///
 /// Never omits: with no data at all it renders an empty gauge and `?/? (0%)`.
 fn context(facts: &MainFacts, config: &Config) -> String {
-    let bar = gauge(facts.ctx_pct, config.gauge_width(), config.gauge_glyph("filled"), config.gauge_glyph("empty"));
+    let bar = gauge(facts.ctx_pct, config.gauge.width, &config.gauge.filled, &config.gauge.empty);
     let pct = facts.ctx_pct.unwrap_or(0.0).round();
     format!(
         "{} {bar} {}/{} ({pct}%)",
@@ -197,6 +200,11 @@ mod tests {
         text_for(id, facts, git, &config(), None)
     }
 
+    /// One layout entry, as `Config` would have deserialized it.
+    fn entry(v: Value) -> SegmentEntry {
+        v.into()
+    }
+
     fn facts() -> MainFacts {
         MainFacts {
             now_ms: 1_774_183_440_000, // 4h36m before the five-hour reset below
@@ -222,7 +230,7 @@ mod tests {
             branch: Some("main\u{1b}[0m\u{1b}[41mPWNED".into()),
             ..Default::default()
         };
-        let segment = build(&json!("branch"), &facts(), &git, &config(), None).unwrap();
+        let segment = build(&entry(json!("branch")), &facts(), &git, &config(), None).unwrap();
         assert!(!segment.text.contains('\u{1b}'), "got {:?}", segment.text);
         assert!(segment.text.contains("PWNED"), "the text survives, only the escapes go");
     }
@@ -393,7 +401,7 @@ mod tests {
 
     #[test]
     fn an_unknown_segment_warns_and_omits() {
-        let built = build(&json!("nosuchsegment"), &facts(), &GitFacts::default(), &config(), None);
+        let built = build(&entry(json!("nosuchsegment")), &facts(), &GitFacts::default(), &config(), None);
         assert!(built.is_none());
     }
 
@@ -404,21 +412,23 @@ mod tests {
         let g = GitFacts::default();
 
         // The shipped default for `model` is blue/bold/white.
-        let default = build(&json!("model"), &f, &g, &c, None).unwrap();
+        let default = build(&entry(json!("model")), &f, &g, &c, None).unwrap();
         assert_eq!(default.bg, [69, 133, 136]);
         assert!(default.bold);
 
         // Inline wins.
-        let inline = build(&json!({ "name": "model", "bg": "red", "bold": false }), &f, &g, &c, None).unwrap();
+        let inline = build(&entry(json!({ "name": "model", "bg": "red", "bold": false })), &f, &g, &c, None).unwrap();
         assert_eq!(inline.bg, [204, 36, 29]);
         assert!(!inline.bold);
 
         // An entry may be keyed by `id` instead of `name`.
-        assert_eq!(build(&json!({ "id": "model", "bg": "red" }), &f, &g, &c, None).unwrap().bg, [204, 36, 29]);
+        assert_eq!(build(&entry(json!({ "id": "model", "bg": "red" })), &f, &g, &c, None).unwrap().bg, [204, 36, 29]);
 
         // With no `segments.<id>` entry at all, the hard fallback is blue.
-        let bare = Config::new(json!({ "palette": { "blue": [69, 133, 136] } }));
-        assert_eq!(build(&json!("cost"), &f, &g, &bare, None).unwrap().bg, [69, 133, 136]);
+        // `segments` has to be written out as empty: an absent key is the
+        // shipped table now, not nothing.
+        let bare = Config::new(json!({ "palette": { "blue": [69, 133, 136] }, "segments": {} }));
+        assert_eq!(build(&entry(json!("cost")), &f, &g, &bare, None).unwrap().bg, [69, 133, 136]);
     }
 
     #[test]
@@ -427,10 +437,10 @@ mod tests {
         let (f, g) = (facts(), GitFacts::default());
 
         // `model` defaults to bold; an inline null must not disable it.
-        let nulled = build(&json!({ "name": "model", "bold": null }), &f, &g, &c, None).unwrap();
+        let nulled = build(&entry(json!({ "name": "model", "bold": null })), &f, &g, &c, None).unwrap();
         assert!(nulled.bold, "a null override falls through to the config default");
 
-        let explicit = build(&json!({ "name": "model", "bold": false }), &f, &g, &c, None).unwrap();
+        let explicit = build(&entry(json!({ "name": "model", "bold": false })), &f, &g, &c, None).unwrap();
         assert!(!explicit.bold, "false is a value, not an absence");
     }
 
@@ -438,14 +448,14 @@ mod tests {
     fn bold_is_coerced_by_truthiness() {
         let c = config();
         let (f, g) = (facts(), GitFacts::default());
-        assert!(build(&json!({ "name": "cost", "bold": 1 }), &f, &g, &c, None).unwrap().bold);
-        assert!(!build(&json!({ "name": "cost", "bold": 0 }), &f, &g, &c, None).unwrap().bold);
-        assert!(!build(&json!({ "name": "cost", "bold": "" }), &f, &g, &c, None).unwrap().bold);
+        assert!(build(&entry(json!({ "name": "cost", "bold": 1 })), &f, &g, &c, None).unwrap().bold);
+        assert!(!build(&entry(json!({ "name": "cost", "bold": 0 })), &f, &g, &c, None).unwrap().bold);
+        assert!(!build(&entry(json!({ "name": "cost", "bold": "" })), &f, &g, &c, None).unwrap().bold);
     }
 
     #[test]
     fn a_line_drops_every_segment_that_omits() {
-        let entries = vec![json!("model"), json!("session"), json!("branch"), json!("spend")];
+        let entries = [json!("model"), json!("session"), json!("branch"), json!("spend")].map(entry);
         let built = build_line(&entries, &MainFacts::default(), &GitFacts::default(), &config(), None);
         assert_eq!(built.len(), 1, "only `model`, which never omits");
     }

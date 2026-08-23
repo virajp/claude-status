@@ -30,6 +30,30 @@ pub fn opt_arr<'a>(v: &'a Value, key: &str) -> Option<&'a Vec<Value>> {
     v.get(key)?.as_array()
 }
 
+/// Deserializes one leaf, degrading a **wrong-typed** value to `fallback`
+/// instead of failing.
+///
+/// The same rule as everything above, reached from `serde` rather than from a
+/// dotted path: every config accessor this crate used to have read its leaf
+/// with `as_str`/`as_f64`/`as_bool` and took `None` for an answer, so a
+/// mistyped value cost its own key and nothing else.
+///
+/// That property has to survive typing. `Config::new`'s whole-tree fallback is
+/// the net for a tree that is genuinely malformed — a non-object root, a
+/// truncated file — and a single mistyped scalar must not be able to reach it:
+/// it would discard the user's layer *and* the repo's together, over a typo
+/// whose honest cost is one glyph.
+///
+/// `read` is the `Value` accessor the old code used; `fallback` is what it
+/// used to `unwrap_or`.
+pub fn leaf<'de, D, T>(d: D, read: impl Fn(&Value) -> Option<T>, fallback: T) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    Ok(read(&Value::deserialize(d)?).unwrap_or(fallback))
+}
+
 /// Reads and parses a JSON file. Any failure — missing, unreadable, malformed —
 /// is `None`. Never propagates, never warns: a broken layer is a layer that
 /// does not exist.

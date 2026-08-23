@@ -31,8 +31,7 @@ fn field(value: &str) -> String {
 /// Builds the `SPEND` section, fetching as it goes.
 pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let mut out = String::new();
-    let spend_config = SpendConfig::from_config(config);
-    let lines = config.lines();
+    let spend_config = &config.spend;
     // `--debug` exists to name what is wrong, so an unresolvable `$HOME` is
     // reported here rather than silently producing an empty report.
     let Some(path) = cache::path() else {
@@ -83,8 +82,8 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     }
 
     let after = cache::read_from(&path);
-    let verdict = spend::verdict(after.as_ref(), &spend_config, &lines, config.symbol("spend"));
-    write_gates(&mut out, after.as_ref(), &spend_config, &verdict);
+    let verdict = spend::verdict(after.as_ref(), spend_config, &config.lines, config.symbol("spend"));
+    write_gates(&mut out, after.as_ref(), spend_config, &verdict);
 
     // Filtered as one value rather than inside each branch: `verdict_of`
     // returns a single line, and its arms interpolate the cached plan tag, the
@@ -92,7 +91,7 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let _ = writeln!(
         out,
         "\n  VERDICT  {}",
-        field(&verdict_of(&report, &verdict, after.as_ref(), &spend_config, config, &path)),
+        field(&verdict_of(&report, &verdict, after.as_ref(), spend_config, config, &path)),
     );
 
     out

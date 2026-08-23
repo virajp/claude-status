@@ -50,10 +50,10 @@ impl Powerline {
     /// yields an `Rgb`, and a colour cannot carry an escape.
     pub fn from_config(config: &Config) -> Self {
         Self {
-            cap: super::sanitize(config.powerline("cap")),
-            sep: super::sanitize(config.powerline("sep")),
-            sep_thin: super::sanitize(config.powerline("sepThin")),
-            thin_fg: config.color(config.get("powerline.thinFg")),
+            cap: super::sanitize(&config.powerline.cap),
+            sep: super::sanitize(&config.powerline.sep),
+            sep_thin: super::sanitize(&config.powerline.sep_thin),
+            thin_fg: config.color(config.powerline.thin_fg.as_ref()),
         }
     }
 }

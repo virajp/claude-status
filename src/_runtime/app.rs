@@ -12,9 +12,9 @@ use std::path::PathBuf;
 
 use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
-use crate::config::Config;
 use crate::config::autoseed;
 use crate::config::layers::{self, Layers};
+use crate::config::{Config, SegmentEntry};
 use crate::git::GitFacts;
 use crate::payload::MainFacts;
 use crate::render::main_bar::render_main;
@@ -62,8 +62,7 @@ fn refresh_spend() -> String {
         return String::new();
     };
     let config = layers::load(home().as_deref(), None).config;
-    let spend_config = spend::SpendConfig::from_config(&config);
-    spend::refresh::run(&path, spend_config.refresh_minutes, time::now_ms(), false);
+    spend::refresh::run(&path, config.spend.refresh_minutes, time::now_ms(), false);
     String::new()
 }
 
@@ -74,7 +73,7 @@ fn refresh_spend() -> String {
 /// The flag is read from the merged config, which at this point is the embedded
 /// and user layers — the repo layer cannot enable its own creation.
 fn maybe_seed_repo_config(layers: &Layers, root: Option<&std::path::Path>) -> Option<PathBuf> {
-    if !layers.config.auto_configure_repo() {
+    if !layers.config.auto_configure_repo {
         return None;
     }
     let repo_layer_loaded =
@@ -266,8 +265,7 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
 /// A render never fetches. When the cache is stale this spawns a detached
 /// child and returns the **cached** text immediately, without waiting.
 fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option<String> {
-    let lines = config.lines();
-    if !spend::in_layout(&lines) {
+    if !spend::in_layout(&config.lines) {
         narrate("spend: not in the layout, nothing read");
         return None;
     }
@@ -277,10 +275,9 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
         return None;
     };
 
-    let spend_config = spend::SpendConfig::from_config(config);
     let cached = spend::cache::read_from(&cache_path);
 
-    match spend::schedule::decide(cached.as_ref(), &spend_config, now_ms) {
+    match spend::schedule::decide(cached.as_ref(), &config.spend, now_ms) {
         spend::schedule::Decision::Spawn => {
             let spawned = proc::spawn_detached(&["--refresh-spend"]);
             narrate(&format!("spend: stale, refresh child spawned={spawned}"));
@@ -288,7 +285,7 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
         decision => narrate(&format!("spend: no refresh ({decision:?})")),
     }
 
-    let verdict = spend::verdict(cached.as_ref(), &spend_config, &lines, config.symbol("spend"));
+    let verdict = spend::verdict(cached.as_ref(), &config.spend, &config.lines, config.symbol("spend"));
     narrate(&format!("spend: {verdict:?}"));
     verdict.text().map(str::to_string)
 }
@@ -359,7 +356,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     }
 
     let _ = writeln!(out, "\nEFFECTIVE LAYOUT");
-    for (i, line) in config.lines().iter().enumerate() {
+    for (i, line) in config.lines.iter().enumerate() {
         let ids: Vec<String> = line.iter().map(describe_entry).map(|e| field(&e)).collect();
         let _ = writeln!(out, "  line {i}: {}", ids.join(", "));
     }
@@ -412,13 +409,10 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     out
 }
 
-fn describe_entry(entry: &serde_json::Value) -> String {
+fn describe_entry(entry: &SegmentEntry) -> String {
     match entry {
-        serde_json::Value::String(id) => id.clone(),
-        obj => {
-            let id = obj.get("name").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("<unnamed>");
-            format!("{id} (styled)")
-        }
+        SegmentEntry::Id(id) => id.clone(),
+        styled => format!("{} (styled)", styled.id().unwrap_or("<unnamed>")),
     }
 }
 

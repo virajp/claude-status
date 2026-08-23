@@ -8,9 +8,9 @@
 
 use serde_json::{Value, json};
 
-use crate::config::Config;
 use crate::config::color::Rgb;
 use crate::config::matcher::Matcher;
+use crate::config::{Config, SegmentStyle};
 use crate::fmt::{human_duration, human_tokens};
 use crate::payload;
 use crate::render::powerline::{Powerline, Segment, render};
@@ -41,10 +41,9 @@ pub struct Mark {
 /// `Config::symbol` already corrects for the main bar.
 pub fn task_mark(status: &str, config: &Config) -> Mark {
     let lowered = status.to_lowercase();
-    let statuses = config.get("subagent.statuses").and_then(Value::as_object);
 
     let mut fallback: Option<&Value> = None;
-    for def in statuses.into_iter().flat_map(|defs| defs.values()) {
+    for def in config.subagent.statuses.values() {
         // A non-object entry has no `match` either, so it lands here too.
         let Some(pattern) = def.get("match").and_then(Value::as_str).filter(|p| !p.is_empty()) else {
             fallback = Some(def);
@@ -78,11 +77,11 @@ fn mark(def: &Value, config: &Config) -> Mark {
 /// Looked up on the object rather than through a dotted path, so a type
 /// containing a `.` cannot silently read some other key.
 pub fn type_glyph<'a>(kind: &str, config: &'a Config) -> &'a str {
-    let symbols = config.get("typeSymbols");
+    let symbols = &config.type_symbols;
     let lowered = kind.to_lowercase();
     // An empty entry falls back too, as `||` made it.
-    let named = symbols.and_then(|s| s.get(&lowered)).and_then(Value::as_str).filter(|g| !g.is_empty());
-    named.or_else(|| symbols.and_then(|s| s.get("_default")).and_then(Value::as_str)).unwrap_or_default()
+    let named = symbols.get(&lowered).map(String::as_str).filter(|g| !g.is_empty());
+    named.or_else(|| symbols.get("_default").map(String::as_str)).unwrap_or_default()
 }
 
 /// The terminal width the description budget is computed from:
@@ -114,14 +113,13 @@ fn js_number(v: &Value) -> Option<f64> {
 /// of `0` is **kept** (the original used `??`, not `||`) and clamps to the
 /// floor of 12.
 ///
-/// **Divergence:** a non-numeric `descBudgetFraction` falls back to `0.45`
-/// here. In the JS it produced a `NaN` budget, and `length > NaN` is false, so
-/// the description was never truncated at all — a hand-broken config silently
-/// disabling the budget is not worth reproducing.
+/// **Divergence:** a non-numeric `descBudgetFraction` ends up at `0.45` — the
+/// config does not deserialize, so the defaults render. In the JS it produced
+/// a `NaN` budget, and `length > NaN` is false, so the description was never
+/// truncated at all — a hand-broken config silently disabling the budget is
+/// not worth reproducing.
 pub fn desc_budget(cols: f64, config: &Config) -> usize {
-    const DEFAULT_FRACTION: f64 = 0.45;
-    let fraction = config.get("subagent.descBudgetFraction").and_then(Value::as_f64).unwrap_or(DEFAULT_FRACTION);
-    let scaled = (cols * fraction).floor();
+    let scaled = (cols * config.subagent.desc_budget_fraction).floor();
     if scaled.is_nan() { 12 } else { scaled.max(12.0) as usize }
 }
 
@@ -173,8 +171,7 @@ pub struct Panel {
 
 impl Panel {
     pub fn new(payload: &Value, config: &Config, now_ms: i64, env_columns: Option<&str>) -> Self {
-        let head = config.get("subagent.segments.head");
-        let field = |name: &str| head.and_then(|h| h.get(name)).filter(present);
+        let head = &config.subagent.segments.head;
         Self {
             model: payload::model_label(payload.get("model")),
             effort: payload::effort_label(payload.get("effort")),
@@ -182,14 +179,22 @@ impl Panel {
             now_ms,
             // Only `fg` and `bold` are read here: the head's background always
             // comes from the matched status, so `segments.head.bg` is ignored.
-            head_fg: config.color(field("fg").or_else(|| config.default_fg())),
-            head_bold: field("bold").is_some_and(truthy),
+            head_fg: config.color(set(&head.fg).or(config.default_fg.as_ref())),
+            head_bold: set(&head.bold).is_some_and(truthy),
         }
     }
 }
 
 /// A styling value counts as set only when it is neither `null` nor `""` — the
-/// original reached for each with `||`, so an empty string falls back.
+/// original reached for each with `||`, so an empty string falls back. A
+/// `null` is already `None` once deserialized; the empty string is not, which
+/// is what this is still here for.
+fn set(v: &Option<Value>) -> Option<&Value> {
+    v.as_ref().filter(|v| !v.is_null() && v.as_str() != Some(""))
+}
+
+/// The same rule for a value read straight off a payload, where a `null` still
+/// arrives as itself.
 fn present(v: &&Value) -> bool {
     !v.is_null() && v.as_str() != Some("")
 }
@@ -197,14 +202,12 @@ fn present(v: &&Value) -> bool {
 /// One subagent segment's styling: `subagent.segments.<key>` over the hard
 /// per-segment fallback. `fg` resolves to `defaultFg` when unset, as it does
 /// for the main bar.
-fn style(key: &str, fallback_bg: &str, config: &Config) -> (Rgb, Rgb, bool) {
-    let seg = config.get(&format!("subagent.segments.{key}"));
-    let field = |name: &str| seg.and_then(|s| s.get(name)).filter(present);
+fn style(seg: &SegmentStyle, fallback_bg: &str, config: &Config) -> (Rgb, Rgb, bool) {
     let fallback = Value::String(fallback_bg.to_string());
     (
-        config.color(field("bg").or(Some(&fallback))),
-        config.color(field("fg").or_else(|| config.default_fg())),
-        field("bold").is_some_and(truthy),
+        config.color(set(&seg.bg).or(Some(&fallback))),
+        config.color(set(&seg.fg).or(config.default_fg.as_ref())),
+        set(&seg.bold).is_some_and(truthy),
     )
 }
 
@@ -230,7 +233,7 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
     // one; the reference implementation has none, and the type glyph already
     // carries what the fallback would have shown.
     if let Some(name) = task.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) {
-        let (bg, fg, bold) = style("name", "orange", config);
+        let (bg, fg, bold) = style(&config.subagent.segments.name, "orange", config);
         segments.push(Segment { text: format!("{} {name}", sym("agent")), bg, fg, bold });
     }
 
@@ -240,12 +243,12 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
     let effort = payload::effort_label(task.get("effort")).or_else(|| panel.effort.clone());
     let parts: Vec<String> = [model, effort.map(|e| format!("[{e}]"))].into_iter().flatten().collect();
     if !parts.is_empty() {
-        let (bg, fg, bold) = style("model", "blue", config);
+        let (bg, fg, bold) = style(&config.subagent.segments.model, "blue", config);
         segments.push(Segment { text: format!("{} {}", sym("model"), parts.join(" ")), bg, fg, bold });
     }
 
     if let Some(desc) = description(task) {
-        let (bg, fg, bold) = style("desc", "bg3", config);
+        let (bg, fg, bold) = style(&config.subagent.segments.desc, "bg3", config);
         // Sanitized *before* truncating, not just by the sweep below: the
         // budget is a width, and measuring it against characters that are
         // about to be removed would leave the row short of it.
@@ -254,14 +257,14 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
 
     // tokens — present-but-not-null, so an honest `0` renders `0`.
     if let Some(count) = task.get("tokenCount").filter(present) {
-        let (bg, fg, bold) = style("tokens", "aqua", config);
+        let (bg, fg, bold) = style(&config.subagent.segments.tokens, "aqua", config);
         segments.push(Segment { text: format!("{} {}", sym("tokens"), human_tokens(js_number(count))), bg, fg, bold });
     }
 
     // duration — skipped when `startTime` does not parse **or is falsy**, and
     // allowed to go negative for a future start rather than being clamped.
     if let Some(start) = task.get("startTime").and_then(to_epoch_ms).filter(|ms| *ms != 0) {
-        let (bg, fg, bold) = style("duration", "purple", config);
+        let (bg, fg, bold) = style(&config.subagent.segments.duration, "purple", config);
         let elapsed = panel.now_ms.saturating_sub(start) as f64;
         segments.push(Segment { text: format!("{} {}", sym("duration"), human_duration(Some(elapsed))), bg, fg, bold });
     }
@@ -413,8 +416,10 @@ mod tests {
     }
 
     #[test]
-    fn an_absent_statuses_block_still_marks() {
-        let config = Config::new(json!({ "palette": { "bg3": [102, 92, 84] } }));
+    fn an_empty_statuses_block_still_marks() {
+        // Written out as `{}` rather than left absent, which is now the four
+        // shipped buckets — `running` among them.
+        let config = cfg(json!({}));
         assert_eq!(task_mark("running", &config), Mark { symbol: String::new(), bg: BG3 });
     }
 
@@ -564,7 +569,13 @@ mod tests {
 
     #[test]
     fn the_head_keeps_its_space_even_when_the_status_symbol_is_empty() {
-        let config = cfg(json!({ "unmatched": { "match": "nothingalike", "symbol": "X" } }));
+        // Both halves have to be written out empty: no bucket matches, and no
+        // `typeSymbols` entry is configured for `task` either.
+        let config = Config::new(json!({
+            "palette": { "bg3": [102, 92, 84] },
+            "typeSymbols": {},
+            "subagent": { "statuses": { "unmatched": { "match": "nothingalike", "symbol": "X" } } },
+        }));
         let row = texts(&json!({ "id": 1, "type": "task" }), &json!({}), &config);
         assert_eq!(row[0], " ", "an empty symbol, the unconditional space, and no glyph configured");
     }

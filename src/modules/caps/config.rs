@@ -13,6 +13,9 @@
 //! setting it already controls, and a caps key that behaved differently from
 //! its neighbours was a surprise of its own.
 
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+
 use crate::config::Config;
 
 /// The shipped caps, as percentages. The embedded layer carries these too — the
@@ -32,25 +35,39 @@ pub struct Caps {
     pub spend: u32,
 }
 
-/// Reads the `caps` block out of the merged config.
-///
-/// Every key falls back to its shipped default independently, so a config
-/// setting only `caps.context` keeps the shipped values for the other three.
-/// A negative or absurd number is ignored rather than clamped: `as u32` on a
-/// negative float is a trap, and a cap of `-1` is a typo, not an intent.
-pub fn resolve(config: &Config) -> Caps {
-    Caps {
-        context: cap(config, "caps.context", DEFAULTS.context),
-        five_hour: cap(config, "caps.fiveHour", DEFAULTS.five_hour),
-        seven_day: cap(config, "caps.sevenDay", DEFAULTS.seven_day),
-        spend: cap(config, "caps.spend", DEFAULTS.spend),
+impl Default for Caps {
+    fn default() -> Self {
+        DEFAULTS
     }
 }
 
-fn cap(config: &Config, key: &str, fallback: u32) -> u32 {
-    config
-        .get(key)
-        .and_then(serde_json::Value::as_f64)
+impl<'de> Deserialize<'de> for Caps {
+    /// Read by hand rather than derived, because every key falls back
+    /// **independently**: a config setting only `caps.context` keeps the
+    /// shipped values for the other three, and a `caps` block that is not an
+    /// object behaves like one that was never written rather than costing the
+    /// whole config.
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(d)?;
+        Ok(Caps {
+            context: cap(&v, "context", DEFAULTS.context),
+            five_hour: cap(&v, "fiveHour", DEFAULTS.five_hour),
+            seven_day: cap(&v, "sevenDay", DEFAULTS.seven_day),
+            spend: cap(&v, "spend", DEFAULTS.spend),
+        })
+    }
+}
+
+/// Reads the `caps` block out of the merged config.
+pub fn resolve(config: &Config) -> Caps {
+    config.caps
+}
+
+/// A negative or absurd number is ignored rather than clamped: `as u32` on a
+/// negative float is a trap, and a cap of `-1` is a typo, not an intent.
+fn cap(caps: &Value, key: &str, fallback: u32) -> u32 {
+    caps.get(key)
+        .and_then(Value::as_f64)
         .filter(|v| v.is_finite() && *v >= 0.0 && *v <= 1000.0)
         .map_or(fallback, |v| v as u32)
 }

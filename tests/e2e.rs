@@ -553,8 +553,10 @@ fn the_refresh_child_is_recognised_and_silent() {
 
 #[test]
 fn a_hostile_config_still_puts_a_usable_line_on_stdout() {
-    // Every value here is the wrong type or an absurd size. The bar must not
-    // go blank and must not hang.
+    // Every value here is an absurd size, an empty string where a glyph
+    // belongs, or a spec that cannot resolve — all of them *deserializable*,
+    // so each one is coerced on its own rather than costing the layer. The bar
+    // must not go blank and must not hang.
     let hostile = r#"{
         "gauge": { "width": 1000000000000, "filled": "", "empty": "" },
         "worktreePattern": "(unclosed",
@@ -568,6 +570,29 @@ fn a_hostile_config_still_puts_a_usable_line_on_stdout() {
 
     assert!(out.status.success(), "exit code {:?}", out.status.code());
     assert!(!stdout(&out).is_empty(), "the bar must never go blank");
+    // The uncompilable pattern is reported where a report belongs, and the
+    // layer is otherwise honoured — the three-segment layout still applies.
+    assert!(stderr(&out).contains("worktreePattern"), "stderr: {}", stderr(&out));
+    assert!(!stdout(&out).contains("worktreePattern"), "and never on the bar");
+    assert!(stdout(&out).contains("Opus 4.8"));
+}
+
+#[test]
+fn a_config_that_will_not_deserialize_renders_the_defaults_and_says_so_once() {
+    // A scalar where the `gauge` block belongs — a structural mistake, not a
+    // mistyped leaf, so nothing in this layer can be read. The shipped
+    // defaults render in its place, including the layout this layer replaced.
+    let home = Home::new(r#"{ "projectName": "e2e-fixture", "gauge": 5, "lines": [["cost"]] }"#);
+    let out = run(&home, &["--statusline"], FIXTURE, &[]);
+
+    assert!(out.status.success(), "exit code {:?}", out.status.code());
+    let bar = stdout(&out);
+    assert!(bar.contains("Opus 4.8"), "a full bar, from the defaults: {}", bar.escape_debug());
+    assert!(bar.contains('\u{1b}'), "and it is still coloured");
+    assert!(!bar.contains("e2e-fixture"), "the layer is ignored whole, not key by key");
+
+    let complaints = stderr(&out).lines().filter(|l| l.contains("could not be read")).count();
+    assert_eq!(complaints, 1, "one diagnostic, not one per key read: {}", stderr(&out));
 }
 
 #[test]

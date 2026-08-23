@@ -4,9 +4,19 @@
 //! (`#rgb` or `#rrggbb`), or a literal `[r, g, b]` triple. Anything
 //! unresolvable falls back to `palette.white`, else to Gruvbox white.
 
-use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+
+use serde_json::Value;
 
 pub type Rgb = [u8; 3];
+
+/// A named colour table. `BTreeMap` rather than `serde_json::Map` because the
+/// palette is looked up by key and never walked in order, so ordering it by
+/// name is what makes `--debug` diffable.
+///
+/// The entries stay [`Value`]: an unresolvable one falls back to white rather
+/// than costing the config.
+pub type Palette = BTreeMap<String, Value>;
 
 /// Gruvbox `white`, used when even `palette.white` cannot be resolved.
 pub const FALLBACK: Rgb = [251, 241, 199];
@@ -16,11 +26,11 @@ pub const FALLBACK: Rgb = [251, 241, 199];
 /// **Deviation from the old implementation:** a malformed hex string such as
 /// `"#12345g"` falls back to white. The JS parsed it leniently and rendered a
 /// wrong colour, which is harder to notice than a wrong-but-consistent one.
-pub fn resolve(spec: Option<&Value>, palette: Option<&Map<String, Value>>) -> Rgb {
+pub fn resolve(spec: Option<&Value>, palette: Option<&Palette>) -> Rgb {
     direct(spec, palette).unwrap_or_else(|| fallback(palette))
 }
 
-fn direct(spec: Option<&Value>, palette: Option<&Map<String, Value>>) -> Option<Rgb> {
+fn direct(spec: Option<&Value>, palette: Option<&Palette>) -> Option<Rgb> {
     match spec? {
         // The palette is consulted *first*, so a palette that defines a key
         // spelled like a hex string still wins — matching the old resolution
@@ -34,7 +44,7 @@ fn direct(spec: Option<&Value>, palette: Option<&Map<String, Value>>) -> Option<
     }
 }
 
-fn fallback(palette: Option<&Map<String, Value>>) -> Rgb {
+fn fallback(palette: Option<&Palette>) -> Rgb {
     palette.and_then(|p| p.get("white")).and_then(triple).unwrap_or(FALLBACK)
 }
 
@@ -82,11 +92,12 @@ mod tests {
 
     use super::*;
 
-    fn palette() -> Map<String, Value> {
-        json!({ "blue": [69, 133, 136], "white": [251, 241, 199], "broken": "not-a-triple" })
-            .as_object()
-            .unwrap()
-            .clone()
+    fn palette() -> Palette {
+        Palette::from_iter([
+            ("blue".to_string(), json!([69, 133, 136])),
+            ("white".to_string(), json!([251, 241, 199])),
+            ("broken".to_string(), json!("not-a-triple")),
+        ])
     }
 
     fn r(spec: Value) -> Rgb {
@@ -136,7 +147,7 @@ mod tests {
     #[test]
     fn without_a_usable_palette_the_fallback_is_gruvbox_white() {
         assert_eq!(resolve(Some(&json!("blue")), None), FALLBACK);
-        let empty = Map::new();
+        let empty = Palette::new();
         assert_eq!(resolve(Some(&json!("blue")), Some(&empty)), FALLBACK);
     }
 

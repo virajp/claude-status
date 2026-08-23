@@ -79,6 +79,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::config::SegmentEntry;
 
     /// Writes a config layer under `<base>/.config/` and returns `base`.
     fn seed(base: &Path, layer: &str) -> PathBuf {
@@ -93,10 +94,10 @@ mod tests {
         let layers = load(None, None);
         // `projectName` is deliberately NOT embedded — it is repo-level only —
         // so the probe into the embedded layer is a key that ships in it.
-        assert_eq!(layers.config.project_name(), None, "the defaults carry no project name");
-        assert_eq!(layers.config.get("defaultFg").and_then(Value::as_str), Some("white"));
-        assert_eq!(layers.config.gauge_width(), 10);
-        assert_eq!(layers.config.lines().len(), 2, "a cold start still has a layout");
+        assert_eq!(layers.config.project_name, None, "the defaults carry no project name");
+        assert_eq!(layers.config.default_fg, Some(json!("white")));
+        assert_eq!(layers.config.gauge.width, 10);
+        assert_eq!(layers.config.lines.len(), 2, "a cold start still has a layout");
         assert!(layers.sources.iter().filter(|s| s.loaded).count() == 1);
     }
 
@@ -107,9 +108,9 @@ mod tests {
         let repo = seed(&dir.path().join("repo"), r#"{ "projectName": "from-repo" }"#);
 
         let layers = load(Some(&home), Some(&repo));
-        assert_eq!(layers.config.project_name(), Some("from-repo"));
-        assert_eq!(layers.config.get("defaultFg").and_then(Value::as_str), Some("aqua"), "user still wins over embedded");
-        assert_eq!(layers.config.gauge_width(), 10, "untouched keys keep the embedded value");
+        assert_eq!(layers.config.project_name.as_deref(), Some("from-repo"));
+        assert_eq!(layers.config.default_fg, Some(json!("aqua")), "user still wins over embedded");
+        assert_eq!(layers.config.gauge.width, 10, "untouched keys keep the embedded value");
         assert!(layers.sources.iter().all(|s| s.loaded));
     }
 
@@ -119,11 +120,7 @@ mod tests {
         let home = seed(&dir.path().join("home"), "{ this is not json");
 
         let layers = load(Some(&home), None);
-        assert_eq!(
-            layers.config.get("defaultFg").and_then(Value::as_str),
-            Some("white"),
-            "the render succeeds on the embedded layer"
-        );
+        assert_eq!(layers.config.default_fg, Some(json!("white")), "the render succeeds on the embedded layer");
         let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
         assert!(!user.loaded, "the layer is reported as not loaded");
         assert!(user.path.is_some(), "but the path it looked at is still reported");
@@ -136,8 +133,8 @@ mod tests {
             let home = seed(dir.path(), body);
 
             let layers = load(Some(&home), None);
-            assert_eq!(layers.config.get("defaultFg").and_then(Value::as_str), Some("white"), "{body} blanked the bar");
-            assert_eq!(layers.config.lines().len(), 2);
+            assert_eq!(layers.config.default_fg, Some(json!("white")), "{body} blanked the bar");
+            assert_eq!(layers.config.lines.len(), 2);
             let user = layers.sources.iter().find(|s| s.label == "user").unwrap();
             assert!(!user.loaded, "{body} should not count as a loaded layer");
         }
@@ -149,7 +146,7 @@ mod tests {
         let repo = seed(dir.path(), r#"{ "lines": [["model"]] }"#);
 
         let layers = load(None, Some(&repo));
-        assert_eq!(layers.config.lines(), vec![vec![json!("model")]]);
+        assert_eq!(layers.config.lines, vec![vec![SegmentEntry::Id("model".into())]]);
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub fn render_main(facts: &MainFacts, git: &GitFacts, config: &Config, spend: Op
     let powerline = Powerline::from_config(config);
 
     config
-        .lines()
+        .lines
         .iter()
         .filter_map(|entries| {
             let segments = build_line(entries, facts, git, config, spend);
@@ -69,8 +69,10 @@ mod tests {
     }
 
     #[test]
-    fn an_absent_layout_renders_nothing_rather_than_failing() {
-        let config = Config::new(json!({}));
+    fn an_empty_layout_renders_nothing_rather_than_failing() {
+        // Written out as `[]`, not left absent: an absent `lines` is the
+        // shipped layout now, which is the whole point of the typed defaults.
+        let config = Config::new(json!({ "lines": [] }));
         assert_eq!(render_main(&MainFacts::default(), &GitFacts::default(), &config, None), "");
     }
 
