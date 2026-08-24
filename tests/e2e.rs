@@ -2297,3 +2297,177 @@ fn a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report() {
     assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged: {diagnostics}");
     assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged: {diagnostics}");
 }
+
+/// **Criterion 4.** A typo is reported under the layer that contains it — and
+/// the bar renders exactly as it did before the typo was introduced.
+///
+/// Both halves matter, and the second is the one the plan's step 4 was a
+/// hazard to. A strict deserialize on the render path would make `powerlin`
+/// blank the whole `powerline` block, drawing a bar with no separators: the
+/// user would trade a silent no-op for a visibly broken status line, which is
+/// worse than the problem. So the two renders are compared byte for byte.
+#[test]
+fn a_typo_is_reported_under_its_layer_and_changes_nothing_about_the_bar() {
+    let clean = Home::new(&safe_config());
+    let typo = Home::new(
+        r#"{ "projectName": "e2e-fixture", "spend": { "refreshMinutes": 0, "show": "never" },
+             "powerlin": { "sep": ">" } }"#,
+    );
+
+    assert_eq!(
+        stdout(&run(&typo, &["--statusline"], FIXTURE, &[])),
+        stdout(&run(&clean, &["--statusline"], FIXTURE, &[])),
+        "a key the binary does not know changed the bar",
+    );
+
+    let report = stdout(&run(&typo, &["--debug"], "", &[]));
+    let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
+    let line = layers
+        .lines()
+        .find(|l| l.contains("powerlin`"))
+        .unwrap_or_else(|| panic!("--debug never named the typo:\n{layers}"));
+    assert!(line.contains('\u{26a0}'), "a typo in a closed block is a warning: {line:?}");
+    assert!(line.contains("did you mean `powerline`?"), "and it says what was probably meant: {line:?}");
+
+    // Under the **user** layer, not floating at the end of the section: the
+    // answer to "why is this doing nothing" is which of three files it is in.
+    let user_at = layers.lines().position(|l| l.starts_with("  user")).expect("a user row");
+    let repo_at = layers.lines().position(|l| l.starts_with("  repo")).expect("a repo row");
+    let finding_at = layers.lines().position(|l| l.contains("powerlin`")).expect("the finding");
+    assert!(user_at < finding_at && finding_at < repo_at, "the finding is not under its layer:\n{layers}");
+}
+
+/// **Criterion 5.**
+#[test]
+fn debug_reports_what_a_zero_gauge_width_became() {
+    let home = Home::new(r#"{ "spend": { "refreshMinutes": 0, "show": "never" }, "gauge": { "width": 0 } }"#);
+
+    let report = stdout(&run(&home, &["--debug"], "", &[]));
+    let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
+    let line = layers
+        .lines()
+        .find(|l| l.contains("gauge.width"))
+        .unwrap_or_else(|| panic!("--debug never reported the coercion:\n{layers}"));
+    assert!(line.contains("0 \u{2192} 10"), "it says what the value became: {line:?}");
+    assert!(!line.contains('\u{26a0}'), "a coercion is a note, not a warning: {line:?}");
+
+    // And the bar really is ten wide, which is what the note claims.
+    let bar = stdout(&run(&home, &["--statusline"], FIXTURE, &[]));
+    let cells = bar.chars().filter(|c| *c == '\u{25b0}' || *c == '\u{25b1}').count();
+    assert_eq!(cells, 10, "the note described a coercion that did not happen: {}", bar.escape_debug());
+}
+
+/// **Criterion 6, asserted positively.**
+///
+/// "An unknown key in `palette` is not reported as an error" passes with
+/// nothing written at all — `palette` is an open map, so no key in it *can* be
+/// unknown. The claim worth testing is the one a user would notice: the key
+/// appears, under its layer, as a note rather than a warning.
+#[test]
+fn an_unused_palette_entry_is_a_note_under_its_layer_and_never_an_error() {
+    let home =
+        Home::new(r#"{ "spend": { "refreshMinutes": 0, "show": "never" }, "palette": { "nobodys": [1, 2, 3] } }"#);
+
+    let out = run(&home, &["--debug"], "", &[]);
+    assert!(out.status.success(), "a palette key made --debug fail: {:?}", out.status.code());
+    let report = stdout(&out);
+    let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
+
+    let line = layers
+        .lines()
+        .find(|l| l.contains("palette.nobodys"))
+        .unwrap_or_else(|| panic!("--debug never mentioned the unused palette key:\n{layers}"));
+    assert!(line.contains('\u{b7}'), "an open-map key is a note: {line:?}");
+    assert!(!line.contains('\u{26a0}'), "an open-map key must never warn — it is legal: {line:?}");
+    assert!(line.contains("is not a key this binary reads"), "{line:?}");
+
+    // A palette entry something names is not reported at all.
+    let used = Home::new(
+        r#"{ "spend": { "refreshMinutes": 0, "show": "never" },
+             "palette": { "mine": [1, 2, 3] }, "defaultFg": "mine" }"#,
+    );
+    let report = stdout(&run(&used, &["--debug"], "", &[]));
+    assert!(!report.contains("palette.mine"), "a colour something uses was reported as unused:\n{report}");
+}
+
+/// **Criterion 7.** Findings change nothing on stdout and nothing about the
+/// exit code, in every mode.
+#[test]
+fn findings_change_neither_the_render_nor_the_exit_code() {
+    let clean = Home::new(&safe_config());
+    // One config carrying all three kinds at once.
+    let messy = Home::new(
+        r#"{ "projectName": "e2e-fixture", "spend": { "refreshMinutes": 0, "show": "never" },
+             "powerlin": { "sep": ">" },
+             "symbols": { "contxt": "x" },
+             "palette": { "nobodys": [1, 2, 3] },
+             "segments": { "model": { "bge": "red" } },
+             "worktreePattern": "[" }"#,
+    );
+
+    for (args, stdin) in [(["--statusline"], FIXTURE), (["--subagent"], SUBAGENT_FIXTURE)] {
+        let dirty = run(&messy, &args, stdin, &[]);
+        let tidy = run(&clean, &args, stdin, &[]);
+        assert!(dirty.status.success(), "{args:?} exited {:?}", dirty.status.code());
+        assert_eq!(stdout(&dirty), stdout(&tidy), "{args:?} rendered differently");
+    }
+
+    let report = run(&messy, &["--debug"], "", &[]);
+    assert!(report.status.success(), "--debug exited {:?} over advisory findings", report.status.code());
+
+    // Every finding is present — a validator that stopped at the first would
+    // send the user round the loop once per typo.
+    let out = stdout(&report);
+    let layers = out.split("\nCLAUDE WIRING").next().expect("split always yields one");
+    for needle in ["powerlin`", "symbols.contxt", "palette.nobodys", "segments.model.bge", "worktreePattern"] {
+        assert!(layers.contains(needle), "{needle} is missing from:\n{layers}");
+    }
+}
+
+/// A finding's key names cannot forge a row or a section header.
+///
+/// The sibling of `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report`,
+/// for the second thing that now prints user-controlled text into this section.
+/// A JSON key may contain a newline, and `--debug` is read precisely by someone
+/// trying to work out what is wrong.
+#[test]
+fn a_findings_key_name_cannot_forge_lines_in_the_debug_report() {
+    let home = Home::new(
+        &serde_json::json!({
+            "spend": { "refreshMinutes": 0, "show": "never" },
+            "powerlin\n  VERDICT  everything is fine": 1,
+            "symbols": { "contxt\nCLAUDE WIRING (~/.claude/settings.json)\n  statusLine: FORGED": "x" },
+        })
+        .to_string(),
+    );
+
+    let report = stdout(&run(&home, &["--debug"], "", &[]));
+    let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
+
+    let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
+    assert_eq!(starts_with("CLAUDE WIRING"), 1, "a section header was forged:\n{diagnostics}");
+    assert_eq!(starts_with("VERDICT"), 1, "a VERDICT line was forged:\n{diagnostics}");
+    assert!(diagnostics.contains("FORGED"), "the key is still reported:\n{diagnostics}");
+}
+
+/// A correctly written config puts nothing in the section.
+///
+/// The counterpart to every test above. A validator that said something about
+/// every file would be noise, and noise in a diagnostic is indistinguishable
+/// from no diagnostic at all.
+#[test]
+fn a_config_the_binary_understands_adds_no_findings_to_the_report() {
+    for config in [
+        safe_config(),
+        // Including the `$schema` pointer `--configure` writes into every file.
+        r#"{ "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
+             "spend": { "refreshMinutes": 0, "show": "never" } }"#
+            .to_string(),
+    ] {
+        let home = Home::new(&config);
+        let report = stdout(&run(&home, &["--debug"], "", &[]));
+        let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
+        assert!(!layers.contains('\u{26a0}'), "a clean config produced a warning:\n{layers}");
+        assert!(!layers.contains('\u{b7}'), "a clean config produced a note:\n{layers}");
+    }
+}

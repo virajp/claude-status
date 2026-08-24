@@ -29,12 +29,25 @@ clippy and CI did not, and the first release failed on it.
 mise run code:test         # the suite — cargo test, tsc, tsup, node --test
 mise run code:lint         # clippy, -D warnings
 mise run code:format       # dprint
+mise run code:schema       # regenerate schemas/claude-status.schema.json
 mise run code:sec          # gitleaks + grype
 mise run code:toolchain    # dev and CI agree on the shared tools
 mise run build:statusline  # the bar
 mise run build:installer   # the npm package, staged into target/npm/
 mise run build:all         # both of the above, in order
 ```
+
+`code:schema` regenerates `schemas/claude-status.schema.json` from the Rust
+config types. **Run it whenever you touch a config type** — add a field, change
+a bound, edit one of the `#[schemars(description = …)]` strings — and commit the
+result. A pre-commit hook and a test both run `mise run code:schema --check`, so
+a stale schema fails the commit and fails CI rather than shipping a file that
+describes a config the binary no longer reads.
+
+It builds behind `--features schema`, which is off by default: `schemars` is an
+optional dependency and the released binary carries none of it. That is also why
+`code:test` and `code:lint` each run a second pass with the feature on —
+otherwise nothing would ever compile the generator.
 
 `build:statusline` builds every published target and smoke-tests the host slice
 — the one this machine can actually execute. Pass `--target <triple>` to build

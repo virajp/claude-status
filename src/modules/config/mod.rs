@@ -31,6 +31,11 @@ pub mod color;
 pub mod defaults;
 pub mod layers;
 pub mod matcher;
+/// Author-time only — see the module note. `cargo build` without
+/// `--features schema` compiles neither this nor `schemars`.
+#[cfg(feature = "schema")]
+pub mod schema;
+pub mod validate;
 pub mod write;
 
 use std::collections::BTreeMap;
@@ -70,44 +75,76 @@ const DEFAULT_DESC_BUDGET_FRACTION: f64 = 0.45;
 /// result. Nothing serialises a whole `Config` to a file — that would be the
 /// full-copy seeding this cycle removed.
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+// `deny_unknown_fields` in the **schemars** namespace, never serde's. It is
+// what puts `additionalProperties: false` in the generated schema; the same
+// attribute under `serde` would make one mistyped key discard the whole config
+// (see [`Config::new`]), which is the outcome §1's third invariant forbids.
+#[cfg_attr(feature = "schema", schemars(rename = "claude-status config", deny_unknown_fields))]
+#[cfg_attr(feature = "schema", schemars(description = "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --debug. Nothing in the binary ever writes either file."))]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
     /// Thresholds the `--caps-hook` actuator measures usage against. Typed by
     /// [`crate::caps`], which owns both the shape and the per-key fallback.
+    #[cfg_attr(feature = "schema", schemars(description = "Thresholds the `--caps-hook` PostToolUse actuator measures usage against, as percentages. When one is exceeded the hook injects a directive telling the agent to hand off and stop, once per escalation. Resolved through all three config layers like any other key, so a repo-level file overrides your user one outright — there is no tighten-only clamp. A key that is absent, negative, non-numeric or above 1000 falls back to its shipped default; `0` is a real cap meaning \"breach on any usage at all\"."))]
     pub caps: Caps,
     /// The repo-level display name. Never shipped in the defaults — it is a
     /// per-repo key — so this is the one field whose default is `None`.
+    ///
+    /// Schematised as a bare `string`: the `Option` models "the key is absent",
+    /// which the schema already says by leaving it out of `required`. Emitting
+    /// `["string", "null"]` would additionally invite an explicit `null`,
+    /// which `project_name` reads as absent rather than as a name.
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Project display name shown in the `project` segment (with the `symbols.project` glyph before it). **Repo-level only** — it belongs in `<repo-root>/.config/claude-status.json` and is deliberately absent from the shipped defaults, so a repo that has not set one omits the segment rather than inheriting a name from the user layer. When unset, the segment is omitted."))]
     #[serde(deserialize_with = "project_name")]
     pub project_name: Option<String>,
+    #[cfg_attr(feature = "schema", schemars(with = "std::collections::BTreeMap<String, schema::RgbTriple>"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Named colours as 24-bit RGB triples. Referenced by name anywhere a colour is expected."))]
     #[serde(deserialize_with = "palette")]
     pub palette: Palette,
+    #[cfg_attr(feature = "schema", schemars(description = "Powerline divider glyphs (require a Nerd Font)."))]
     #[serde(deserialize_with = "powerline_block")]
     pub powerline: PowerlineConfig,
     /// The foreground for a segment that sets no `fg` of its own. A [`Value`]
     /// because it is a colour spec, resolved by [`color::resolve`].
+    #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Foreground colour for segments that don't set their own `fg`."))]
     pub default_fg: Option<Value>,
+    #[cfg_attr(feature = "schema", schemars(description = "The fixed-width meter used by the `context` segment."))]
     #[serde(deserialize_with = "gauge_block")]
     pub gauge: Gauge,
     /// The raw `worktreePattern`. It is compiled — and can fail to compile —
     /// in [`Config::worktree_matcher`], not here.
+    #[cfg_attr(feature = "schema", schemars(description = "Case-insensitive regex matched against path components to detect a git worktree checkout; the subpath after the matched component feeds the `worktree` segment."))]
     #[serde(deserialize_with = "worktree_pattern")]
     pub worktree_pattern: String,
     /// An open map: the keys are the glyph names the segment builders ask for.
+    #[cfg_attr(feature = "schema", schemars(description = "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, project, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens."))]
     #[serde(deserialize_with = "glyph_table")]
     pub symbols: BTreeMap<String, String>,
     /// Owned by [`crate::spend`], for the same reason `caps` is owned by
     /// [`crate::caps`]: the module that reads a block should own its shape.
+    #[cfg_attr(feature = "schema", schemars(description = "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches."))]
     #[serde(deserialize_with = "spend_block")]
     pub spend: SpendConfig,
     /// An open map keyed by a task's `type`, plus the `_default` entry.
+    #[cfg_attr(feature = "schema", schemars(description = "Subagent `type` (lower-cased) -> glyph. `_default` is the fallback for unknown types."))]
     #[serde(deserialize_with = "glyph_table")]
     pub type_symbols: BTreeMap<String, String>,
     /// An open map: the keys are segment ids, and a user may style a segment
     /// this build does not know about.
+    #[cfg_attr(feature = "schema", schemars(description = "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."))]
     #[serde(deserialize_with = "style_table")]
     pub segments: BTreeMap<String, SegmentStyle>,
+    /// [`SegmentEntry`] has no [`Deserialize`] at all — it is built through
+    /// [`From<Value>`], which cannot fail — so there is nothing for a derive to
+    /// read the shape off. [`schema::SegmentEntrySchema`] carries it instead.
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<Vec<schema::SegmentEntrySchema>>"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Ordered list of rows; each row is an ordered list of segment entries. A row that resolves to no visible segments is dropped."))]
     #[serde(deserialize_with = "lines")]
     pub lines: Vec<Vec<SegmentEntry>>,
+    #[cfg_attr(feature = "schema", schemars(description = "Configuration for the subagent panel surface."))]
     #[serde(deserialize_with = "subagent_block")]
     pub subagent: SubagentConfig,
 }
@@ -210,6 +247,13 @@ impl Default for Config {
 
 /// The row's own glyphs. Closed in the schema, and closed here.
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+// `description = ""` suppresses the doc comment above: schemars falls back to
+// `#[doc]` for a description, and this type's prose explains a *deserializer*
+// to a Rust reader. It is not what belongs in an editor's hover for someone
+// writing JSON — that text lives on `Config::powerline`, which is where the
+// schema puts it. The same suppression appears on every inlined block below.
+#[cfg_attr(feature = "schema", schemars(inline, deny_unknown_fields, description = ""))]
 #[serde(default, rename_all = "camelCase")]
 pub struct PowerlineConfig {
     /// Absence and a wrong type land in **different** places, and both are the
@@ -217,14 +261,19 @@ pub struct PowerlineConfig {
     /// embedded layer always carries one, while a `cap` that is not a string
     /// renders `""` — `powerline()` read it with `as_str().unwrap_or_default()`
     /// and a seamless bar is what that produced.
+    #[cfg_attr(feature = "schema", schemars(description = "Rounded left cap that opens each line."))]
     #[serde(deserialize_with = "separator")]
     pub cap: String,
+    #[cfg_attr(feature = "schema", schemars(description = "Right-fill triangle between differently-coloured segments."))]
     #[serde(deserialize_with = "separator")]
     pub sep: String,
+    #[cfg_attr(feature = "schema", schemars(description = "Thin divider used when two neighbours share a background."))]
     #[serde(deserialize_with = "separator")]
     pub sep_thin: String,
     /// The seam colour between two same-background segments. A colour spec,
     /// so a [`Value`].
+    #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Foreground colour of the thin divider."))]
     pub thin_fg: Option<Value>,
 }
 
@@ -254,12 +303,26 @@ impl PowerlineConfig {
 
 /// The fixed-width meter the `context` segment draws.
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(inline, deny_unknown_fields, description = ""))]
 #[serde(default)]
 pub struct Gauge {
+    /// `minimum: 1`, not the `0` a [`usize`] would give: `0` is accepted and
+    /// **coerced to ten** by [`gauge_width`], so a schema permitting it would
+    /// promise a zero-wide gauge the renderer never draws.
+    ///
+    /// `maximum` is [`MAX_GAUGE_WIDTH`] by the identical argument: anything
+    /// past it is clamped, so a schema without the ceiling promises a width the
+    /// renderer will not honour. Every other bounded number here carries both
+    /// ends.
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = MAX_GAUGE_WIDTH)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Number of blocks in the gauge."))]
     #[serde(deserialize_with = "gauge_width")]
     pub width: usize,
+    #[cfg_attr(feature = "schema", schemars(description = "Glyph for filled blocks."))]
     #[serde(deserialize_with = "filled_glyph")]
     pub filled: String,
+    #[cfg_attr(feature = "schema", schemars(description = "Glyph for empty blocks."))]
     #[serde(deserialize_with = "empty_glyph")]
     pub empty: String,
 }
@@ -279,10 +342,22 @@ impl Default for Gauge {
 /// did with it — while `false` and `0` arrive as themselves and do **not**
 /// fall through.
 #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "style", deny_unknown_fields, description = ""))]
 #[serde(default)]
 pub struct SegmentStyle {
+    #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
     pub bg: Option<Value>,
+    #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
     pub fg: Option<Value>,
+    /// Read with JavaScript truthiness, so the *type* is a [`Value`] — but the
+    /// schema says `boolean`, because every other form is a config a reader
+    /// should be warned about rather than one an editor should suggest.
+    ///
+    /// `null` is the exception, and it is admitted for the same reason a
+    /// colour admits it: it is how a user *clears* a shipped `bold`, and it is
+    /// what `write::non_defaults` writes back when they do.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<bool>", description = ""))]
     pub bold: Option<Value>,
 }
 
@@ -358,8 +433,12 @@ impl From<Value> for SegmentEntry {
 
 /// The subagent panel's own block. Closed in the schema, and closed here.
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(inline, deny_unknown_fields, description = ""))]
 #[serde(default, rename_all = "camelCase")]
 pub struct SubagentConfig {
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Fraction of the terminal width allotted to the description before it is truncated."))]
     #[serde(deserialize_with = "desc_budget_fraction")]
     pub desc_budget_fraction: f64,
     /// **Order is load-bearing**: statuses are tried in config order and the
@@ -370,8 +449,11 @@ pub struct SubagentConfig {
     /// The entries stay [`Value`]: a bucket with no `match` is the fallback,
     /// and a bucket that is not an object has no `match` either, so it lands
     /// there too rather than costing the whole config.
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<String, schema::StatusBucket>"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Status buckets, tried in order. The first whose `match` regex hits the task status wins; an entry with an empty `match` is the fallback for unmatched statuses."))]
     #[serde(deserialize_with = "status_table")]
     pub statuses: Map<String, Value>,
+    #[cfg_attr(feature = "schema", schemars(description = "Styling for each subagent row segment."))]
     #[serde(deserialize_with = "subagent_segments_block")]
     pub segments: SubagentSegments,
 }
@@ -402,12 +484,16 @@ impl SubagentConfig {
 /// The panel's six row segments. Fixed keys, unlike the main bar's open map:
 /// a panel row is built by this program, not by the layout.
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(inline, deny_unknown_fields, description = ""))]
 #[serde(default)]
 pub struct SubagentSegments {
     /// Only `fg` and `bold` are ever read: the head's background always comes
     /// from the matched status.
+    #[cfg_attr(feature = "schema", schemars(description = "Status + type glyph head (background comes from the matched status; bg here is ignored)."))]
     #[serde(deserialize_with = "style_block")]
     pub head: SegmentStyle,
+    #[cfg_attr(feature = "schema", schemars(description = "The subagent's name (rendered when the task has one)."))]
     #[serde(deserialize_with = "style_block")]
     pub name: SegmentStyle,
     #[serde(deserialize_with = "style_block")]
@@ -549,18 +635,41 @@ fn status_table<'de, D: Deserializer<'de>>(d: D) -> Result<Map<String, Value>, D
 /// the bar would go blank, which is the one outcome the third invariant
 /// forbids.
 fn gauge_width<'de, D: Deserializer<'de>>(d: D) -> Result<usize, D::Error> {
-    Ok(match Value::deserialize(d)?.as_u64() {
-        Some(0) | None => DEFAULT_GAUGE_WIDTH,
-        Some(n) => (n as usize).min(MAX_GAUGE_WIDTH),
-    })
+    Ok(resolved_gauge_width(&Value::deserialize(d)?))
 }
 
+/// The width a raw `gauge.width` resolves to — the rule itself, named so that
+/// [`validate`] can report the coercion without restating it.
+///
+/// Extracted rather than duplicated: `--debug` has to say `gauge.width 0 → 10`,
+/// and a second copy of "zero means ten, capped at a thousand" is a copy that
+/// can disagree with the one that runs. There is one rule and both callers ask
+/// it the same question.
+pub(crate) fn resolved_gauge_width(v: &Value) -> usize {
+    match v.as_u64() {
+        Some(0) | None => DEFAULT_GAUGE_WIDTH,
+        Some(n) => (n as usize).min(MAX_GAUGE_WIDTH),
+    }
+}
+
+/// The shipped `gauge.filled`, and the fallback for an empty one.
+pub(crate) const DEFAULT_GAUGE_FILLED: &str = "\u{25b0}";
+/// The shipped `gauge.empty`, and the fallback for an empty one.
+pub(crate) const DEFAULT_GAUGE_EMPTY: &str = "\u{25b1}";
+
 fn filled_glyph<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    glyph(d, "\u{25b0}")
+    glyph(d, DEFAULT_GAUGE_FILLED)
 }
 
 fn empty_glyph<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    glyph(d, "\u{25b1}")
+    glyph(d, DEFAULT_GAUGE_EMPTY)
+}
+
+/// The glyph a raw `gauge.filled`/`empty` resolves to. The read half of
+/// [`glyph`], shared with [`validate`] for the same reason as
+/// [`resolved_gauge_width`].
+pub(crate) fn resolved_glyph<'a>(v: &'a Value, fallback: &'a str) -> &'a str {
+    v.as_str().filter(|s| !s.is_empty()).unwrap_or(fallback)
 }
 
 /// A gauge glyph, with the shipped fallback for an *empty* one.
@@ -571,7 +680,7 @@ fn empty_glyph<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
 /// by `Default`; this is the case `#[serde(default)]` cannot see.
 fn glyph<'de, D: Deserializer<'de>>(d: D, fallback: &str) -> Result<String, D::Error> {
     let v = Value::deserialize(d)?;
-    Ok(v.as_str().filter(|s| !s.is_empty()).unwrap_or(fallback).to_string())
+    Ok(resolved_glyph(&v, fallback).to_string())
 }
 
 /// A non-string pattern is the shipped literal, as `as_str()` made it. An

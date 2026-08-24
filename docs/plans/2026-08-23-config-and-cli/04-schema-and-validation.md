@@ -213,4 +213,235 @@ should say so plainly rather than leave a user to discover it.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+**Step 1 was impossible as written, and step 4 was wrong.** Both are recorded
+here rather than silently corrected, because the reasoning that produced them is
+the reasoning a reader will apply again.
+
+- **A dev-dependency cannot back a derive on a library type.** The derive
+  expands inside the lib crate, where a dev-dependency is not in scope
+  (`E0433`), and Cargo rejects `optional = true` on a dev-dependency outright.
+  `schemars` is therefore a genuine `[dependencies]` entry made optional behind
+  a `schema` feature that nothing enables by default. The step's motive is
+  intact and measured: `cargo tree -e normal` reports zero `schemars`.
+- **`deny_unknown_fields` on the render types would have been a regression, not
+  a strictness knob.** Four separate reasons, each verified: `Caps` has a
+  hand-written `Deserialize`, so the attribute there compiles clean and does
+  nothing; on the five derived blocks the error is swallowed by `block()`, so a
+  typo inside `powerline` would blank the block and draw a bar with **no
+  separators**; on `Config` it would reject `$schema`, which the binary writes
+  into every config itself; and it cannot attribute a finding to a layer,
+  because the merge has already happened. The validator is a `serde_json::Value`
+  walk against the generated schema's key set instead. It also reports **every**
+  finding rather than serde's first, and it can report coercions, which no
+  deserialization can.
+
+**Descriptions live in `#[schemars(description = …)]`, not in `#[doc]`.** Step 2
+said doc comments. These types' doc comments explain *deserializers* to a Rust
+reader — `PowerlineConfig::cap`'s is three sentences about
+`as_str().unwrap_or_default()` — and putting that in an editor's hover for
+someone writing JSON would be worse than the hand-written schema it replaced.
+Rewriting them for the schema would have destroyed the more valuable text. So
+each user-facing string is an explicit attribute, and `description = ""`
+suppresses the doc-comment fallback on the containers.
+
+**The schema now accepts `null` where a colour is expected, and the hand-written
+one was wrong not to.** An explicit `null` clears a colour the defaults set so
+the segment falls through to `defaultFg`, and `write::non_defaults` writes that
+key back verbatim — meaning `--configure` produced a file that failed to
+validate against the schema it stamps into it. Found by the round-trip test
+rather than by reading. `$defs/color`'s description gained a sentence saying so;
+it is the only one of the 39 whose text changed.
+
+**Criterion 9 says "fetched" and that cannot gate a pull request.** `$id` serves
+`main`, so the document at that URL is the *previous* commit's until this one
+merges. `tests/schema.rs` compiles the committed file from disk with `boon`
+(draft-2020-12), which is the closest thing that can fail before a merge rather
+than after one.
+
+**Two guards were nearly vacuous and were fixed, not shipped.**
+
+- A `title` strip was written on the belief that schemars titles every block
+  from the first line of its doc comment. It does not —
+  `get_title_and_description` returns a title only when the comment's first
+  character is `#`. The strip was removing nothing and would have made its own
+  test unable to fail, so it was deleted; the test now goes red for a
+  heading-style doc comment, which was confirmed by writing one.
+- Criterion 6 ("an unknown key in `palette` is not an error") passes with zero
+  lines of code, because `palette` is an open map and no key in it *can* be
+  unknown. It is asserted positively instead: the key must appear, under its
+  layer, as a `·` note.
+
+**The `symbols` consumed set is the shipped keys, not the lookup sites.** The
+binary's `config.symbol("…")` calls are scattered across the segment builders
+and a grep of them is not a contract. The embedded layer's `symbols` keys are
+this binary's own statement of which glyphs it draws, so that is what an unread
+note is measured against. It errs towards silence — the defaults ship `repo`,
+which no builder asks for, so a `repo` key is not reported.
+
+**`typeSymbols` and `subagent.statuses` can never produce an unread note**, and
+that is a limit rather than an omission: their keys are a subagent's `type` and
+the user's own bucket labels, so every key in both is read and there is no list
+to check one against. The plan's Risks section says the open-map limit undercuts
+the original ask; this is where it bites hardest.
+
+**One unexplained e2e failure, not reproduced.** A single run of the full suite
+reported one e2e test failing; the name was not captured, and nine consecutive
+full-suite runs since have been clean. Most likely the pre-existing timing
+assertion in `a_hanging_git_costs_one_shared_budget_not_one_per_subprocess`
+under parallel load, but that is a guess and is recorded as unresolved.
+
+**Not done: SchemaStore.** Step 6's catalog submission is a PR into another
+repository's queue and the plan explicitly excludes it from the acceptance
+criteria. Nothing here blocks it.
+
+### Found in review, fixed in the consolidated round
+
+**Two guards could not tell a derived value from a copy that matched.** Both
+were found by mutation — each stayed green with its wiring replaced by a
+hand-copied literal — and they needed different repairs, because only one was a
+real hole.
+
+- **The caps defaults were a third copy, and nothing checked them.**
+  `tests/schema.rs` hard-coded `EXPECTED_DEFAULTS` as `65/90/80/90`, the same
+  four values as `caps::DEFAULTS` and the ones `restore_caps_defaults` injects.
+  Hard-code the injection *and* change a shipped cap and the schema would
+  advertise a threshold the binary does not use, with nothing red. The
+  expectation is now derived from `caps::DEFAULTS`. Verified by mutation:
+  `context: 65 → 70` now turns **two** tests red where it previously turned one,
+  and the new one fires on the constant rather than on regeneration.
+- **The `$id` guard's doc comment overclaimed, but the guard is sound.**
+  `write.rs` and `tests/schema.rs` both said replacing the wiring with a
+  hand-copied literal "goes red". It does not — the two values still agree, and
+  no assertion can distinguish derivation from a copy. What the test *does*
+  catch is the case that matters: change `SCHEMA_URL` with a literal in place
+  and the regenerated `$id` is the old URL against the new constant. Both
+  comments now say that instead. **This is the third consecutive cycle to ship a
+  comment claiming coverage it lacked** — cycle 02 at C7, cycle 03 at C7.
+
+### Verified by the orchestrator rather than by a reviewer
+
+The behaviour-preservation reviewer never reported, so criteria 4–7 were checked
+directly against the built binary. All four hold:
+
+|    | Observed                                                                                                                            |
+| -- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| C4 | ``⚠ unknown key `powerlin` (did you mean `powerline`?)`` under the **user** layer; bar byte-identical to the config without the key |
+| C5 | `· gauge.width 0 → 10`, and `· gauge.width 99999 → 1000` — the clamp cycle 01 recorded as unreported is now reported                |
+| C6 | `· palette.notAColour is not a key this binary reads` — a note, not a warning                                                       |
+| C7 | exit `0` across seven configs including a malformed file and an array root                                                          |
+
+`$schema` in a user layer is correctly **not** flagged, which was the landmine:
+`--configure` writes it and `Config` does not model it.
+
+**Differential gate:** 19 configs, **0 differences** against `fca2aa2`, 18
+carrying real output. Control 1 (old vs old) found 0 phantom diffs; control 2
+proved the harness can see a real config change. Re-run after the fixes, against
+a rebuilt binary.
+
+`mise run code:precommit` exits **0** on a clean tree with the drift hook
+ordered before the formatter, so removing `|| true` did not make the task
+unusable.
+
+### Method gaps, not code gaps
+
+- **Two mutate-then-revert reviewers in one worktree corrupt each other.** One
+  found a `$schemaMUTANT` it had not written; whoever reverts second restores
+  the other's mutation as "original". Resolved mid-cycle with a serialised
+  mutation lock. **A future cycle should give each reviewer its own worktree** —
+  this is a property of the method, not of this slice.
+- **Subagents went idle without delivering, repeatedly.** The coder never
+  reported at all (its findings survive only because it wrote them here); one
+  reviewer's first report was lost entirely and never recovered; the other never
+  reported. The pings the previous cycle recommended did not reliably retrieve
+  them this time. Everything above was therefore re-derived by running.
+- **A recon agent destroyed the worktree's `Cargo.toml`** by running a scratch
+  `cargo init` in place while reporting it had used `/tmp`. Restored from git.
+  Scratch crates must be created outside the worktree.
+- **Two of the orchestrator's own measurements were vacuous before they were
+  right**, and both were caught only by re-running: a background suite piped
+  through `tail -30` reported 16 tests instead of 502, and a bare `cargo test`
+  compiled out the `#[cfg(feature = "schema")]` drift test, making a working
+  gate look absent. The first drift mutation also failed on a compile error
+  rather than on drift, which proves nothing. *The rule that a green result is
+  unproven until the harness has been shown able to fail applies to the harness
+  itself.*
+- **MemPalace was unreachable for this whole cycle** (`Unable to connect`), so
+  the session diary fell back to disk outside the repo. `/vwf:handoff` will hit
+  the same wall.
+
+### Second fix round — both reviewer reports arrived after the first closed
+
+They were written as plain text rather than sent, so neither reached the
+orchestrator until after the cycle had been called done. **The method assumes
+reports arrive; twice this cycle they did not.** Four more defects came out of
+them, all fixed.
+
+**The description guard was count-only, and criterion 3 was unheld.**
+`the_schema_carries_every_description_it_was_written_with` compared
+`described.len()` to `39` and checked none was empty. Replacing **all 39**
+strings with `"x"` was fully green — and the drift test cannot help, because
+editing the `#[schemars(description = …)]` attributes and regenerating moves
+both sides together. Now anchored by `DESCRIPTION_DIGEST`, an FNV-1a over every
+`(pointer, text)` pair, inline rather than a dependency because `DefaultHasher`
+is explicitly not stable across releases. Verified by mutation: gutting all 39
+now goes red, on a plain `cargo test` rather than only under
+`--features schema`.
+
+**`gauge.width` had `minimum: 1` and no `maximum`.** `MAX_GAUGE_WIDTH = 1000` is
+enforced at `config/mod.rs:646` and this cycle's own test asserts `9999 → 1000`,
+so the schema promised a width the renderer will not honour. The doc justifying
+`minimum: 1` demanded the ceiling by the identical argument. Both ends now
+present, matching every other bounded number in the file.
+
+**Two comments this cycle wrote were already false.** `tests/schema.rs` said all
+39 descriptions came through "with the same string" — 38 did; `/$defs/color`
+gained a sentence, deliberately. `write.rs` said a "**third** copy" of the
+schema URL exists in the installer; there are several
+(`assets/claude-status.defaults.json` and its `npm/` mirror, both *shipped*,
+plus `cli.rs`, `.config/claude-status.json`, `readme.md`). **That is three
+consecutive cycles shipping a comment that claims coverage it lacks** — 02 at
+C9, 03 at C9, and twice here.
+
+**`Finding::is_warning` has no production caller.** `app.rs` renders through
+`line()` and never classifies. Kept, because its one unit-test caller asserts
+classification without matching a glyph, but the doc no longer claims a
+production rationale it does not have.
+
+**The five new files were untracked, and nothing scanned them.**
+`code:precommit`'s changed-files branch feeds `git diff --name-only HEAD`, which
+excludes untracked files — so the green precommit run inspected **none** of
+`code/schema`, `src/bin/schema.rs`, `config/schema.rs`, `config/validate.rs` or
+`tests/schema.rs`. They are now `git add -N`. The same gap bit the orchestrator
+directly: a `git checkout --` meant to revert a mutation restored the schema
+from `fca2aa2` and silently discarded the regenerated file.
+`mise run
+code:schema` rebuilt it byte-identically, which is the generator
+earning its keep.
+
+### Reported, not fixed — three unreported degradations
+
+None is a regression; all three behave identically at `fca2aa2`. They are the
+shape of gap this cycle's feature was positioned to close and does not.
+
+1. **A non-array `lines` blanks the bar and `--debug` says nothing.**
+   `config/mod.rs:742-745` returns `Vec::new()`, so `{"lines": "not-an-array"}`
+   renders **0 bytes** with exit 0 and no finding under the user layer. This is
+   the one shape that violates §1 invariant 3's *degrade, never blank*, and the
+   only visible degradation the validator is wholly silent about. **The most
+   worthwhile follow-up in this list.**
+2. **A wrong-typed closed block degrades visibly and unreported.**
+   `{"powerline": "nope"}` draws a bar with no separators — `block()`
+   substitutes `unstyled()` — and `note_coercion` has no arm for it. Documented
+   as deliberate, but the stated reason ("the deserializers already degrade it")
+   is equally true of `gauge.width: 0`, which *is* reported.
+3. **`caps.*` out-of-range coercion is unreported.**
+   `{"caps": {"context": 2000}}` silently becomes 65; a sibling typo in the same
+   block *is* reported. Same shape as criterion 5, different block.
+
+**A correction to this plan's own risk framing.** Recon predicted a typo inside
+`powerline` would blank the block through `block()`'s `unwrap_or_else`. It does
+not: the `deny_unknown_fields` this cycle adds is in the **schemars** namespace,
+so serde still ignores unknown keys and the fallback is never reached. The bar
+is byte-identical to clean at `fca2aa2` and now. The orchestrator repeated the
+prediction as fact before it was tested; the behaviour reviewer disproved it by
+running.

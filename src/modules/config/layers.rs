@@ -126,6 +126,23 @@ pub struct LayerSource {
     /// forbids, and dropping it without saying so leaves the user editing a
     /// file that does nothing. So `--debug` names them.
     pub ignored: Vec<String>,
+    /// The layer's **own** tree, as the file wrote it, kept so
+    /// [`validate`](crate::config::validate) can attribute a finding to the
+    /// file that caused it.
+    ///
+    /// This is the whole reason it exists. The merge produces one tree, and a
+    /// typo in it is un-attributable by the time `Config` reads it — "there is
+    /// a stray `powerlin` somewhere in your three config files" is not a
+    /// diagnostic. Retained rather than re-read: `read_layer` already parsed
+    /// it and `deep_merge` only borrows it, so keeping it costs no second parse
+    /// and no second stat.
+    ///
+    /// `None` for the **embedded** layer, which is this binary's own and would
+    /// only ever report on itself, and for any layer that contributed nothing.
+    /// For the **repo** layer it is what survived [`narrow`] — the rest is
+    /// already on the `ignored` row, and saying it twice in two vocabularies
+    /// helps nobody.
+    pub raw: Option<Value>,
 }
 
 /// The defaults compiled into the binary. Never has a path.
@@ -175,34 +192,42 @@ pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
         path: None,
         state: LayerState::Loaded,
         ignored: Vec::new(),
+        raw: None,
     }];
 
     // The user layer: the whole config, merged as it stands.
     let user_path = home.map(user_config_path);
-    let user_state = match read_layer(user_path.as_deref()) {
+    let (user_state, user_raw) = match read_layer(user_path.as_deref()) {
         Ok(Some(layer)) => {
             deep_merge(&mut merged, &layer);
-            LayerState::Loaded
+            (LayerState::Loaded, Some(layer))
         }
-        Ok(None) => LayerState::Absent,
-        Err(()) => LayerState::Unusable,
+        Ok(None) => (LayerState::Absent, None),
+        Err(()) => (LayerState::Unusable, None),
     };
-    sources.push(LayerSource { label: LABEL_USER, path: user_path, state: user_state, ignored: Vec::new() });
+    sources.push(LayerSource {
+        label: LABEL_USER,
+        path: user_path,
+        state: user_state,
+        ignored: Vec::new(),
+        raw: user_raw,
+    });
 
     // The repo layer: one key, and a list of what it was not allowed to say.
     let repo_path = repo_root.map(repo_config_path);
-    let (repo_state, ignored) = match read_layer(repo_path.as_deref()) {
+    let (repo_state, ignored, repo_raw) = match read_layer(repo_path.as_deref()) {
         Ok(Some(Value::Object(entries))) => {
             let (kept, ignored) = narrow(entries);
-            deep_merge(&mut merged, &Value::Object(kept));
-            (LayerState::Loaded, ignored)
+            let kept = Value::Object(kept);
+            deep_merge(&mut merged, &kept);
+            (LayerState::Loaded, ignored, Some(kept))
         }
         // `read_layer` returns only objects in the `Some` arm, so this is the
         // "no file" case alone.
-        Ok(_) => (LayerState::Absent, Vec::new()),
-        Err(()) => (LayerState::Unusable, Vec::new()),
+        Ok(_) => (LayerState::Absent, Vec::new(), None),
+        Err(()) => (LayerState::Unusable, Vec::new(), None),
     };
-    sources.push(LayerSource { label: LABEL_REPO, path: repo_path, state: repo_state, ignored });
+    sources.push(LayerSource { label: LABEL_REPO, path: repo_path, state: repo_state, ignored, raw: repo_raw });
 
     Layers { config: Config::new(merged), sources }
 }

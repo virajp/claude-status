@@ -13,13 +13,29 @@ cd "$MISE_PROJECT_ROOT"
 
 print_header "Running tests (cargo test) ..."
 
+# `--features schema` and not a bare `cargo test`.
+#
+# The feature adds `JsonSchema` derives and the generator; it changes no
+# runtime behaviour, so this is a strict superset of the default-feature suite.
+# It is what makes two things true that a bare `cargo test` would leave false:
+#
+# 1. `tests/schema.rs`'s drift check is `#[cfg(feature = "schema")]` — without
+#    the feature it does not run, and CI (`release.yml` calls this task and
+#    nothing else) would gate on nothing.
+# 2. The feature-gated code is *compiled*. `code:lint` runs clippy with no
+#    features, so the derives would otherwise never be type-checked by
+#    anything, and would rot.
+#
+# The default-feature build is still covered: `code:lint`'s
+# `cargo clippy --all-targets` and the release build both run without it.
+
 # Never let a test reach the real spend endpoint: the macOS keychain is not
 # scoped by $HOME, so a stray fetch is both a privacy leak and a 429 the user
 # wears for half an hour. The e2e suite sets this per-invocation too; this is
 # the belt to that pair of braces.
 export CLAUDE_STATUS_SPEND_URL="${CLAUDE_STATUS_SPEND_URL:-http://127.0.0.1:1/never}"
 
-cargo test ${VERBOSE}
+cargo test --features schema ${VERBOSE}
 
 print_header "Type-checking the installer (tsc) ..."
 pnpm exec tsc --noEmit

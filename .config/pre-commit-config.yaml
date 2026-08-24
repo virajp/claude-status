@@ -69,6 +69,21 @@ repos:
 
   - repo: local
     hooks:
+      - id: schema-drift
+        name: JSON schema is generated from the config types
+        description: Fails if schemas/claude-status.schema.json is not what the
+          Rust config types produce. It runs unconditionally and takes no file
+          list, because the *cause* of a drift is a change under src/ — a hook
+          scoped by a schemas/ path filter would never fire for the commit that
+          broke it.
+        entry: mise x -- mise run code:schema --check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [ pre-commit ]
+
+  - repo: local
+    hooks:
       - id: formatter
         name: Formatter
         entry: |

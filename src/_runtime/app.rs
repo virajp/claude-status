@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
 use crate::config::layers::{self, Layers};
-use crate::config::{Config, SegmentEntry};
+use crate::config::{Config, SegmentEntry, validate};
 use crate::git::GitFacts;
 use crate::payload::MainFacts;
 use crate::render::main_bar::render_main;
@@ -314,6 +314,28 @@ fn field(value: &str) -> String {
     crate::render::sanitize(value)
 }
 
+/// A row under a `CONFIG LAYERS` entry, in that section's two columns.
+///
+/// One helper rather than a `writeln!` per kind, because the columns are the
+/// only thing holding the section together: the `ignored` row was the first
+/// continuation and hard-coded both its state word and its whole message, so
+/// the second kind could not have reused the alignment without copying the
+/// format string — and a copied format string is how two rows in one section
+/// end up one space apart.
+///
+/// `state` is optional, and an empty one **collapses the column** rather than
+/// padding it. A finding already carries its own marker, so a fourteen-space
+/// gap where a state word would go buys nothing and costs every finding line
+/// fifteen columns — which is the difference between one line and two for a
+/// long key. It is also the layout the cycle plan drew.
+fn continuation(state: &str, message: &str) -> String {
+    if state.is_empty() {
+        format!("  {:8} {message}", "")
+    } else {
+        format!("  {:8} {state:14} {message}", "")
+    }
+}
+
 fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
@@ -325,6 +347,11 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     };
 
     let Layers { config, sources } = layers::load(home().as_deref(), root.as_deref());
+    // Built once from the **merged** config: whether a palette entry is used
+    // is a question about the whole config, not about the layer that defined
+    // it. Rebuilding it per layer would report a colour the embedded segments
+    // name as one nothing reads.
+    let validation = validate::Context::new(&config);
 
     let _ = writeln!(out, "\nCONFIG LAYERS (low to high)");
     for source in &sources {
@@ -379,12 +406,29 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         if !source.ignored.is_empty() {
             let _ = writeln!(
                 out,
-                "  {:8} {:14} {} — a repo layer may set {} only",
-                "",
-                "ignored",
-                field(&source.ignored.join(", ")),
-                layers::REPO_LAYER_KEY,
+                "{}",
+                continuation(
+                    "ignored",
+                    &format!(
+                        "{} — a repo layer may set {} only",
+                        field(&source.ignored.join(", ")),
+                        layers::REPO_LAYER_KEY,
+                    ),
+                ),
             );
+        }
+
+        // What this layer said that the binary could not make sense of, or
+        // made sense of differently. Under the file that said it, for the same
+        // reason the `ignored` row is: the answer to "why is my `powerlin`
+        // doing nothing" is which of three files it is written in.
+        //
+        // No state word. `ignored` earns one because it names a *policy* — the
+        // repo layer may not say that — while these rows carry their own
+        // marker (`⚠` or `·`) and a second column repeating it would be noise
+        // on every line.
+        for finding in source.raw.as_ref().map(|raw| validate::findings(raw, &validation)).unwrap_or_default() {
+            let _ = writeln!(out, "{}", continuation("", &field(&finding.line())));
         }
     }
 

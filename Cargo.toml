@@ -13,6 +13,14 @@ path = "src/lib.rs"
 name = "claude-status"
 path = "src/main.rs"
 
+# The schema generator. `required-features` is what keeps it out of every
+# ordinary build: `cargo build --release` does not compile this target, so the
+# shipped artifact is one binary as it has always been.
+[[bin]]
+name              = "schema"
+path              = "src/bin/schema.rs"
+required-features = [ "schema" ]
+
 [dependencies]
 # `worktreePattern` and (plan 2) `subagent.statuses[].match`. The full `regex`
 # crate is ~1.5 MB and builds a DFA on a per-render path.
@@ -60,8 +68,28 @@ serde_json = { default-features = false, features = [
 "preserve_order",
 ], version = "1.0.151" }
 
+# The JSON-schema generator, and the **only** optional dependency. It is a
+# genuine `[dependencies]` entry rather than a dev-dependency because a
+# dev-dependency cannot back a `derive` on a *library* type — the derive
+# expands in the lib crate, where a dev-dependency is not in scope, and
+# `optional = true` is rejected outright on a dev-dependency. The `schema`
+# feature is off by default, so `cargo tree -e normal` on a release build shows
+# no schemars and the shipped binary carries none.
+schemars = { optional = true, version = "1.2" }
+
+[features]
+# Author-time only: turns on the `JsonSchema` derives and the generator behind
+# `cargo run --features schema --bin schema`. Nothing in the render path reads
+# it, and no default feature enables it.
+schema = [ "dep:schemars" ]
+
 [dev-dependencies]
-tempfile = "3" # throwaway $HOME for the e2e tests
+# Draft-2020-12 validation, for the tests that hold the committed schema to
+# being a schema — criterion 9. Chosen over `jsonschema` for the dependency
+# weight: this crate is the only third-party validator in the tree and it must
+# not become a reason CI is slow.
+boon     = "0.6"
+tempfile = "3"   # throwaway $HOME for the e2e tests
 
 [profile.release]
 codegen-units = 1
