@@ -13,6 +13,22 @@
 
   Between them the build itself is the link check, which is why this site pins
   no separate crawler.
+
+  3. Every `get_url` here is piped through `replace(from=config.base_url)`, so
+     what lands in the HTML is root-relative -- `/install/`, not
+     `https://claude-status.virajp.dev/install/`. The resolution still happens,
+     so rule 1's link checking is untouched; only the prefix is dropped.
+
+     This is not tidiness. Cloudflare Pages serves preview deployments from a
+     `*.pages.dev` host, and absolute links would send a reviewer from the
+     preview straight back to production -- which, until the DNS record exists,
+     does not resolve at all. The same applies to opening `site/public/`
+     locally or serving it from any other origin.
+
+     `base_url` deliberately stays the production URL rather than becoming `/`:
+     it is what makes `sitemap.xml`'s `<loc>` entries and `robots.txt`'s
+     `Sitemap:` line absolute, which the sitemaps spec requires. Setting it to
+     `/` fixes the pages and breaks both of those instead.
 #}
 <!DOCTYPE html>
 <html lang="en">
@@ -27,22 +43,22 @@
       name="description"
       content="{% block description %}{{ config.description }}{% endblock description %}"
     />
-    <link rel="stylesheet" href="{{ get_url(path='style.css') }}" />
+    <link rel="stylesheet" href="{{ get_url(path='style.css') | replace(from=config.base_url, to='') }}" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
     <header class="site-header">
-      <a class="brand" href="{{ get_url(path='@/_index.md') }}">claude-status</a>
+      <a class="brand" href="{{ get_url(path='@/_index.md') | replace(from=config.base_url, to='') }}">claude-status</a>
       {# Plain anchors, no JS, no disclosure widget. On a narrow screen the
          stylesheet wraps them onto their own line rather than collapsing them
          behind a button that would need a script to open. #}
       <nav aria-label="Documentation">
-        <a href="{{ get_url(path='@/install.md') }}">Install</a>
-        <a href="{{ get_url(path='@/configure.md') }}">Configure</a>
-        <a href="{{ get_url(path='@/repo-config.md') }}">Per-repo</a>
-        <a href="{{ get_url(path='@/segments.md') }}">Segments</a>
-        <a href="{{ get_url(path='@/diagnosing.md') }}">Diagnosing</a>
+        <a href="{{ get_url(path='@/install.md') | replace(from=config.base_url, to='') }}">Install</a>
+        <a href="{{ get_url(path='@/configure.md') | replace(from=config.base_url, to='') }}">Configure</a>
+        <a href="{{ get_url(path='@/repo-config.md') | replace(from=config.base_url, to='') }}">Per-repo</a>
+        <a href="{{ get_url(path='@/segments.md') | replace(from=config.base_url, to='') }}">Segments</a>
+        <a href="{{ get_url(path='@/diagnosing.md') | replace(from=config.base_url, to='') }}">Diagnosing</a>
       </nav>
     </header>
 
