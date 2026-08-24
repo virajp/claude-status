@@ -40,7 +40,15 @@ const PARENT_DESCRIPTION_COUNT: usize = 39;
 /// Pins the **text**, which [`PARENT_DESCRIPTION_COUNT`] alone does not: all 39
 /// strings can be replaced with `"x"` and the count still reads 39. Update it
 /// only when you meant to change prose, and say so in review.
-const DESCRIPTION_DIGEST: u64 = 0x5c72_2dcb_8d80_c664;
+///
+/// Moved from `0x5c72_2dcb_8d80_c664` by the `website/01-site` cycle. `spend`'s
+/// description named `~/.cache/ai-plugins/spend.json` and
+/// `$AI_PLUGINS_SPEND_CACHE`, neither of which the code has used since the
+/// rename — `spend/cache.rs` reads `CLAUDE_STATUS_SPEND_CACHE` and defaults to
+/// `~/.cache/claude-status/spend.json`. The site documents that path, so the
+/// published schema had to stop contradicting it. This guard firing is the
+/// guard working: the prose changed on purpose.
+const DESCRIPTION_DIGEST: u64 = 0x719a_9e0f_1460_dac6;
 
 /// The only four `default` values the published schema has ever carried.
 ///

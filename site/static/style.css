@@ -1,0 +1,286 @@
+/*
+ * The whole front end. One hand-written stylesheet, no framework, no build
+ * step — see site/config.toml for why that is a constraint rather than a
+ * preference.
+ *
+ * The palette is the tool's own: these are the gruvbox-ish RGB triples in
+ * assets/claude-status.defaults.json, written as hex. A page documenting a
+ * status bar should look like the status bar.
+ *
+ * Lives in `static/` and not `sass/` because `compile_sass = false`; zola
+ * copies this file through byte for byte. It is excluded from dprint (see
+ * dprint.json) only as far as `site/templates/` goes — this file IS formatted,
+ * because malva understands plain CSS fine.
+ */
+
+:root {
+  --bg: #1d2021;
+  --bg-soft: #282828;
+  --bg-line: #3c3836;
+  --fg: #fbf1c7;
+  --fg-dim: #bdae93;
+  --aqua: #689d6a;
+  --blue: #458588;
+  --green: #98971a;
+  --orange: #d65d0e;
+  --yellow: #d79921;
+  --red: #cc241d;
+
+  --measure: 40rem;
+  --gap: 1.5rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* No `font-size` override. Scaling the root away from the browser default
+   * silently overrides the reader's own accessibility setting. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+/* Visible only when focused — a keyboard user's way past the nav. */
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: var(--gap);
+  top: var(--gap);
+  z-index: 1;
+  padding: 0.5rem 0.75rem;
+  background: var(--yellow);
+  color: var(--bg);
+  border-radius: 4px;
+}
+
+/* ---- header / nav ------------------------------------------------------ */
+
+/*
+ * The nav is a wrapping flex row of plain anchors. There is no hamburger and
+ * no disclosure widget, because both need JavaScript to open and this site
+ * ships none — a nav that cannot be opened without a script is a nav that is
+ * broken for anyone the script fails for.
+ */
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem var(--gap);
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--gap) var(--gap) 0;
+  border-bottom: 1px solid var(--bg-line);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding-bottom: 0.75rem;
+}
+
+.site-header nav a {
+  color: var(--fg-dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.site-header nav a:hover,
+.site-header nav a:focus {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* ---- prose ------------------------------------------------------------- */
+
+main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--gap) 3rem;
+}
+
+.prose h1 {
+  font-size: 1.9rem;
+  line-height: 1.2;
+  margin: 2rem 0 0.5rem;
+}
+
+.prose h2 {
+  font-size: 1.3rem;
+  margin: 2.5rem 0 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--bg-line);
+}
+
+.prose h3 {
+  font-size: 1.05rem;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.lede {
+  color: var(--fg-dim);
+  font-size: 1.1rem;
+  margin-top: 0;
+}
+
+.prose a {
+  color: var(--aqua);
+}
+
+.prose a:hover,
+.prose a:focus {
+  color: var(--yellow);
+}
+
+.prose strong {
+  color: var(--fg);
+}
+
+/* ---- code -------------------------------------------------------------- */
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.875rem;
+}
+
+:not(pre) > code {
+  background: var(--bg-soft);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  /* Long identifiers — env var names, config paths — must be allowed to break
+   * rather than push the page wider than the phone. */
+  overflow-wrap: anywhere;
+}
+
+pre {
+  background: var(--bg-soft);
+  border: 1px solid var(--bg-line);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  /* Code blocks scroll on their own rather than widening the document; a
+   * horizontally-scrolling *page* is the usual way a docs site fails on a
+   * phone. */
+  overflow-x: auto;
+}
+
+/* ---- tables ------------------------------------------------------------ */
+
+/*
+ * Every table on this site is wrapped in a scroll container by the markdown
+ * below it; `display: block` on the table itself is what lets a five-column
+ * segment catalogue scroll sideways inside the page instead of stretching it.
+ */
+.prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.prose th,
+.prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--bg-line);
+}
+
+.prose th {
+  color: var(--fg-dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- callouts ---------------------------------------------------------- */
+
+.prose blockquote {
+  margin: 1.25rem 0;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--orange);
+  color: var(--fg-dim);
+}
+
+.prose blockquote strong {
+  color: var(--orange);
+}
+
+/* ---- the screenshot ---------------------------------------------------- */
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--bg-line);
+  border-radius: 6px;
+}
+
+/* ---- footer ------------------------------------------------------------ */
+
+.site-footer {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--gap);
+  border-top: 1px solid var(--bg-line);
+  color: var(--fg-dim);
+  font-size: 0.875rem;
+}
+
+.site-footer a {
+  color: var(--fg-dim);
+}
+
+/* ---- narrow screens ---------------------------------------------------- */
+
+/*
+ * One breakpoint, at the width below which the 1.5rem gutters start eating the
+ * measure. Nothing here reflows the layout — the layout is a single column at
+ * every width already, which is why there is only one query.
+ */
+@media (max-width: 34rem) {
+  :root {
+    --gap: 1rem;
+  }
+
+  .prose h1 {
+    font-size: 1.55rem;
+  }
+
+  .prose h2 {
+    font-size: 1.2rem;
+  }
+
+  .site-header {
+    /* Brand on its own line, links wrapping under it. */
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

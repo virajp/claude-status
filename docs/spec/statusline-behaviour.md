@@ -29,6 +29,26 @@ things Rust expresses more honestly than a script leaning on `try {} catch {}`.
 behaviour, not a design to imitate. Where this document describes behaviour,
 match it. Where it describes structure, use your judgement.
 
+> **This document is not user documentation, and is not where users are sent.**
+> [claude-status.virajp.dev](https://claude-status.virajp.dev) is the
+> user-facing documentation — install, configuration, the per-repo layer, the
+> segment catalogue, and `--debug`. Its sources are in [`site/`](../../site/).
+> `readme.md` is a pointer at that site and carries nothing the site does not.
+>
+> The split is deliberate and it has a direction: **a user-facing fact belongs
+> on the site, and this document is where the behaviour it describes is
+> pinned.** Anything here that a *user* rather than an implementer needs must be
+> reachable from the site — §1–§7 in particular, which is the condition the
+> `spec-retirement` cycle checks before it deletes this file. Adding a
+> user-facing detail here and nowhere else is how that condition quietly stops
+> holding.
+>
+> Two sections are especially poor places to send anyone. **§3 Configuration**
+> is buried under amendment boxes describing behaviour that no longer exists;
+> the site's Configure and Per-repo pages are current and this is not. **§9
+> Distribution** is an explicit historical record and its target count is
+> already stale.
+
 ---
 
 ## 1. What it is

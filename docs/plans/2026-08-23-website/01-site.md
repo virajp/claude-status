@@ -193,4 +193,174 @@ fix" is a question that recurs monthly.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+### The cycle did not deploy, and criterion 2 is deferred
+
+**Scope was narrowed before execution: build the site and the workflow, deploy
+nothing.** `.github/workflows/site.yml` is authored in full, deploy job
+included, and has never run. No Cloudflare resource was created, no repository
+secret was added, no tag was pushed.
+
+**Criterion 2 — "live at `claude-status.virajp.dev` over HTTPS" — is deferred**,
+in the way `distribution/03` inherited its open criteria. The evidence, taken at
+execution time:
+
+- `curl` exits 6 (could not resolve host) on both `claude-status.virajp.dev` and
+  `virajp.dev`
+- `dig +short A` is empty for both
+- `dig NS virajp.dev` does resolve — the zone **is** on Cloudflare
+  (`celine.ns.cloudflare.com`, `harvey.ns.cloudflare.com`)
+- `gh api repos/virajp/claude-status/actions/secrets` returns `total_count: 0`
+
+So the DNS zone exists and nothing has been pointed at anything. The four steps
+that close it are written into the workflow's header under **BEFORE THE FIRST
+TAG**.
+
+### `site-v*` is a plain counter
+
+`site-v1`, `site-v2`. Nothing is encoded in the number. Recorded here and in the
+workflow's header comment, because "what do I tag to ship a typo fix" is a
+monthly question.
+
+Rejected: **a date**, which collides the second time you ship twice in one day —
+exactly the day you are fixing something you just broke. Rejected: **mirroring
+`Cargo.toml`**, which would mean no documentation change can ship without a
+binary version bump, contradicting the entire reason this tag line is separate
+from `v*`.
+
+`v*` and `site-v*` cannot collide: GitHub tag globs anchor at the start of the
+ref, so `v*` never matches `site-v1`. That is criterion 3, and it closes
+statically.
+
+### Four criteria were not checkable as written, and are restated
+
+Each restatement is carried in a doc comment above the test that enforces it in
+`tests/site.rs`.
+
+- **C1** — "no `node_modules` and no lockfile anywhere in the tree" fails
+  literally on `Cargo.lock`. Restated as **no JS lockfile and no `node_modules`
+  among tracked files**, checked with `git ls-files` (plus the `> 100` vacuity
+  guard) rather than a filesystem walk. The distinction is live: the main
+  checkout has stale untracked `node_modules/` and `npm/` on disk, so a walk
+  would answer differently there than in a worktree.
+- **C6** — `zola check` catches a broken `@/` link **in content** and nothing
+  else. Root-relative (`/nope/`), parent-relative (`../gone/`) and every `href`
+  in a Tera template were probed against the pinned 0.23.4 and all pass
+  silently. Rather than pin a second crawler, the site holds two conventions —
+  `@/<page>.md` in content, `get_url(path="@/<page>.md")` in templates — which
+  together make `zola build` itself the check (verified by breaking a template
+  link on purpose: the build hard-fails). Two tests keep the conventions true.
+- **C7** — restated mechanically: `readme.md` carries no fenced `json`/`jsonc`
+  block, names no config key, is under 100 lines, and links to the site.
+- **C8** — no headless browser exists and adding one violates C1. Restated as a
+  static proxy: a `<meta name="viewport">`, at least one `@media` breakpoint,
+  and a nav of real `<a>` elements with no `<script>` anywhere under `site/`.
+  **The real check is a human one at the gate** — the proxy can only say the
+  page is not built in the way that guarantees it fails.
+
+**C4 also introduces the repository's first PR CI.** `code:lint` and `code:test`
+run on tags and on `workflow_dispatch` today and have never run on a pull
+request. Widening that to the Rust suite was left as a separate decision.
+
+### Blockers fixed on the way through, none of them the site's
+
+- **`.config/gitleaks.toml` had no `[extend]`**, so `--config` *replaced*
+  gitleaks' ~170 default rules with this repo's two. Proven: an AWS access key
+  the default ruleset flags scanned clean under the repo config. Both `code:sec`
+  and the pre-commit hook use that config, so the repository's secret scanning
+  has been running on two rules. Fixed with `[extend] useDefault = true`; the
+  same key is now caught, and the repository still scans clean.
+- **`schemas/claude-status.schema.json` documented a path the code abandoned.**
+  `spend.description` named `~/.cache/ai-plugins/spend.json` and
+  `$AI_PLUGINS_SPEND_CACHE`; the code reads `CLAUDE_STATUS_SPEND_CACHE` and
+  defaults to `~/.cache/claude-status/spend.json`. The site documents the real
+  path, so the published schema had to stop contradicting it. Fixed at source
+  (`src/modules/config/mod.rs`) and regenerated, which moved
+  `DESCRIPTION_DIGEST` in `tests/schema.rs` — that guard firing is the guard
+  working.
+- **Zola 0.23's config schema is not what any pre-0.23 example shows.**
+  Highlighting moved out of `[markdown]` into `[markdown.highlighting]` **and
+  the keys were renamed**: `highlight_code`/`highlight_theme` are rejected
+  wherever they are put, and the replacements are `style` and `theme`. Moving
+  the section without renaming the keys still fails. The theme *set* changed too
+  — `base16-ocean-dark`, `gruvbox`, `one-dark`, `zenburn`, `kronuz`,
+  `agola-dark`, `inspired-github` and `visual-studio-dark` were all probed
+  against 0.23.4 and none exists; the modern set (`nord`, `catppuccin-mocha`,
+  `tokyo-night`, `github-dark`, `rose-pine`, `everforest-dark`, `solarized-*`,
+  `ayu-*`, `dracula`, `monokai`) replaces it. The version is pinned exactly for
+  this reason.
+- **`wrangler` must never be pinned.** `mise registry wrangler` resolves to
+  `npm:wrangler` and nothing else, with
+  `allow_builds=["esbuild","sharp",
+  "workerd"]`.
+  `cloudflare/wrangler-action@v3` keeps it on the runner.
+- **`dprint` had to be told to leave two trees alone.** Its `includes` cover
+  `**/*.html` and `**/*.css` and excluded neither: it rewrites generated HTML
+  that the next `zola build` undoes — the same forever-loop the pre-commit
+  config already documents for `graphify-out/` — and `markup_fmt` does not
+  understand Tera, joining `{% endfor %}` onto the following line. Content `.md`
+  with `+++` frontmatter formats cleanly and is **not** excluded.
+- **`site` was not a valid commit scope.** `commitScopes` in
+  `.config/git-conventional-commits.yaml` is a closed list and the
+  `conventional-commits` hook runs on every commit. Added. `installer` is now a
+  dead scope — noted in place, left listed so existing history stays valid.
+
+### Left alone: `actions/download-artifact@v4` is a standing grype finding
+
+`code:sec` reports GHSA-cxww-7g56-2vh6 (High, fixed in 4.1.3) against
+`actions/download-artifact@v4`. **It pre-dates this cycle** — `release.yml`
+alone reproduces it, verified by scanning that file on its own — and `site.yml`
+follows the same house style rather than diverging from it.
+
+Not fixed here, deliberately. The advisory is about downloading an artifact
+produced by a *different* workflow run; both uses in this repository download an
+artifact the same run just uploaded. And `@v4` is a floating major tag that
+GitHub resolves to the current v4 release at run time, so what actually executes
+is long past 4.1.3 — the finding is grype reading the literal string. Pinning it
+is worth doing, but as one change across both workflows, not as half a fix that
+leaves the two files disagreeing.
+
+### Premises above that were already false when execution started
+
+The plan's **Current state (actual)** was written before the cycles ahead of it
+landed, and is left as written — a plan is a record of a proposal, not a
+description of the tree. What it says, and what was true at `fd8d4de`:
+
+- **"`readme.md` was rewritten as an npm package listing page"** with sections
+  Requirements/Install/Uninstall/Configuration/Diagnosing/Environment/Licence.
+  That readme no longer existed: `distribution/01` had replaced it one commit
+  earlier with a 297-line *project* readme. Step 7 was executed against that
+  one, knowingly deleting ~250 lines written a commit before — three fenced
+  config examples and four tables — after checking every fact in them onto the
+  site.
+- **"a 1,300-line behaviour contract"** — it is **1,812** lines.
+- **"the schema"** is 306 lines, not the 301 the website blueprint records
+  (`website/index.md:35`).
+- **The future tense throughout** — "is about to become single-language",
+  "removes Node", "will point here". All of it had already happened. `--help`
+  was already shipping `https://claude-status.virajp.dev`
+  (`src/_runtime/cli.rs:82`, pinned by `cli.rs:292` and `tests/e2e.rs:1306`), so
+  the dead-link risk the plan lists under Risks was live, not hypothetical, for
+  the whole gap between `config-and-cli/03` and this cycle.
+
+### The screenshot is a placeholder, and cannot be regenerated automatically
+
+`site/static/statusline.png` is a copy of `assets/statusline.png`, standing in
+until a fresh render arrives. A test asserts it exists and is a real PNG; no
+test can assert it is *current*, which is the risk the plan already named.
+
+**Regeneration is a manual recipe, and there is no way around that** — the bar's
+glyphs are Nerd Font private-use codepoints and no headless renderer available
+here carries the font:
+
+1. A terminal with a Nerd Font, 24-bit colour and a dark background.
+2. `cd` into a repository whose `.config/claude-status.json` sets a sensible
+   `projectName`.
+3. Run `claude-status --debug`.
+4. Screenshot the two `SAMPLE RENDER` lines.
+
+The figures in that render come from `sample_facts()` and are fixed; the git
+facts and the project name are real, which is why step 2 matters.
+
+`.config/claude-status.json` in this repository said `@askviraj/claude-status` —
+the npm name, retired by `distribution/01` — and now says
+`virajp/claude-status`.

@@ -11,6 +11,8 @@
     "**/*-lock.json",
     "**/*-lock.yaml",
     "**/graphify-out/",
+    "site/public/",
+    "site/templates/",
     "assets/claude-status.defaults.json",
     "**/.claude/skills/flutter-interoperating-with-native-apis"
   ],

@@ -1,0 +1,61 @@
+{# The whole layout. Every page extends this one. #}
+{#
+  Two rules hold this site's link checking together, and they are both here.
+
+  1. Every internal link in a TEMPLATE goes through `get_url(path="@/...md")`.
+     That form resolves against the content library, so a link to a page that
+     does not exist fails `zola build` outright. A hand-written `href="/x/"`
+     does not — `zola check` does not read template hrefs at all, and neither
+     does the build. If you write a raw internal href here, nothing will ever
+     tell you when it rots.
+  2. Every internal link in CONTENT is written `@/page.md`, which `zola check`
+     does validate. Root-relative and `../` links are silently unchecked.
+
+  Between them the build itself is the link check, which is why this site pins
+  no separate crawler.
+#}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    {# The viewport meta is load-bearing for the phone criterion: without it
+       mobile Safari renders at a 980px viewport and scales the page down, so
+       every media query below is measured against the wrong width. #}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}{{ config.title }}{% endblock title %}</title>
+    <meta
+      name="description"
+      content="{% block description %}{{ config.description }}{% endblock description %}"
+    />
+    <link rel="stylesheet" href="{{ get_url(path='style.css') }}" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="{{ get_url(path='@/_index.md') }}">claude-status</a>
+      {# Plain anchors, no JS, no disclosure widget. On a narrow screen the
+         stylesheet wraps them onto their own line rather than collapsing them
+         behind a button that would need a script to open. #}
+      <nav aria-label="Documentation">
+        <a href="{{ get_url(path='@/install.md') }}">Install</a>
+        <a href="{{ get_url(path='@/configure.md') }}">Configure</a>
+        <a href="{{ get_url(path='@/repo-config.md') }}">Per-repo</a>
+        <a href="{{ get_url(path='@/segments.md') }}">Segments</a>
+        <a href="{{ get_url(path='@/diagnosing.md') }}">Diagnosing</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      {% block content %}{% endblock content %}
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        <a href="{{ config.extra.repo_url }}">Source on GitHub</a>
+        &middot;
+        <a href="{{ config.extra.repo_url }}/blob/main/LICENSE">MIT</a>
+      </p>
+    </footer>
+  </body>
+</html>

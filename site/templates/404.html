@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Not found — {{ config.title }}{% endblock title %}
+
+{% block content %}
+  <article class="prose">
+    <h1>Not found</h1>
+    <p>
+      There is no page at that address. The nav above covers the whole site —
+      there are only six pages, so whatever you were after is one of them.
+    </p>
+    <p>
+      If you followed a link from <code>claude-status --help</code>, from a
+      Homebrew caveat, or from the readme, that link is wrong and is worth
+      <a href="{{ config.extra.repo_url }}/issues">reporting</a>.
+    </p>
+  </article>
+{% endblock content %}

@@ -6,9 +6,9 @@ gpg_verify           = true     # verify tool signatures
 raw                  = true     # streams output
 status.missing_tools = "always"
 
-# Every tool dev and CI both need, resolved identically in both. Rust, and
-# nothing else — `distribution/01` deleted the npm installer, and node and pnpm
-# left with it, because the only thing a second language was here to do was
+# Every tool dev and CI both need, resolved identically in both. Rust, and the
+# site's generator — `distribution/01` deleted the npm installer, and node and
+# pnpm left with it, because the only thing a second language was here to do was
 # deliver a binary that needs none. Tools only one environment uses live in
 # mise.dev.toml; mise.ci.toml holds CI-only additions and production env VALUES.
 #
@@ -20,8 +20,19 @@ status.missing_tools = "always"
 # downloaded everywhere; the benefit is that "works locally" and "works in CI"
 # stop being different questions about the toolchain. Do not narrow this back
 # without moving the lint out of CI first.
+#
+# `zola` builds docs/../site/ and belongs in the BASE, not mise.dev.toml: the
+# site workflow runs under `MISE_ENV=ci`, which does not load the dev file, and
+# a tool declared in both files fails the `mise-toolchain` pre-commit hook. It
+# is a prebuilt static Rust binary from `aqua:getzola/zola` with an upstream
+# attestation mise verifies — it links nothing but system libraries and brings
+# no runtime, which is the only reason a second generator was allowed back into
+# a tree that just finished removing one. Pinned exactly, not `latest`: 0.23
+# renamed the `[markdown]` highlighting keys, so a floating version would break
+# the build on an upgrade nobody asked for.
 [tools]
 "core:rust" = { profile = "default", version = "latest" }
+zola        = { version = "0.23.4" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.

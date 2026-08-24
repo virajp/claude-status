@@ -139,7 +139,7 @@
           "description": "`auto` (default) renders only for team/enterprise seats — the plans whose budget is a monthly spend limit. `always` renders whenever budget data exists (e.g. to watch a Pro/Max extra-usage credit cap)."
         }
       },
-      "description": "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches."
+      "description": "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/claude-status/spend.json; override with $CLAUDE_STATUS_SPEND_CACHE). A render never fetches."
     },
     "typeSymbols": {
       "type": "object",

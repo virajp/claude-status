@@ -1,3 +1,14 @@
+# Gitleaks — the secret scanner run by the pre-commit hook and `code:sec`.
+#
+# `useDefault = true` is load-bearing, and its absence was a real hole. A
+# `--config` file REPLACES gitleaks' built-in ruleset rather than adding to it,
+# so without this line the two custom rules below were the *entire* scan: an
+# AWS access key that the default ruleset flags passed both the hook and
+# `code:sec` cleanly. `extend` is what puts the ~170 default rules back and
+# makes the rules below additions rather than a replacement.
+[extend]
+useDefault = true
+
 [[rules]]
 description = "RevenueCat public API key"
 id          = "revenuecat-api-key"

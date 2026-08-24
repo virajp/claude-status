@@ -1,0 +1,172 @@
+name: Site
+
+# Builds claude-status.virajp.dev and deploys it to Cloudflare Pages.
+#
+# THIS WORKFLOW HAS NEVER RUN. The `website/01-site` cycle authored it in full
+# and deliberately stopped short of deploying: no Cloudflare project exists, no
+# repository secret is set (`gh api repos/virajp/claude-status/actions/secrets`
+# reported `total_count: 0`), and `claude-status.virajp.dev` does not resolve.
+# Everything below is the intended shape, not a description of something that
+# has happened. Before the first deploy, read "BEFORE THE FIRST TAG" at the
+# bottom of this comment.
+#
+# Triggered two ways, and they do different things:
+#   1. a pushed `site-v*` tag   — build AND deploy
+#   2. a pull request touching site/, or this file — build ONLY, no secrets
+#
+# ---------------------------------------------------------------------------
+# WHY `site-v*` IS A PLAIN COUNTER
+# ---------------------------------------------------------------------------
+#
+# `site-v1`, `site-v2`, `site-v3`. Nothing is encoded in the number; it exists
+# to be different from the last one and to sort.
+#
+# The question this answers is "what do I tag to ship a typo fix", and it comes
+# up monthly. Two alternatives were considered and rejected:
+#
+#   A DATE (`site-2026-08-24`) — collides the second time you ship twice in one
+#   day, which is exactly the day you are fixing something you just broke. It
+#   also invites a suffix convention, and then the suffix needs a rule.
+#
+#   MIRRORING Cargo.toml — would mean no documentation change can ship without
+#   a binary version bump. That contradicts the entire reason this tag line is
+#   separate from `v*`: the site is versioned apart from the binary so a docs
+#   correction does not need a release.
+#
+# The site has no features to version and no consumer reads the number, so
+# anything more expressive than a counter would be encoding meaning nobody
+# consumes. The same reasoning is recorded in the cycle plan's Gaps section.
+#
+# `v*` and `site-v*` cannot collide. GitHub tag globs anchor at the start of
+# the ref name, so `v*` never matches `site-v1` — a binary release triggers
+# release.yml and this workflow stays asleep, which is acceptance criterion 3.
+#
+# ---------------------------------------------------------------------------
+# WHY NOT CLOUDFLARE'S GIT INTEGRATION
+# ---------------------------------------------------------------------------
+#
+# Because it deploys on a branch push and cannot be gated on a tag. Wiring the
+# Pages project to the repository would make every merge to main a production
+# deploy and delete the whole point of the tag line.
+#
+# ---------------------------------------------------------------------------
+# WHY `wrangler-action` AND NOT A PINNED wrangler
+# ---------------------------------------------------------------------------
+#
+# `mise registry wrangler` resolves to `npm:wrangler` and nothing else. Pinning
+# it would put Node back in a tree that spent `distribution/01` removing it,
+# plus three native builds (`esbuild`, `sharp`, `workerd`) that mise would have
+# to be told to allow. `cloudflare/wrangler-action@v3` keeps Node on the runner
+# where it is already installed and out of the repository entirely.
+#
+# The site itself is built by zola, a single static Rust binary pinned in
+# .config/mise.toml — so the *tree* stays single-language even though the
+# deploy step is not.
+#
+# ---------------------------------------------------------------------------
+# BEFORE THE FIRST TAG
+# ---------------------------------------------------------------------------
+#
+#   1. Create the Cloudflare Pages project (`claude-status`, direct upload —
+#      NOT connected to this git repository, see above).
+#   2. Point `claude-status.virajp.dev` at it. The zone is already on
+#      Cloudflare (`dig NS virajp.dev` → celine/harvey.ns.cloudflare.com), but
+#      neither `virajp.dev` nor the subdomain resolves today.
+#   3. Add two repository secrets:
+#        CLOUDFLARE_API_TOKEN    scoped to "Cloudflare Pages: Edit" on this
+#                                project ALONE — an account-wide token is a far
+#                                larger thing to leak than what this needs
+#        CLOUDFLARE_ACCOUNT_ID   the account id
+#   4. Push `site-v1`.
+#
+# Until step 3 is done the deploy job will fail on an empty token rather than
+# doing something surprising, which is the failure mode to want.
+
+on:
+  push:
+    tags:
+      - "site-v*"
+  pull_request:
+    paths:
+      - "site/**"
+      - ".github/workflows/site.yml"
+      - ".config/mise.toml"
+  workflow_dispatch: {}
+
+permissions:
+  # Read-only. Nothing here creates a release, writes to the repository or
+  # needs an id token — the deploy authenticates to Cloudflare with a secret,
+  # not with OIDC.
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MISE_ENV: ci
+
+jobs:
+  # Runs for BOTH triggers, and is the only job a pull request gets. This is
+  # the repository's first PR CI of any kind: `code:lint` and `code:test` run
+  # on tags and on `workflow_dispatch` via release.yml, and have never run on a
+  # pull request. Widening that to the Rust suite is a separate decision and
+  # deliberately not made here.
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs zola from .config/mise.toml. It is in the BASE config and not
+      # mise.dev.toml precisely so this line works — `MISE_ENV=ci` does not
+      # load the dev file.
+      - uses: jdx/mise-action@v4
+
+      # Builds into site/public/ and then runs `zola check
+      # --skip-external-links`, which is the internal-link gate. See the task
+      # for why the build itself is the check and no crawler is pinned.
+      - name: Build the site
+        run: mise run site:build
+
+      # Handed to the deploy job below rather than rebuilt there, so the bytes
+      # that were checked are the bytes that ship. On a pull request nothing
+      # downloads it and it expires.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site/public
+          if-no-files-found: error
+          retention-days: 1
+
+  # Tag only. A pull request never reaches this job, so a fork PR cannot
+  # deploy and cannot see a secret — acceptance criterion 4.
+  deploy:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/site-v')
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: https://claude-status.virajp.dev
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: public
+
+      # `wrangler-action` installs wrangler on the runner for the length of the
+      # step. Nothing about it is committed to this repository.
+      #
+      # `--project-name` must match the Pages project created by hand; there is
+      # no wrangler.toml, because a direct-upload Pages deploy needs none and a
+      # config file would be a second place for the project name to be wrong.
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=claude-status
+            --branch=main
+
+      - name: Where it went
+        run: echo "Deployed ${GITHUB_REF_NAME} to
+          https://claude-status.virajp.dev"
