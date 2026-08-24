@@ -172,7 +172,25 @@ fn every_golden_is_free_of_stray_control_characters() {
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
         return; // the goldens are being written by sibling tests right now
     }
-    for name in ["fixture", "cold_start", "worktree", "thin_seam", "subagent", "subagent_bare", "subagent_multi"] {
+    // **Read the directory, do not list the names.** An earlier version spelled
+    // out seven of them and `spend.txt` was not among the seven, so the one
+    // golden added after the list was written was never checked. A hand-kept
+    // list of files that already exist on disk is a list that goes stale in one
+    // direction only — silently, and towards less coverage.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("golden");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("the golden directory exists")
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".txt"))
+        .map(|n| n.trim_end_matches(".txt").to_owned())
+        .collect();
+    names.sort();
+
+    // A scan of nothing passes. This repo has shipped that twice.
+    assert!(names.len() >= 8, "found {} goldens — the scan below would be near-vacuous: {names:?}", names.len());
+
+    for name in &names {
         let body = std::fs::read_to_string(golden_path(name)).expect("golden exists");
         for ch in body.chars() {
             let ok = ch == '\u{1b}' || ch == '\n' || !ch.is_control();

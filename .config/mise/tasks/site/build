@@ -85,7 +85,14 @@ BASE_URL="$(awk -F'"' '/^base_url/ { print $2 }' "${SITE_DIR}/config.toml")"
 [ -n "${BASE_URL}" ] || { print_error "could not read base_url from config.toml"; exit 1; }
 
 print_header "Rewriting self-links to root-relative ..."
-find "${SITE_DIR}/public" -name '*.html' -exec sed -i '' "s|${BASE_URL}/|/|g" {} +
+# `perl -pi`, not `sed -i`. BSD sed wants `-i ''` and GNU sed reads that empty
+# string as a filename, so the macOS form fails on the ubuntu runner this
+# workflow actually uses -- and the workflow has never run, so nothing would
+# have said so until the first `site-v*` tag. `perl -pi -e` behaves identically
+# on both, and perl is preinstalled on macOS and on ubuntu-24.04 (it is what
+# `shasum` is written in, which the release workflow already depends on).
+# `\Q…\E` quotes the URL so its `/` and `:` are literal.
+find "${SITE_DIR}/public" -name '*.html' -exec perl -pi -e "s|\Q${BASE_URL}\E/|/|g" {} +
 
 remaining="$(grep -rl "${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | wc -l | tr -d ' ')"
 if [ "${remaining}" != "0" ]; then
