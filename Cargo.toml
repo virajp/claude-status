@@ -37,10 +37,24 @@ serde = { default-features = false, features = [
 ureq = { default-features = false, features = [ "rustls" ], version = "3.4" }
 
 # Untyped `Value` parsing, the deep merge, cache/mirror serialisation, and the
-# one `from_value` that turns the merged config into types. `preserve_order`
-# (via indexmap) is what keeps "statuses are tried in config order" true. `std`
-# must stay listed explicitly — `preserve_order` does not imply it once default
-# features are off.
+# one `from_value` that turns the merged config into types. `std` must stay
+# listed explicitly — `preserve_order` does not imply it once default features
+# are off.
+#
+# `preserve_order` (via indexmap) is **not a convenience**. It carries two
+# separate behaviours, and dropping it would break both silently:
+#
+# 1. It keeps "statuses are tried in config order" true — a `BTreeMap`-shaped
+#    map would re-rank a user's subagent buckets, and the shipped order is
+#    alphabetical only by coincidence, so every golden would still pass.
+# 2. `--configure` read-modify-writes `~/.claude/settings.json`, a file this
+#    tool owns three keys of. Without ordered maps that write would
+#    **alphabetise the user's entire Claude Code configuration**. It is what
+#    makes the cycle's criteria 1 and 3 reachable at all.
+#
+# Both are covered: `settings::tests::unrelated_keys_survive_with_their_values_
+# and_their_order` asserts the order of a user's keys directly, and goes red if
+# this feature is removed.
 serde_json = { default-features = false, features = [
 "std",
 "preserve_order",

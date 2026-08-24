@@ -67,7 +67,7 @@ pub fn read_json_file(path: &Path) -> Option<Value> {
 ///
 /// Best-effort — the caller treats failure as "nothing was written".
 pub fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
-    write_bytes_atomic(path, &serde_json::to_vec(value)?)
+    write_bytes_atomic(path, &serde_json::to_vec(value)?, None)
 }
 
 /// The same write, indented and newline-terminated.
@@ -76,21 +76,59 @@ pub fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
 /// compact, but a config the user is invited to edit should not arrive as one
 /// line.
 pub fn write_json_atomic_pretty(path: &Path, value: &Value) -> std::io::Result<()> {
+    write_json_atomic_pretty_mode(path, value, None)
+}
+
+/// The pretty write, with the temp file created at an explicit mode.
+///
+/// **`mode` is a security parameter, not a convenience.** `fs::write` creates
+/// at `0666 & !umask` — 0644 on a default macOS account — so writing a file the
+/// user had tightened to 0600 and re-chmodding it *afterwards* leaves two
+/// windows in which their secrets are world-readable: the temp file for the
+/// whole of the write, and the real path between the rename and the chmod.
+/// `~/.claude/settings.json` can carry an `env` block with credentials in it,
+/// and a signal in either window leaves a world-readable copy on disk
+/// permanently, because nothing sweeps a stranded `*.tmp`.
+///
+/// Creating the temp at the target's mode closes both: no wider mode ever
+/// exists, so there is no window to lose a race in and no chmod to fail.
+pub fn write_json_atomic_pretty_mode(path: &Path, value: &Value, mode: Option<u32>) -> std::io::Result<()> {
     let mut bytes = serde_json::to_vec_pretty(value)?;
     bytes.push(b'\n');
-    write_bytes_atomic(path, &bytes)
+    write_bytes_atomic(path, &bytes, mode)
 }
 
 /// Write-then-rename, so an interrupted write cannot truncate the target and a
 /// concurrent reader never sees a half-written file.
-fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+fn write_bytes_atomic(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
+    use std::io::Write as _;
+
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir)?;
 
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = dir.join(format!("{file_name}.{}.tmp", std::process::id()));
 
-    match fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, path)) {
+    let write = || -> std::io::Result<()> {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        if let Some(mode) = mode {
+            // At creation, so the file is never briefly wider than this.
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, mode);
+        }
+        let mut file = options.open(&tmp)?;
+        if let Some(mode) = mode {
+            // `mode()` above is masked by the umask, which can only *narrow* —
+            // but a target at 0664 under a 0022 umask would come back 0644, so
+            // this sets the exact bits. It runs on the temp file, before the
+            // rename, so the real path still never exists at the wrong mode.
+            file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(mode))?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()
+    };
+
+    match write().and_then(|()| fs::rename(&tmp, path)) {
         Ok(()) => Ok(()),
         Err(e) => {
             let _ = fs::remove_file(&tmp);

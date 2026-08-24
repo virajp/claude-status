@@ -77,8 +77,10 @@ build_one() {
 smoke_test() {
   local bin="$1"
 
-  # `--version` is the shape the installer uses to tell an installed binary from
-  # a bundled one, so a build that cannot answer it is a broken build.
+  # `--version` is the one output of this binary a script may parse, and this
+  # check is one of its two consumers — the release workflow runs the identical
+  # comparison on the artifact it is about to publish. A build that cannot
+  # answer it with the bare crate version is a broken build.
   print_header "Smoke-testing ${bin} ..."
   local reported expected
   reported="$("./${bin}" --version)"

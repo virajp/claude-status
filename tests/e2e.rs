@@ -15,7 +15,7 @@
 //! pre-seeded fresh cache, and a seeded `.claude/.credentials.json` so the
 //! keychain fallback is never reached.
 //!
-//! The fourth was added when `--refresh-spend` and `--debug` stopped being
+//! The fourth was added when `--refresh` and `--debug` stopped being
 //! inert: the first three were written while nothing in this binary could
 //! fetch, and a fake home alone was never enough once something could.
 //!
@@ -37,6 +37,10 @@ const BINARY: &str = env!("CARGO_BIN_EXE_claude-status");
 
 /// Port 1 is reserved and nothing listens on it.
 const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/never";
+
+/// What the binary prints when it recognised no surface flag — the tell that a
+/// test thought it was exercising a mode and was not.
+const MISSING_FLAG_LINE: &str = "missing --statusline or --subagent";
 
 /// The reference payload from contract §12.
 const FIXTURE: &str = r#"{"model":{"display_name":"Opus 4.8"},"effort":{"level":"high"},
@@ -509,6 +513,747 @@ fn version_is_exactly_the_version_with_or_without_debug() {
     }
 }
 
+/// A throwaway `$HOME` for `--configure`, optionally carrying a settings file.
+///
+/// Deliberately **not** [`Home`]: that seeds a config, a spend cache and a
+/// credentials file, and every `--configure` case below turns on what is and is
+/// not already there.
+fn configure_home(settings: Option<&str>) -> TempDir {
+    let home = TempDir::new().unwrap();
+    if let Some(body) = settings {
+        let dir = home.path().join(".claude");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), body).unwrap();
+    }
+    home
+}
+
+fn settings_of(home: &TempDir) -> serde_json::Value {
+    let text = std::fs::read_to_string(home.path().join(".claude").join("settings.json")).expect("it is there");
+    serde_json::from_str(&text).expect("it is JSON")
+}
+
+/// **Criteria 1 and 2**, through the binary rather than through the merge.
+///
+/// The three keys are set, every other key keeps its value, and another tool's
+/// `PostToolUse` group keeps its matcher and its hook.
+///
+/// "Byte-identical" (criterion 1's word) is **not** what is asserted, and
+/// cannot be: this writes 2-space pretty JSON with a trailing newline, so a
+/// file indented any other way is reformatted even where no value moved. The
+/// TypeScript this replaces had the same property. What is deliverable, and
+/// what a user actually cares about, is that no *value* changed.
+#[test]
+fn configure_sets_the_three_keys_and_preserves_everything_else() {
+    let home = configure_home(Some(
+        &serde_json::json!({
+            "model": "opus",
+            "permissions": { "allow": ["Bash(ls:*)"] },
+            "hooks": { "PostToolUse": [
+                { "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "/usr/bin/fmt" }] },
+            ] },
+        })
+        .to_string(),
+    ));
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success(), "exit code {:?}, stderr: {}", out.status.code(), stderr(&out));
+
+    let after = settings_of(&home);
+    assert_eq!(after["statusLine"]["command"], "claude-status --statusline");
+    assert_eq!(after["statusLine"]["refreshInterval"], 4, "the bar's redraw cadence");
+    assert_eq!(after["statusLine"]["padding"], 0);
+    assert_eq!(after["subagentStatusLine"]["command"], "claude-status --subagent");
+    assert_eq!(after["model"], "opus", "an unrelated key was altered");
+    assert_eq!(after["permissions"], serde_json::json!({ "allow": ["Bash(ls:*)"] }));
+
+    let groups = after["hooks"]["PostToolUse"].as_array().unwrap();
+    assert_eq!(groups[0]["matcher"], "Edit|Write", "their matcher was rewritten");
+    assert_eq!(groups[0]["hooks"][0]["command"], "/usr/bin/fmt", "their hook was replaced");
+    assert_eq!(groups[1]["hooks"][0]["command"], "claude-status --caps-hook");
+}
+
+/// **Criterion 3**, over three runs, because a hook list that grows by one
+/// entry per run takes three runs to notice.
+#[test]
+fn configure_is_idempotent_over_three_runs() {
+    let home = configure_home(Some(r#"{"model":"opus"}"#));
+    let path = home.path().join(".claude").join("settings.json");
+
+    let mut bytes = Vec::new();
+    for run_number in 1..=3 {
+        let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+        assert!(out.status.success(), "run {run_number} exited {:?}", out.status.code());
+        bytes.push(std::fs::read(&path).unwrap());
+    }
+
+    assert_eq!(bytes[0], bytes[1], "the second run changed the file");
+    assert_eq!(bytes[1], bytes[2], "the third run changed the file");
+    assert_eq!(settings_of(&home)["hooks"]["PostToolUse"].as_array().unwrap().len(), 1, "the hook list grew");
+}
+
+/// **An already-wired file is not rewritten — it is not opened for writing at
+/// all.**
+///
+/// `Wiring::changed()` calls this "what makes idempotence structural rather
+/// than incidental", and it was untested at this level: forcing it to `true`
+/// makes `--configure` rewrite byte-identically on every run, so **both
+/// three-run tests stay green** — identical values serialise to identical
+/// bytes. Only a file whose formatting is *not* ours can tell the difference.
+///
+/// So the fixture is deliberately hostile to a rewrite: four-space indent, keys
+/// in the user's own order, our three keys already correct. A rewrite would
+/// reflow all of it — normalising indentation in a file this tool does not own,
+/// on a run that had nothing to do.
+#[test]
+fn an_already_wired_file_is_left_byte_identical_and_says_so() {
+    let body = concat!(
+        "{\n",
+        "    \"statusLine\": {\n",
+        "        \"type\": \"command\",\n",
+        "        \"command\": \"claude-status --statusline\",\n",
+        "        \"padding\": 0,\n",
+        "        \"refreshInterval\": 4\n",
+        "    },\n",
+        "    \"subagentStatusLine\": { \"type\": \"command\", \"command\": \"claude-status --subagent\" },\n",
+        "    \"hooks\": { \"PostToolUse\": [ { \"hooks\": [ { \"type\": \"command\", ",
+        "\"command\": \"claude-status --caps-hook\" } ] } ] },\n",
+        "    \"model\": \"opus\"\n",
+        "}\n",
+    );
+    let home = configure_home(Some(body));
+    // The user config too, so the whole of `$HOME` is expected to be untouched
+    // rather than "untouched apart from the seed" — which would leave the
+    // strongest assertion below unavailable.
+    let config = home.path().join(".config").join("claude-status").join("config.json");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "{}\n").unwrap();
+    let before = snapshot(home.path());
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    assert_eq!(snapshot(home.path()), before, "a run with nothing to do still wrote something");
+    assert_eq!(
+        std::fs::read_to_string(home.path().join(".claude").join("settings.json")).unwrap(),
+        body,
+        "the user's own formatting was normalised on a run with nothing to do",
+    );
+    // The line that says so is asserted nowhere else in the suite.
+    assert!(stdout(&out).contains("nothing to change"), "{}", stdout(&out));
+    assert!(stdout(&out).contains("already wired"), "{}", stdout(&out));
+}
+
+/// **Criterion 4.** Replaced, and said so — the printing is the entire
+/// mitigation for a flag that overwrites with no undo.
+#[test]
+fn configure_replaces_a_foreign_status_line_and_says_what_it_replaced() {
+    let home = configure_home(Some(
+        r#"{ "statusLine": { "type": "command", "command": "starship prompt --right" } }"#,
+    ));
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success());
+    assert_eq!(settings_of(&home)["statusLine"]["command"], "claude-status --statusline");
+
+    // The value came out of the user's file, so it is quoted back on stderr —
+    // the one stream this binary sends untrusted content to (§4a).
+    let said = stderr(&out);
+    assert!(said.contains("starship prompt --right"), "the user was not told what they lost: {said}");
+    assert!(stdout(&out).contains("REPLACED"), "and the report marks the key: {}", stdout(&out));
+}
+
+/// A previous install of ours is rewritten **quietly**. The tempting rule —
+/// "warn whenever the value differs" — shouts at every upgrading user about
+/// their own last install.
+#[test]
+fn configure_rewrites_a_stale_command_of_ours_without_a_warning() {
+    let home = configure_home(Some(
+        r#"{ "statusLine": { "type": "command", "command": "/h/.claude/bin/claude-status" } }"#,
+    ));
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success());
+    assert_eq!(settings_of(&home)["statusLine"]["command"], "claude-status --statusline");
+    assert_eq!(stderr(&out), "", "a previous install of ours is not a warning: {}", stderr(&out));
+}
+
+/// **Criterion 5.** A dry run prints a plan marked as a plan, and touches
+/// nothing on disk.
+#[test]
+fn configure_dry_run_prints_and_writes_nothing() {
+    let body = r#"{"model":"opus"}"#;
+    let home = configure_home(Some(body));
+    let before = snapshot(home.path());
+
+    let out = run_in(&["--configure", "--dry-run"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("would write"), "a dry run must be distinguishable: {}", stdout(&out));
+    assert_eq!(snapshot(home.path()), before, "a dry run wrote to disk");
+}
+
+/// **`--debug` is a modifier on `--configure` too**, and §5 says a modifier
+/// "must not change stdout by a single byte".
+///
+/// `--configure` is the first mode that could break that claim: it is the only
+/// one that writes, and the only one that can exit non-zero. Two *separate*
+/// throwaway homes seeded identically, because running `--configure` twice
+/// against one home is not a control — the first run changes the state the
+/// second one reports, so the outputs would differ for a reason that has
+/// nothing to do with `--debug`. Both paths are checked: the ordinary one and a
+/// refusal.
+#[test]
+fn debug_is_a_modifier_on_configure_and_never_changes_its_stdout() {
+    for settings in [
+        Some(r#"{"model":"opus","statusLine":{"type":"command","command":"starship prompt"}}"#),
+        // A refusal: nothing on stdout either way, and the same exit code.
+        Some(r#"{ "model": "opus",, }"#),
+        None,
+    ] {
+        let plain_home = configure_home(settings);
+        let debug_home = configure_home(settings);
+
+        let plain = run_in(&["--configure"], "", Some(plain_home.path()), None, &[]);
+        let debug = run_in(&["--configure", "--debug"], "", Some(debug_home.path()), None, &[]);
+
+        // Byte-identical, not merely equivalent — the paths in the report are
+        // tilde-rendered, so two different homes produce the same bytes and any
+        // difference is `--debug`'s doing.
+        assert_eq!(plain.stdout, debug.stdout, "--debug changed stdout for {settings:?}");
+        assert_eq!(plain.status.code(), debug.status.code(), "--debug changed the exit code for {settings:?}");
+        // And the file each one produced is the same too: a modifier that
+        // changed what was *written* while leaving stdout alone would satisfy
+        // the assertion above and still be a bug.
+        assert_eq!(snapshot(plain_home.path()), snapshot(debug_home.path()), "--debug changed what was written");
+    }
+}
+
+/// **A typo in `--dry-run` must not perform a real write.**
+///
+/// The parser ignores unrecognised arguments, which is right for a render — a
+/// stray token must never cost a bar. On the one flag that *writes*, with no
+/// receipt and no undo, that same silence turns one mistyped character into an
+/// unrecoverable overwrite of a file this tool does not own, while the user
+/// believed they had asked for a preview.
+#[test]
+fn configure_refuses_an_unrecognised_argument_rather_than_writing_anyway() {
+    for typo in ["--dry-runn", "--dryrun", "-n", "--force"] {
+        let body = r#"{"model":"opus"}"#;
+        let home = configure_home(Some(body));
+        let before = snapshot(home.path());
+
+        let out = run_in(&["--configure", typo], "", Some(home.path()), None, &[]);
+        assert_eq!(out.status.code(), Some(1), "{typo} was accepted");
+        assert_eq!(snapshot(home.path()), before, "{typo} performed a real write");
+        assert!(stderr(&out).contains(typo), "the refusal must name what it did not understand: {}", stderr(&out));
+        assert!(stderr(&out).contains("--help"), "and where to look: {}", stderr(&out));
+    }
+}
+
+/// The asymmetry is deliberate: the render surfaces keep ignoring what they do
+/// not recognise, because Claude Code invokes those and §1's invariant 3 says a
+/// render never fails visibly. Only the writing flag is strict.
+#[test]
+fn a_render_surface_still_ignores_an_unrecognised_argument() {
+    let home = Home::new(&safe_config());
+    let out = run(&home, &["--statusline", "--dry-runn"], FIXTURE, &[]);
+
+    assert!(out.status.success(), "a typo cost the user their bar");
+    assert!(stdout(&out).contains("Opus 4.8"), "got: {}", stdout(&out).escape_debug());
+}
+
+/// **The `ours-stale` path, end to end** — the case the four-state ownership
+/// model exists for.
+///
+/// `ai-plugins` wired this actuator as `node …/context-caps.js`. Collapse the
+/// four states to two and that command reads as *foreign*: it stays where it
+/// is, ours is appended beside it, and the caps actuator **fires twice on every
+/// tool call**. Nothing about that is visible in the output of either run.
+#[test]
+fn a_legacy_node_caps_hook_is_replaced_rather_than_joined() {
+    let home = configure_home(Some(
+        &serde_json::json!({
+            "hooks": { "PostToolUse": [
+                { "matcher": "*", "hooks": [{ "type": "command", "command": "node /h/.claude/hooks/context-caps.js" }] },
+            ] },
+        })
+        .to_string(),
+    ));
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success());
+
+    let groups = settings_of(&home)["hooks"]["PostToolUse"].as_array().unwrap().clone();
+    assert_eq!(groups.len(), 1, "the actuator would now fire twice per tool call: {groups:?}");
+    assert_eq!(groups[0]["hooks"][0]["command"], "claude-status --caps-hook");
+    assert_eq!(groups[0]["matcher"], "*", "their matcher was rewritten");
+    assert_eq!(stderr(&out), "", "a previous install of ours is rewritten quietly: {}", stderr(&out));
+}
+
+/// **The most dangerous behaviour in the TypeScript this replaces.**
+///
+/// `readSettings` (`installer/src/modules/settings.ts:66-71`) parsed inside a
+/// bare `catch { return null }` and fell back to `{}`, so a single stray comma
+/// in a user's `settings.json` cost them their **entire** Claude Code
+/// configuration on the next install. Absent and corrupt are different things
+/// and only one of them is safe to write over.
+#[test]
+fn a_malformed_settings_file_is_refused_with_a_non_zero_exit_and_nothing_written() {
+    let body = r#"{ "model": "opus", "permissions": { "allow": [] },, }"#;
+    let home = configure_home(Some(body));
+    let before = snapshot(home.path());
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert_eq!(out.status.code(), Some(1), "a file this tool cannot read must not be one it writes");
+    assert_eq!(stdout(&out), "", "and it must not report work it did not do");
+    assert!(stderr(&out).contains("settings.json"), "the refusal names the file: {}", stderr(&out));
+    assert_eq!(snapshot(home.path()), before, "the refusal still changed something on disk");
+}
+
+#[test]
+fn a_settings_shape_the_merge_cannot_read_is_refused_rather_than_overwritten() {
+    for body in [r#"[1,2,3]"#, r#"{ "hooks": "all" }"#, r#"{ "hooks": { "PostToolUse": {} } }"#] {
+        let home = configure_home(Some(body));
+        let before = snapshot(home.path());
+
+        let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+        assert_eq!(out.status.code(), Some(1), "{body} was wired rather than refused");
+        assert_eq!(snapshot(home.path()), before, "{body} was overwritten");
+    }
+}
+
+/// The seeded **global** config must not pick up the name of whatever
+/// repository `--configure` happened to be run in.
+///
+/// `layers::load` merges the repo layer's `projectName` into the `Config` it
+/// returns, so seeding from the *loaded* config rather than `Config::default()`
+/// would pin one repo's name into `~/.config/claude-status/config.json`
+/// permanently — where it would then override the name of every other repo the
+/// user ever opens. The two implementations differ by one identifier and only
+/// this test can tell them apart.
+#[test]
+fn configuring_inside_a_repo_does_not_pin_that_repos_name_into_the_global_config() {
+    let home = configure_home(None);
+    let repo = fake_repo(r#"{ "projectName": "the-repo-i-happened-to-be-in" }"#);
+
+    let out = run_in(&["--configure"], "", Some(home.path()), Some(repo.path()), &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let seeded = std::fs::read_to_string(home.path().join(".config").join("claude-status").join("config.json"))
+        .expect("the config was seeded");
+    assert!(
+        !seeded.contains("the-repo-i-happened-to-be-in"),
+        "a repo's name was written into the user's global config: {seeded}",
+    );
+    assert!(!seeded.contains("projectName"), "the global config must carry no project name at all: {seeded}");
+}
+
+/// A `~/.claude/settings.json` symlinked into a dotfiles repo is **followed**,
+/// not replaced.
+///
+/// The write is temp-then-rename, and a rename over a symlink swaps the link
+/// for a regular file — so without resolving first, a dotfiles user's real
+/// settings file would be orphaned and their settings would appear to revert on
+/// their next sync. Nothing about that failure is visible at the time.
+#[test]
+fn a_symlinked_settings_file_is_written_through_rather_than_replaced() {
+    let home = configure_home(None);
+    let store = TempDir::new().unwrap();
+    let real = store.path().join("settings.json");
+    std::fs::write(&real, r#"{"model":"opus"}"#).unwrap();
+
+    let link = home.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    assert!(link.symlink_metadata().unwrap().is_symlink(), "the symlink was replaced by a regular file");
+    let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&real).unwrap()).unwrap();
+    assert_eq!(written["statusLine"]["command"], "claude-status --statusline", "the real file was not written");
+    assert_eq!(written["model"], "opus");
+    assert!(stdout(&out).contains("symlink"), "the user is told which file changed: {}", stdout(&out));
+}
+
+/// **A known limitation, pinned so it cannot be traded away by accident.**
+///
+/// A hardlink is a second *name* for an inode, not a pointer to a path, so
+/// there is nothing to follow the way the symlink case above follows one. The
+/// atomic replace gives `~/.claude/settings.json` a new inode and the other
+/// name keeps the old contents.
+///
+/// This test exists to pin the **atomicity**, of which the stale link is the
+/// accepted cost: the only way to keep a hardlink in step is to truncate and
+/// rewrite in place, and a `settings.json` seen half-written breaks Claude Code
+/// outright. A stale second name is worth much less than that risk — and unlike
+/// the symlink case, the file Claude Code actually reads is correct afterwards.
+/// If this test ever goes red, check what was given up to make it.
+#[test]
+fn a_hardlinked_settings_file_goes_stale_because_the_write_is_atomic() {
+    let home = configure_home(None);
+    let store = TempDir::new().unwrap();
+    let other_name = store.path().join("settings.json");
+    std::fs::write(&other_name, r#"{"model":"opus"}"#).unwrap();
+
+    let wired = home.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(wired.parent().unwrap()).unwrap();
+    std::fs::hard_link(&other_name, &wired).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    // The file Claude Code reads is correct — this is not data loss.
+    let after: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&wired).unwrap()).unwrap();
+    assert_eq!(after["statusLine"]["command"], "claude-status --statusline");
+    assert_eq!(after["model"], "opus", "the user's own keys survived");
+
+    // The other name kept the old inode, and so the old bytes.
+    assert_eq!(
+        std::fs::read_to_string(&other_name).unwrap(),
+        r#"{"model":"opus"}"#,
+        "the write was performed in place — atomicity was given up to keep the hardlink in step",
+    );
+}
+
+/// **F1, at the surface.** A tool whose name merely *contains* ours is not
+/// ours, and destroying one silently is the worst outcome this flag has.
+///
+/// The module doc calls the stderr warning "the entire mitigation" for having
+/// no undo — so a value that is overwritten without it has bypassed the whole
+/// design, not just a nicety. All four rows must warn.
+#[test]
+fn a_similarly_named_tools_status_line_is_replaced_only_with_a_warning() {
+    for command in [
+        "starship prompt",
+        "claude-statusline",
+        "/opt/claude-statusbar --statusline",
+        "claude-status-pro --statusline --theme dark",
+    ] {
+        let home = configure_home(Some(
+            &serde_json::json!({ "statusLine": { "type": "command", "command": command } }).to_string(),
+        ));
+        let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+        assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+        assert!(stderr(&out).contains(command), "{command:?} was destroyed silently: {:?}", stderr(&out));
+        assert!(stdout(&out).contains("REPLACED"), "{command:?} was not reported as a replacement");
+        assert_eq!(settings_of(&home)["statusLine"]["command"], "claude-status --statusline");
+    }
+}
+
+/// The hook side of F1, where the consequence is **deletion** rather than
+/// replacement. `ai-plugins` only ever wrote its `context-caps.js` under
+/// `.claude/hooks/`, so a script of that name anywhere else belongs to someone
+/// else and must survive untouched.
+#[test]
+fn another_projects_context_caps_hook_is_not_deleted() {
+    let theirs = "node /work/vendor/context-caps.js --lint";
+    let home = configure_home(Some(
+        &serde_json::json!({
+            "hooks": { "PostToolUse": [{ "matcher": "Edit", "hooks": [{ "type": "command", "command": theirs }] }] },
+        })
+        .to_string(),
+    ));
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success());
+
+    let groups = settings_of(&home)["hooks"]["PostToolUse"].as_array().unwrap().clone();
+    let commands: Vec<String> = groups
+        .iter()
+        .filter_map(|g| g["hooks"].as_array())
+        .flatten()
+        .filter_map(|e| e["command"].as_str().map(str::to_string))
+        .collect();
+    assert!(commands.iter().any(|c| c == theirs), "another project's hook was deleted: {commands:?}");
+    assert!(commands.iter().any(|c| c == "claude-status --caps-hook"), "and ours was not added: {commands:?}");
+}
+
+/// **F3, by the reviewer's own probe.** `PostToolUse` is iterated, so two
+/// entries of ours means two invocations per tool call — and `--caps-hook`
+/// output goes verbatim into the agent's context.
+#[test]
+fn only_one_caps_hook_entry_survives_however_many_were_there() {
+    let home = configure_home(Some(
+        &serde_json::json!({
+            "hooks": { "PostToolUse": [
+                { "hooks": [
+                    { "type": "command", "command": "claude-status --caps-hook" },
+                    { "type": "command", "command": "node /h/.claude/hooks/context-caps.js" },
+                ] },
+                { "hooks": [{ "type": "command", "command": "/opt/homebrew/bin/claude-status --caps-hook" }] },
+            ] },
+        })
+        .to_string(),
+    ));
+
+    assert!(run_in(&["--configure"], "", Some(home.path()), None, &[]).status.success());
+
+    let groups = settings_of(&home)["hooks"]["PostToolUse"].as_array().unwrap().clone();
+    let ours: Vec<&str> = groups
+        .iter()
+        .filter_map(|g| g["hooks"].as_array())
+        .flatten()
+        .filter_map(|e| e["command"].as_str())
+        .filter(|c| c.contains("caps-hook") || c.contains("context-caps"))
+        .collect();
+    assert_eq!(ours.len(), 1, "the actuator would fire {} times per tool call: {ours:?}", ours.len());
+    assert_eq!(ours[0], "claude-status --caps-hook");
+}
+
+/// **F6.** A symlink whose target is temporarily missing — dotfiles not cloned,
+/// `stow` not run, volume unmounted — is the exact state the symlink handling
+/// exists for, and the one it could not see: `canonicalize` fails, the fallback
+/// writes to the link's own path, and the rename destroys the link.
+#[test]
+fn a_symlink_with_a_missing_target_is_refused_rather_than_destroyed() {
+    let home = configure_home(None);
+    let link = home.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink("/nonexistent/dotfiles/settings.json", &link).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert_eq!(out.status.code(), Some(1), "a dangling symlink was treated as an absent file");
+    assert!(stderr(&out).contains("target is missing"), "the reason must be nameable: {}", stderr(&out));
+
+    let after = link.symlink_metadata().unwrap();
+    assert!(after.file_type().is_symlink(), "the symlink was replaced by a regular file");
+    assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("/nonexistent/dotfiles/settings.json"));
+}
+
+/// **Step 3's rule applied to the one consequence a user cannot discover.**
+///
+/// *"Because there is no receipt and no undo, the destructive case must be
+/// visible."* A stale hard link qualifies twice over: no undo, and — unlike an
+/// overwritten `statusLine`, which gets quoted back — nothing anywhere would
+/// otherwise say it happened.
+///
+/// The negative half is what keeps it worth reading. A warning that fired on
+/// ordinary files, or on the symlinks this tool handles correctly, would be
+/// noise on every run and would be tuned out long before it mattered.
+#[test]
+fn a_write_that_breaks_a_hard_link_says_so_and_only_then() {
+    let store = TempDir::new().unwrap();
+    let marker = "hard link";
+
+    // Fires: a second name for the inode about to be replaced.
+    let linked = configure_home(None);
+    let wired = linked.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(wired.parent().unwrap()).unwrap();
+    let other_name = store.path().join("hardlinked.json");
+    std::fs::write(&other_name, r#"{"model":"opus"}"#).unwrap();
+    std::fs::hard_link(&other_name, &wired).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(linked.path()), None, &[]);
+    let said = stderr(&out);
+    assert!(said.contains(marker), "a broken hard link went unmentioned: {said:?}");
+    assert!(said.contains("stop tracking"), "it must say what actually happens: {said:?}");
+    // Information, not a refusal: the write is correct and the user asked for it.
+    assert!(out.status.success(), "the warning blocked the write: {:?}", out.status.code());
+    assert_eq!(settings_of(&linked)["statusLine"]["command"], "claude-status --statusline");
+
+    // Silent: an ordinary file. The seeded settings carry no foreign statusLine,
+    // so stderr has nothing else to say and can be asserted empty outright.
+    let plain = configure_home(Some(r#"{"model":"opus"}"#));
+    let out = run_in(&["--configure"], "", Some(plain.path()), None, &[]);
+    assert_eq!(stderr(&out), "", "an ordinary file warned about hard links");
+
+    // Silent: a symlink. This tool resolves and writes *through* one, so the
+    // link survives — warning here would report a break that did not happen.
+    let symlinked = configure_home(None);
+    let link = symlinked.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    let real = store.path().join("symlinked.json");
+    std::fs::write(&real, r#"{"model":"opus"}"#).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(symlinked.path()), None, &[]);
+    assert!(!stderr(&out).contains(marker), "a symlink was reported as a broken hard link: {:?}", stderr(&out));
+
+    // `--dry-run` gets it too, in the `would` form: a preview that stayed quiet
+    // about this would be silent on the only thing it is uniquely good for.
+    let dry = configure_home(None);
+    let dry_wired = dry.path().join(".claude").join("settings.json");
+    std::fs::create_dir_all(dry_wired.parent().unwrap()).unwrap();
+    let dry_other = store.path().join("dry.json");
+    std::fs::write(&dry_other, r#"{"model":"opus"}"#).unwrap();
+    std::fs::hard_link(&dry_other, &dry_wired).unwrap();
+
+    let out = run_in(&["--configure", "--dry-run"], "", Some(dry.path()), None, &[]);
+    let said = stderr(&out);
+    assert!(said.contains(marker) && said.contains("would stop"), "a dry run hid the warning: {said:?}");
+    assert_eq!(std::fs::read_to_string(&dry_other).unwrap(), r#"{"model":"opus"}"#, "the dry run wrote anyway");
+}
+
+/// A read-only `settings.json` is replaced anyway — `rename` needs write
+/// permission on the *directory*, not on the file — and the mode is then
+/// restored, so the run is otherwise indistinguishable from an ordinary one.
+///
+/// The mode is honoured; the intent behind it is not. Same treatment as the
+/// hard-link case, for the same reason: it is a consequence the output would
+/// otherwise hide completely. Not a refusal — the user typed `--configure`,
+/// which is a clearer statement of intent than a mode bit set some time ago.
+#[test]
+fn a_read_only_settings_file_is_rewritten_and_says_so() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = configure_home(Some(r#"{"model":"opus"}"#));
+    let path = home.path().join(".claude").join("settings.json");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    assert!(out.status.success(), "a read-only file is not a refusal: {:?}", out.status.code());
+    assert!(stderr(&out).contains("read-only"), "the user was not told: {:?}", stderr(&out));
+
+    assert_eq!(settings_of(&home)["statusLine"]["command"], "claude-status --statusline");
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o400, "the mode itself was not preserved: {mode:o}");
+
+    // A writable file must stay silent, or the warning becomes noise on every run.
+    let ordinary = configure_home(Some(r#"{"model":"opus"}"#));
+    let out = run_in(&["--configure"], "", Some(ordinary.path()), None, &[]);
+    assert!(!stderr(&out).contains("read-only"), "an ordinary file warned: {:?}", stderr(&out));
+}
+
+/// `settings.json` can carry an `env` block with credentials in it, and a fresh
+/// `fs::write` is 0644 minus the umask — so a file the user had tightened would
+/// come back world-readable.
+#[test]
+fn writing_settings_keeps_the_permissions_it_had() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = configure_home(Some(r#"{"model":"opus"}"#));
+    let path = home.path().join(".claude").join("settings.json");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert!(run_in(&["--configure"], "", Some(home.path()), None, &[]).status.success());
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "the file was widened to {mode:o}");
+}
+
+/// **F4 and F5.** Preserving the mode *afterwards* is not the same as never
+/// having a wider one.
+///
+/// `fs::write` creates at 0644 on a default account, so a chmod after the
+/// rename leaves the user's `env` block — credentials included — readable by
+/// every account on the machine for the length of the write, and the real path
+/// briefly readable after it. A signal in either window strands a
+/// world-readable copy forever, because nothing sweeps a `*.tmp`.
+///
+/// The temp file is the observable: it is a sibling of the target, so scanning
+/// the directory during the write is what proves no wider mode ever existed.
+/// Here the run has finished, so the assertion is the stronger one — **no temp
+/// survives at all, and nothing in that directory is group- or world-readable.**
+#[test]
+fn no_intermediate_file_is_left_wider_than_the_settings_it_holds() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = configure_home(Some(
+        &serde_json::json!({ "model": "opus", "env": { "SECRET_API_KEY": "sk-must-not-leak" } }).to_string(),
+    ));
+    let dir = home.path().join(".claude");
+    std::fs::set_permissions(dir.join("settings.json"), std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert!(run_in(&["--configure"], "", Some(home.path()), None, &[]).status.success());
+
+    for entry in std::fs::read_dir(&dir).unwrap().filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        assert!(!name.ends_with(".tmp"), "a temp file survived the write: {name}");
+        if entry.path().is_file() {
+            let mode = entry.metadata().unwrap().permissions().mode() & 0o077;
+            assert_eq!(mode, 0, "{name} is readable beyond its owner: {:o}", mode);
+        }
+    }
+    // And the secret really was in play — otherwise the above proves nothing.
+    assert_eq!(settings_of(&home)["env"]["SECRET_API_KEY"], "sk-must-not-leak");
+}
+
+/// **Criterion 6.** Seeded only when there is none, and never touched again.
+#[test]
+fn configure_seeds_a_schema_only_user_config_and_leaves_an_existing_one_alone() {
+    let fresh = configure_home(None);
+    assert!(run_in(&["--configure"], "", Some(fresh.path()), None, &[]).status.success());
+
+    let path = fresh.path().join(".config").join("claude-status").join("config.json");
+    let seeded = std::fs::read_to_string(&path).expect("the config was seeded");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&seeded).unwrap(),
+        serde_json::json!({ "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json" }),
+        "the seed must be a pointer and nothing else — the npm installer seeded the whole asset and froze it",
+    );
+
+    // Byte-identical, and deliberately not what this tool would have written.
+    let kept = configure_home(None);
+    let existing = kept.path().join(".config").join("claude-status").join("config.json");
+    std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
+    let body = "{\n\t\"projectName\": \"mine\"\n}";
+    std::fs::write(&existing, body).unwrap();
+
+    assert!(run_in(&["--configure"], "", Some(kept.path()), None, &[]).status.success());
+    assert_eq!(std::fs::read_to_string(&existing).unwrap(), body, "an existing config was touched");
+}
+
+/// A write that could not happen is a **failure**, not a note in the report.
+///
+/// A read-only `$HOME`, a full disk or a permissions problem all land here, and
+/// a setup script that saw exit 0 would carry on and tell the user their bar
+/// was wired. The report says so in words either way; the exit code is the part
+/// a script can act on.
+#[test]
+fn a_write_that_fails_reports_it_and_exits_non_zero() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = configure_home(Some(r#"{"model":"opus"}"#));
+    let dir = home.path().join(".claude");
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let out = run_in(&["--configure"], "", Some(home.path()), None, &[]);
+    // Restore before asserting, so a failure cannot leave the TempDir
+    // undeletable and turn one red test into a stranded directory.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert_eq!(out.status.code(), Some(1), "a failed write reported success");
+    assert!(stdout(&out).contains("FAILED"), "and the report is silent about it: {}", stdout(&out));
+    assert!(!stderr(&out).is_empty(), "nothing on stderr said why");
+}
+
+/// With no `$HOME` there is no `~/.claude/settings.json` to wire, and a
+/// relative `.claude/` would wire Claude Code to whatever directory this
+/// happened to be run from. It refuses instead — the same rule as a corrupt
+/// file, for the same reason.
+#[test]
+fn with_no_home_configure_refuses_rather_than_writing_somewhere_relative() {
+    let dir = TempDir::new().unwrap();
+    let marker = dir.path().join("only-this-should-be-here");
+    std::fs::write(&marker, "").unwrap();
+
+    let out = run_without_home(&["--configure"], "", dir.path(), &[]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(stdout(&out), "");
+    assert!(stderr(&out).contains("$HOME"), "it names what is missing: {}", stderr(&out));
+
+    let after: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(after, vec![marker.file_name().unwrap()], "something was written: {after:?}");
+}
+
+/// The wiring `--configure` writes is the wiring `--debug` reads back — the two
+/// halves of the same contract, and the only place either is checked against
+/// the other.
+#[test]
+fn what_configure_writes_is_what_debug_reports_as_wired() {
+    let home = configure_home(None);
+    assert!(run_in(&["--configure"], "", Some(home.path()), None, &[]).status.success());
+
+    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), None, &[]));
+    let wiring = report.split("CLAUDE WIRING").nth(1).expect("the section is present");
+    let wiring = wiring.split("\nEFFECTIVE LAYOUT").next().expect("split always yields one");
+    assert!(wiring.contains("claude-status --statusline"), "{wiring}");
+    assert!(wiring.contains("claude-status --subagent"), "{wiring}");
+    assert!(wiring.contains("claude-status --caps-hook"), "{wiring}");
+    assert!(!wiring.contains("<not set>"), "a key --configure just wrote reads as unset: {wiring}");
+}
+
 #[test]
 fn debug_is_a_modifier_that_never_changes_stdout() {
     let home = Home::new(&safe_config());
@@ -534,13 +1279,31 @@ fn no_flag_with_piped_stdin_prints_exactly_one_diagnostic_line() {
     assert!(out.status.success());
 }
 
+/// **Criterion 7**, at the surface. `cli.rs` pins `HELP`'s contents; this pins
+/// that the binary actually prints them, which is the claim a user makes when
+/// they run it.
+///
+/// `--help` is now the only documentation that ships in the binary, and after
+/// `config-relocation` deleted the autoseed the repo layer has no other
+/// discovery route at all — so "vague about it" and "gone" are the same thing.
 #[test]
-fn help_lists_both_surfaces() {
+fn help_lists_every_surface_and_documents_the_repo_layer() {
     let home = Home::new(&safe_config());
     let out = run(&home, &["--help"], "", &[]);
     let text = stdout(&out);
-    assert!(text.lines().count() > 5);
-    assert!(text.contains("--statusline") && text.contains("--subagent") && text.contains("--refresh-spend"));
+    // Structure, not just keywords: a blob containing every substring below and
+    // nothing else passes a `contains`-only test while being useless as help.
+    for section in ["USAGE:", "MODIFIERS:", "WHAT --configure WRITES:", "CONFIGURATION:", "MORE:"] {
+        assert!(text.contains(section), "the {section} section is gone:\n{text}");
+    }
+    assert!(text.lines().count() > 40, "help collapsed to {} lines:\n{text}", text.lines().count());
+    for flag in ["--statusline", "--subagent", "--refresh", "--configure", "--caps-hook", "--dry-run"] {
+        assert!(text.contains(flag), "{flag} is undocumented:\n{text}");
+    }
+    assert!(text.contains(".config/claude-status.json"), "the repo config path:\n{text}");
+    assert!(text.contains("projectName"), "the one key it may set:\n{text}");
+    assert!(text.contains("https://claude-status.virajp.dev"), "the project URL:\n{text}");
+    assert!(out.status.success());
 }
 
 #[test]
@@ -565,6 +1328,42 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
     // silently strip the colours the section exists to show.
     let sample = text.split("SAMPLE RENDER").nth(1).expect("the section is present");
     assert!(sample.contains('\u{1b}'), "the sample render lost its colour: {}", sample.escape_debug());
+}
+
+/// **Criterion 8.** A machine with no config file anywhere is described as
+/// working, because after `config-relocation` it *is* — the defaults are
+/// embedded and no file has to exist.
+///
+/// The report used to say `not found` for it, which reads as a half-installed
+/// machine. It said the same thing for a config that would not parse, which is
+/// the case the word was actually needed for, so the two were indistinguishable
+/// in the one place a user goes to tell them apart. Both halves are asserted
+/// here: the absent case must read as normal **and** the broken case must not.
+#[test]
+fn debug_calls_a_config_free_machine_normal_and_a_broken_config_not() {
+    let bare = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let clean = stdout(&run_in(&["--debug"], "", Some(bare.path()), Some(cwd.path()), &[]));
+    let layers = clean.split("\nCLAUDE WIRING").next().expect("split always yields one");
+
+    assert!(layers.contains("user     using defaults"), "an absent user config reads as broken:\n{layers}");
+    assert!(layers.contains("repo     using defaults"), "an absent repo config reads as broken:\n{layers}");
+    assert!(layers.contains("(no file)"), "it says the path it looked at had nothing behind it:\n{layers}");
+    assert!(!layers.contains("not found"), "the config-free state is still called an absence:\n{layers}");
+    assert!(!layers.contains("UNREADABLE"), "nothing here is unreadable:\n{layers}");
+    assert!(clean.contains("embedded loaded"), "and the layer actually in use is named:\n{clean}");
+
+    // The distinction the word exists for. `Home::new` seeds a valid config, so
+    // this one is planted by hand.
+    let broken = TempDir::new().unwrap();
+    let path = broken.path().join(".config").join("claude-status").join("config.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "{ this is not json").unwrap();
+
+    let report = stdout(&run_in(&["--debug"], "", Some(broken.path()), Some(cwd.path()), &[]));
+    let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
+    assert!(layers.contains("user     UNREADABLE"), "a config that will not parse reads as fine:\n{layers}");
+    assert!(!layers.contains("user     using defaults"), "{layers}");
 }
 
 #[test]
@@ -653,10 +1452,103 @@ fn the_refresh_child_is_recognised_and_silent() {
     //
     // `--subagent` used to be tested here too, back when it was a recognised
     // no-op. It renders now, and its own cases above cover it.
+    //
+    // **The empty stdout is the load-bearing half of this test**, and it is
+    // what makes the flag's *name* checkable from outside. An unrecognised flag
+    // is ignored by design, so a binary that no longer knew `--refresh` would
+    // reach the missing-flag case and print one line here instead of nothing.
+    // The other half of the rename — that the caller passes the same string —
+    // is pinned in `cli.rs` by `REFRESH_FLAG` and, end to end, by
+    // `spend_render::a_stale_cache_draws_immediately_and_spawns_a_child`.
     let home = Home::new(&safe_config());
-    let out = run(&home, &["--refresh-spend"], FIXTURE, &[]);
-    assert_eq!(stdout(&out), "", "--refresh-spend writes nothing to stdout");
-    assert!(out.status.success(), "--refresh-spend exits 0");
+    let out = run(&home, &["--refresh"], FIXTURE, &[]);
+    assert_eq!(stdout(&out), "", "--refresh writes nothing to stdout");
+    assert!(out.status.success(), "--refresh exits 0");
+
+    // The control: the same run under the *old* name must now be unrecognised.
+    // Without this the assertions above hold for a binary that recognises
+    // neither, since the fixture's stdin is piped either way.
+    let stale = run(&home, &[OLD_REFRESH_FLAG], FIXTURE, &[]);
+    assert!(stdout(&stale).contains("missing --statusline"), "the old name is still a surface flag");
+}
+
+/// The retired flag name, spelled in two halves.
+///
+/// Not decoration: the sibling test below asserts the literal appears nowhere,
+/// and this file is inside the tree it scans. Writing it whole here would make
+/// the guard fail on its own control, and excluding this file from the scan
+/// would blind the guard to every other line in it.
+const OLD_REFRESH_FLAG: &str = concat!("--refresh", "-spend");
+
+/// **Criterion 10.** The old name is gone from everything a reader could take
+/// as a current instruction.
+///
+/// **The criterion says "appears nowhere", and that is not achievable as
+/// written.** A contract amendment recording a rename has to name what it
+/// renamed, or it records nothing; so does a cycle plan whose step 1 *is* the
+/// rename. Read literally, the criterion deletes its own explanation.
+///
+/// The line drawn instead is between a **reference** and a **record**: an
+/// occurrence is allowed only on a line that also says `rename`. That is one
+/// rule, it is checkable, and it fails on any genuine reintroduction — a
+/// `spawn_detached`, a `--help` row or a table cell has nowhere to put the
+/// word. `docs/plans/` is out of scope entirely; a plan is a proposal, not a
+/// description of the tree.
+#[test]
+fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    // **The repo root is in scope, and it is the important one.** An earlier
+    // version listed only the source and contract directories, which left
+    // `readme.md` — the most reader-facing file in the repository — unwalked:
+    // a genuine reintroduction there, phrased as a current instruction, passed.
+    // `installer/`, `npm/` and `target/` are skipped by `walk_files`; the first
+    // two are `distribution/01`'s to delete and still describe the npm world.
+    for dir in [".", "src", "tests", "docs/spec", ".config", ".github"] {
+        walk_files(&root.join(dir), &mut |path| {
+            // `docs/plans/` is out of scope: a cycle plan whose step 1 *is* this
+            // rename has to be allowed to name what it renamed. Excluded by
+            // path rather than by directory name, so it cannot silently widen.
+            if path.starts_with(root.join("docs").join("plans")) {
+                return;
+            }
+            let Ok(text) = std::fs::read_to_string(path) else {
+                return;
+            };
+            for (n, line) in text.lines().enumerate() {
+                if line.contains(OLD_REFRESH_FLAG) && !line.contains("rename") {
+                    found.push(format!("{}:{}", path.strip_prefix(root).unwrap().display(), n + 1));
+                }
+            }
+        });
+    }
+    assert_eq!(found, Vec::<String>::new(), "the old flag name is still being used, not merely recorded");
+}
+
+/// Every file under `dir`, recursively, skipping the trees that are not this
+/// cycle's to police.
+///
+/// `installer/` and `npm/` still describe the npm world and are
+/// `distribution/01`'s to delete; `target/` and `.git/` are build and VCS
+/// state. Everything else — including the repo root, so `readme.md`,
+/// `CLAUDE.md` and `CONTRIBUTING.md` are all covered — is walked.
+fn walk_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
+    const SKIP: [&str; 5] = ["installer", "npm", "target", ".git", ".claude"];
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_dir() {
+            if !SKIP.contains(&name.as_str()) {
+                walk_files(&path, visit);
+            }
+        } else {
+            visit(&path);
+        }
+    }
 }
 
 #[test]
@@ -1030,6 +1922,16 @@ fn with_an_empty_home_and_no_repo_a_full_bar_renders_and_nothing_is_created() {
 /// Every mode is covered, not just `--statusline`. `--statusline` is the one
 /// that used to write, but a rule that holds for one surface and not the
 /// others is not the invariant this cycle bought.
+///
+/// **`--configure` is the one deliberate exception, and it is named here rather
+/// than quietly left out of the matrix.** Writing `~/.claude/settings.json` and
+/// seeding `~/.config/claude-status/config.json` is the whole of what that flag
+/// does, so including it would assert the opposite of its contract — and the
+/// paragraph above argues this invariant holds for *every* surface, which makes
+/// a silent omission read as a bug rather than as a decision. What it writes,
+/// and that it writes nothing else, is covered by its own cases above;
+/// `configure_dry_run_prints_and_writes_nothing` is the row that would have
+/// belonged here, and it snapshots the whole of `$HOME` the same way.
 #[test]
 fn no_mode_writes_outside_the_cache_directory() {
     let prefix = cache_prefix();
@@ -1053,7 +1955,7 @@ fn no_mode_writes_outside_the_cache_directory() {
         (&["--statusline"][..], FIXTURE, Child::NotExpected),
         (&["--statusline"][..], FIXTURE, Child::Expected),
         (&["--subagent"][..], SUBAGENT_FIXTURE, Child::NotExpected),
-        (&["--refresh-spend"][..], "", Child::NotExpected),
+        (&["--refresh"][..], "", Child::NotExpected),
         (&["--debug"][..], "", Child::NotExpected),
         (&["--caps-hook"][..], r#"{"session_id":"s1"}"#, Child::NotExpected),
         (&["--help"][..], "", Child::NotExpected),
@@ -1084,6 +1986,18 @@ fn no_mode_writes_outside_the_cache_directory() {
 
         let out = run_in(args, stdin, Some(home.path()), Some(repo.path()), &env);
         assert!(out.status.success(), "{args:?} exited {:?}", out.status.code());
+        // **Every row must have run the mode it names.** An unrecognised flag
+        // is ignored by design and writes no files, so a row whose flag had
+        // been renamed out from under it would satisfy every assertion below
+        // having exercised the missing-flag branch instead — cycle 02's C7
+        // shape. The missing-flag line is the one thing that branch always
+        // emits, and only `--help` legitimately mentions `--statusline`.
+        if args != ["--help"] {
+            assert!(
+                !stdout(&out).contains(MISSING_FLAG_LINE),
+                "{args:?} was not recognised, so this row exercised nothing",
+            );
+        }
 
         // After the child, not before it. A mode that wrote nothing itself but
         // spawned something that did would otherwise pass.
@@ -1149,7 +2063,13 @@ fn with_no_home_nothing_is_written_relative_to_the_cwd() {
     std::fs::write(&marker, "").unwrap();
 
     run_without_home(&["--statusline"], FIXTURE, dir.path(), &[("CLAUDE_STATUS_USAGE_DIR", "~/usage")]);
-    run_without_home(&["--refresh-spend"], "", dir.path(), &[]);
+    // The empty stdout is not decoration. Every assertion below is about a file
+    // that was *not* written, and an unrecognised flag writes no files either —
+    // so with a stale flag name this whole test would pass having exercised the
+    // missing-flag branch instead of the refresh path. That is the shape of
+    // vacuity cycle 02 recorded as C7.
+    let refresh = run_without_home(&["--refresh"], "", dir.path(), &[]);
+    assert_eq!(stdout(&refresh), "", "--refresh was not recognised, so nothing below was exercised");
 
     let after: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert_eq!(after, vec![marker.file_name().unwrap()], "something was written: {after:?}");
@@ -1165,7 +2085,7 @@ fn with_no_home_debug_names_the_missing_variable() {
     let out = run_without_home(&["--debug"], "", dir.path(), &[]);
 
     // Scoped to the SPEND section. A bare `contains("$HOME")` over the whole
-    // report is satisfied by the `user  not found  <no $HOME>` row in CONFIG
+    // report is satisfied by the `user  using defaults  <no $HOME>` row in CONFIG
     // LAYERS — which this same cycle added — so it would pass even if the spend
     // section said nothing at all.
     let report = stdout(&out);
@@ -1232,7 +2152,7 @@ fn debug_reports_a_hostile_config_without_obeying_it() {
     let esc = '\u{1b}';
     // Built with `serde_json` rather than written as raw text: a literal ESC
     // byte inside a JSON string is **invalid JSON**, so a hand-written fixture
-    // fails to parse, the layer loads as "not found", and the assertions below
+    // fails to parse, the layer reads as UNREADABLE, and the assertions below
     // pass having exercised nothing. It has to be an escape sequence on disk.
     let home = Home::new(
         &serde_json::json!({
@@ -1266,7 +2186,7 @@ fn debug_reports_a_hostile_config_without_obeying_it() {
     // assert against everything before it.
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
     // Proof the fixtures actually landed. Without this the layer can fail to
-    // parse, load as "not found", and the escape assertion below passes having
+    // parse, read as UNREADABLE, and the escape assertion below passes having
     // exercised nothing — which is what this test did at first, and what it
     // silently went back to doing when the repo layer was narrowed.
     assert!(diagnostics.contains("user     loaded"), "the user layer never loaded: {diagnostics}");

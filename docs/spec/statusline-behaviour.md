@@ -55,16 +55,30 @@ pointing at the same binary and **both carrying their flag**:
 {
   "statusLine": {
     "type": "command",
-    "command": "${HOME}/.claude/bin/claude-status --statusline",
+    "command": "claude-status --statusline",
     "padding": 0,
     "refreshInterval": 4
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "${HOME}/.claude/bin/claude-status --subagent"
+    "command": "claude-status --subagent"
   }
 }
 ```
+
+> **Amended 2026-08-23** (`cli-surface` cycle). The commands above were
+> `${HOME}/.claude/bin/claude-status …` while the npm installer placed the
+> binary and knew where it had put it. `--configure` writes the **bare name**
+> and lets `PATH` resolve it: under Homebrew, `current_exe()` resolves the
+> symlink to a versioned Cellar directory that `brew upgrade` deletes, so an
+> absolute path would leave the wiring pointing at a binary that no longer
+> exists — silently, until the next upgrade. The accepted cost is that Claude
+> Code's own `PATH` must contain Homebrew's `bin`, which a GUI-launched
+> application does not always inherit. See [§5](#5-cli-surface).
+>
+> **`refreshInterval: 4` is load-bearing**, not decoration: it is what makes
+> "the bar renders every turn and every few seconds" true, which is the whole
+> argument for this being a Rust binary. It belongs to `statusLine` alone.
 
 Invoked with **no flag at all** — which is what a stale `settings.json` produces
 after an upgrade — the binary discriminates on whether stdin is a TTY. A TTY
@@ -479,6 +493,25 @@ only the user layer.
 > Discoverability moves entirely to `--help` and the website as a result. The
 > repo layer being supported is not the same as anyone knowing it exists.
 
+> **Amended 2026-08-23** (`cli-surface` cycle). **`--configure` seeds an empty
+> user config.** With no file at layer 2 it creates
+> `~/.config/claude-status/config.json` containing `$schema` and nothing else —
+> a starting point an editor can complete against, which is what makes "hold
+> only what differs from layer 1" a thing a person can actually do by hand.
+>
+> Deliberately not the shipped defaults: the npm installer wrote the whole asset
+> verbatim, so every install froze a full copy of layer 1 at the version that
+> happened to be current and a later release changing a default reached nobody.
+> A pointer and no settings is the opposite of that.
+>
+> **An existing config is never touched** — not merged, not topped up, not
+> reordered. A writer that round-tripped one would preserve a *degraded* config
+> rather than the configuration, because degradation maps several inputs onto
+> one state and is lossy by construction.
+>
+> Layer 3 is still written by hand and by nothing else. `--help` is where it is
+> documented, per the note above.
+
 ### Colour specs
 
 Three accepted forms, anywhere a colour is expected — resolve in this order:
@@ -807,23 +840,145 @@ theming the bar and escaping out of it.
 ## 5. CLI surface
 
 **`--version` must be checked first and print nothing but the version**, because
-the installer distinguishes an installed binary from a bundled one by the
-*shape* of that answer.
+it is the one output of this binary a script may parse and **two release gates
+fail over its shape**: `.github/workflows/release.yml` refuses to publish a
+built binary whose `--version` differs from the crate version, and the
+`build:statusline` smoke test asserts the same thing before the artifact leaves
+the machine.
 
-| Invocation        | Does                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `--statusline`    | render the main bar from the payload on stdin                                            |
-| `--subagent`      | render the subagent panel from stdin, as NDJSON                                          |
-| `--refresh-spend` | fetch the budget into the cache and exit. Renders nothing                                |
-| `--debug`         | the diagnostic report — **and** a modifier on any of the above                           |
-| `--version`       | print `X.Y.Z` and exit. Nothing else on stdout, ever                                     |
-| `--help` / `-h`   | full usage                                                                               |
-| *(nothing)*       | TTY stdin → help; piped stdin → the one-line missing-flag error, see [§1](#1-what-it-is) |
+| Invocation      | Does                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| `--statusline`  | render the main bar from the payload on stdin                                            |
+| `--subagent`    | render the subagent panel from stdin, as NDJSON                                          |
+| `--refresh`     | fetch the budget into the cache and exit. Renders nothing                                |
+| `--caps-hook`   | the vwf `PostToolUse` cap actuator. Silent unless a cap is breached                      |
+| `--configure`   | wire Claude Code's `settings.json` to this binary, and seed a user config                |
+| `--debug`       | the diagnostic report — **and** a modifier on any of the above                           |
+| `--version`     | print `X.Y.Z` and exit. Nothing else on stdout, ever                                     |
+| `--help` / `-h` | full usage                                                                               |
+| *(nothing)*     | TTY stdin → help; piped stdin → the one-line missing-flag error, see [§1](#1-what-it-is) |
 
 > **Amended 2026-08-19** (`main-bar` cycle). The surface flags are new, per §1.
 > `--debug` is now **both a mode and a modifier**, absorbing the `--info` idea
 > below: as a mode its report is the output and goes to stdout; as a modifier it
 > narrates to stderr and must not change stdout by a single byte.
+
+> **Amended 2026-08-23** (`cli-surface` cycle), on four counts.
+>
+> **`--refresh-spend` is renamed to `--refresh`**, with no alias. Nothing has
+> shipped, so an alias would be compatibility with a version that never existed.
+> The name is a **constant** (`cli::REFRESH_FLAG`) rather than a literal in two
+> places, because a render spawns a detached child with it and that child's
+> stdio is `/dev/null` — a caller and a parser that drifted apart would leave
+> the spend segment silently frozen, with nothing on any stream to say why.
+>
+> **`--caps-hook` gains a row.** It has existed since the `spend` cycle and this
+> table never listed it, which made `--debug`'s wiring report cover a key the
+> contract did not describe.
+>
+> **`--configure` is new**, and it is this binary's whole setup story: the npm
+> installer that used to wire Claude Code is deleted by `distribution/01`. It
+> writes the three keys of §1 into `~/.claude/settings.json`, merges rather than
+> replaces `hooks.PostToolUse`, preserves every unrelated key, and creates
+> `~/.config/claude-status/config.json` with a `$schema` pointer alone when
+> there is none. An **existing** user config is never touched. `--dry-run`
+> prints the same plan and writes nothing.
+>
+> Three decisions inside it are worth stating, because none is recoverable
+> afterwards:
+>
+> - **It overwrites a `statusLine` belonging to another tool, without asking,
+>   and there is no receipt and no `--unconfigure`.** So it *prints what it
+>   replaced*, on stderr, before it writes. That printing is the entire
+>   mitigation, not a nicety.
+> - **A `settings.json` it cannot read is refused**, not overwritten: it names
+>   the file, changes nothing, and exits non-zero. Absent is different from
+>   corrupt, and only the first is safe to write over. The npm installer did not
+>   draw that line — it parsed inside a bare `catch`, fell back to `{}`, and
+>   replaced the user's entire Claude Code configuration with three keys.
+> - **The wired command is the bare name `claude-status`**, resolved from
+>   `PATH`, not an absolute path. `current_exe()` under Homebrew resolves to a
+>   versioned Cellar directory that `brew upgrade` deletes. The accepted cost is
+>   that Claude Code's own `PATH` must contain Homebrew's `bin`, which a
+>   GUI-launched application does not always inherit.
+>
+> **Ownership is decided by the command's program name, not by a substring.**
+> `contains("claude-status")` also matches `claude-statusline`,
+> `claude-status-pro` and `/opt/claude-statusbar` — none of which are this tool,
+> all of which were being overwritten *without the warning* that is the whole
+> mitigation for having no undo. The legacy `context-caps.js` hook is likewise
+> matched only under `.claude/hooks/`, because that is the one ownership test
+> whose consequence is **deletion** and another project's script of the same
+> name is not ours to remove.
+>
+> The narrowing has a cost, taken deliberately: a hook wired as
+> `/Users/me/bin/statusline --caps-hook` — a *renamed* copy of this binary — is
+> now foreign, so `--debug` reports it unset and `--configure` adds ours beside
+> it, firing the actuator twice. No shipped install can produce that; it takes a
+> renamed binary or a hand-written line. What it buys is that the report and the
+> writer share one definition, which is what stops `--debug` calling a hook
+> wired while `--configure` is about to duplicate it.
+>
+> **`hooks.PostToolUse` keeps exactly one entry of ours**, updated in place so
+> the group's `matcher` survives, with any later copies removed. It is a list
+> Claude Code iterates: two identical entries are two invocations per tool call,
+> so normalising duplicates into copies of each other is not deduplication.
+>
+> **`--configure` is the one mode that rejects an unrecognised argument.** Every
+> other surface ignores what it does not know, and must: Claude Code invokes the
+> renderers, and invariant 3 says a stray token may never cost a user their bar.
+> That same silence on the writing flag turns `--configure --dry-runn` — one
+> mistyped character — into a real, unundoable overwrite of a file this tool
+> does not own, performed by a user who believed they had asked for a preview.
+> The asymmetry is the decision.
+>
+> **`--configure` seeds the user config from the shipped defaults, never from
+> the loaded config.** `layers::load` merges the repo layer's `projectName`, so
+> seeding from what it returns would pin the name of whatever repository the
+> user happened to be standing in into their **global** config, where it would
+> then override every other repo's name.
+>
+> **Dotfiles.** The write is temp-then-rename, so a **symlinked**
+> `settings.json` is resolved first and written *through* — a rename over a
+> symlink would otherwise replace the link with a regular file and orphan the
+> real one, silently. A **hardlinked** one cannot be followed, because a
+> hardlink is a second name for an inode rather than a pointer to a path: the
+> other name keeps the old contents. That is a known limitation and the accepted
+> cost of atomicity, which is not negotiable here — a `settings.json` seen
+> half-written breaks Claude Code outright, whereas a stale second name leaves
+> the file Claude Code actually reads correct.
+>
+> It is not left **silent**, though. The rule above — *the destructive case must
+> be visible, because there is no receipt and no undo* — applies to it, and more
+> sharply than to the overwrite it was written for: an overwritten `statusLine`
+> at least gets quoted back, while a stale hard link is otherwise impossible for
+> a user to find out about. So a write that would break one says so on stderr,
+> naming the link count. It does **not** block the write or change the exit
+> code, and `--dry-run` reports it too — a preview that stayed quiet here would
+> be silent about the one consequence it is uniquely useful for. The other name
+> cannot be named: an inode does not know its own names, which is the same fact
+> that makes the limitation unfixable.
+>
+> A **read-only** `settings.json` is rewritten too, and also says so. An atomic
+> replace needs write permission on the *directory*, not on the file, so a 0400
+> file is swapped out and its mode restored — the mode is honoured, the intent
+> behind it is not. Not a refusal: typing `--configure` is a clearer statement
+> of intent than a mode bit set at some point in the past.
+>
+> **Concurrency is safe by construction, and measured.** The merge is a pure
+> function of the bytes it read, so two racing runs starting from the same file
+> compute identical output and whichever rename lands last is byte-identical to
+> the one it replaced; a run starting after another finished reads a wired file
+> and writes nothing at all. No interleaving produces a wrong file. The residual
+> is a lost update against a *third-party* writer — Claude Code itself, or an
+> editor — landing inside the read→rename window, roughly 1 ms of a ~3 ms
+> process. The file always remains valid JSON.
+>
+> **`--configure` means the opposite thing in the npm installer**, where it gave
+> the repo you were standing in a repo-level config layer and advertised itself
+> as the only command that wrote nothing under `~`. The name is deliberately
+> repurposed: this one writes only under `~`, and the repo layer is now written
+> by hand — see `--help`.
 
 `--debug` as a modifier narrates decisions on **stderr**. It must compose:
 `--version --debug` still prints a bare version; a render with `--debug` still
@@ -835,6 +990,14 @@ wiring as read from `settings.json`, the effective layout, the resolved git
 facts, the spend verdict, and a sample render. (This absorbs `--info`, which was
 a flag on the `ai-plugins` installer rather than the script; it belongs to
 whoever owns the binary, which is now this repo.)
+
+**A config layer has three states in that report, not two.** `loaded`,
+`using defaults`, and `UNREADABLE`. The middle one is the point: with the
+defaults embedded (§3) a machine with no config file anywhere is *working*, and
+calling that `not found` described a supported state as a missing one. The third
+exists because the same word used to cover a file that is present and will not
+parse — which is a real problem, is silent everywhere else (invariant 3 leaves
+nowhere to complain to), and so is only visible here.
 
 ---
 
@@ -910,8 +1073,8 @@ for half an hour or more — and the bar can render every few seconds. So:
 
 - A render **reads a cache file** and nothing else.
 - When that cache is older than `refreshMinutes`, the render **spawns a detached
-  child** (`--refresh-spend`) and draws the cached value immediately. It never
-  waits for the child.
+  child** (`--refresh`) and draws the cached value immediately. It never waits
+  for the child.
 - `refreshMinutes: 0` disables the refresh entirely.
 
 ### The cache

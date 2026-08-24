@@ -142,7 +142,10 @@ jobs:
         run: mise run build:statusline --target ${{ matrix.target }}
 
       # The binary is what ships, so prove this exact file answers `--version`
-      # with the bare number the installer keys on.
+      # with the bare crate version. This job is one of the two consumers that
+      # make that guarantee load-bearing — `build:statusline`'s smoke test is
+      # the other — and it is why contract §5 still pins the output's shape now
+      # that the npm installer no longer reads it.
       - name: Verify the built binary
         run: |
           bin="target/${{ matrix.target }}/release/claude-status"

@@ -18,9 +18,11 @@ use crate::git::GitFacts;
 use crate::payload::MainFacts;
 use crate::render::main_bar::render_main;
 use crate::render::subagent;
+use crate::_runtime::configure;
 use crate::_shared::proc;
 use crate::modules::spend;
 use crate::modules::caps;
+use crate::modules::settings;
 use crate::{cli, git, json, payload, time, usage};
 
 /// What the bar falls back to when a render panics: U+26A1, a space, `Claude`.
@@ -30,24 +32,43 @@ const FALLBACK_LINE: &str = "\u{26a1} Claude";
 pub fn run() -> i32 {
     let cli = cli::parse(std::env::args_os(), std::io::stdin().is_terminal());
     proc::set_narrate(cli.debug);
-    let output = dispatch(cli);
-    write_stdout(&output);
-    0
+    let Outcome { stdout, code } = dispatch(cli);
+    write_stdout(&stdout);
+    code
 }
 
-/// Builds the complete stdout payload for one invocation.
-fn dispatch(cli: Cli) -> String {
+/// One invocation's whole answer.
+///
+/// The exit code is part of it because [`Mode::Configure`] can **refuse**:
+/// every other mode is infallible by construction — §1's invariant 3 makes a
+/// render that cannot work still print a line and exit 0 — but a `--configure`
+/// that declined to touch a file has to be distinguishable by a script, and a
+/// message on stderr is not.
+pub(crate) struct Outcome {
+    pub(crate) stdout: String,
+    pub(crate) code: i32,
+}
+
+impl From<String> for Outcome {
+    fn from(stdout: String) -> Self {
+        Self { stdout, code: 0 }
+    }
+}
+
+/// Builds the complete stdout payload, and the exit code, for one invocation.
+fn dispatch(cli: Cli) -> Outcome {
     match cli.mode {
-        // Checked first and never decorated: the installer distinguishes an
-        // installed binary from a bundled one by the shape of this answer.
-        Mode::Version => format!("{VERSION}\n"),
-        Mode::Help => HELP.to_string(),
-        Mode::MissingFlag => format!("{MISSING_FLAG}\n"),
-        Mode::Statusline => render_statusline(cli.debug),
-        Mode::Subagent => render_subagent(),
-        Mode::RefreshSpend => refresh_spend(),
-        Mode::CapsHook => caps_hook(),
-        Mode::Debug => debug_report(),
+        // Checked first and never decorated: the release workflow and the
+        // build smoke test both fail over the shape of this answer.
+        Mode::Version => format!("{VERSION}\n").into(),
+        Mode::Help => HELP.to_string().into(),
+        Mode::MissingFlag => format!("{MISSING_FLAG}\n").into(),
+        Mode::Statusline => render_statusline(cli.debug).into(),
+        Mode::Subagent => render_subagent().into(),
+        Mode::Refresh => refresh_spend().into(),
+        Mode::CapsHook => caps_hook().into(),
+        Mode::Configure => configure::run(cli.dry_run, &cli.unknown),
+        Mode::Debug => debug_report().into(),
     }
 }
 
@@ -215,7 +236,7 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
     let layers = layers::load(home().as_deref(), root.as_deref());
 
     for source in &layers.sources {
-        narrate(&format!("config layer {}: {:?} loaded={}", source.label, source.path, source.loaded));
+        narrate(&format!("config layer {}: {:?} {}", source.label, source.path, source.state.label()));
         if !source.ignored.is_empty() {
             narrate(&format!("config layer {} ignored: {}", source.label, source.ignored.join(", ")));
         }
@@ -257,7 +278,7 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
 
     match spend::schedule::decide(cached.as_ref(), &config.spend, now_ms) {
         spend::schedule::Decision::Spawn => {
-            let spawned = proc::spawn_detached(&["--refresh-spend"]);
+            let spawned = proc::spawn_detached(&[cli::REFRESH_FLAG]);
             narrate(&format!("spend: stale, refresh child spawned={spawned}"));
         }
         decision => narrate(&format!("spend: no refresh ({decision:?})")),
@@ -310,13 +331,19 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // A `None` path means two different things: the **embedded** layer has
         // no file by definition, while the user or repo layer has none because
         // there was no home or no git root to build one from. Printing
-        // `<embedded>` for the second is how `--debug` outside a repo came to
-        // report `repo  not found  <embedded>`.
+        // `<embedded>` for the second is how `--debug` outside a repo once
+        // reported `repo  not found  <embedded>` — a **historical** bug, fixed;
+        // `not found` is not a state string this binary emits any more (see
+        // [`layers::LayerState::label`]).
         // Each `None` is explained by the layer it belongs to, and the arms
         // are matched against the named constants rather than string literals:
-        // a catch-all here is how `repo  not found  <embedded>` happened, and a
-        // renamed or fourth layer would reintroduce it silently.
+        // a catch-all here is how that bug happened, and a renamed or fourth
+        // layer would reintroduce it silently.
         let path = match (&source.path, source.label) {
+            // A path that resolved but has no file behind it says so, because
+            // `using defaults` next to a bare path otherwise reads as though
+            // the file were there and had nothing in it.
+            (Some(path), _) if source.state == layers::LayerState::Absent => format!("{} (no file)", path.display()),
             (Some(path), _) => path.display().to_string(),
             (None, layers::LABEL_EMBEDDED) => "<embedded>".to_string(),
             (None, layers::LABEL_USER) => "<no $HOME>".to_string(),
@@ -324,8 +351,12 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
             (None, layers::LABEL_REPO) => "<no git root>".to_string(),
             (None, other) => format!("<no path for {other}>"),
         };
-        let state = if source.loaded { "loaded" } else { "not found" };
-        let _ = writeln!(out, "  {:8} {state:10} {}", source.label, field(&path));
+        // Fourteen wide, not ten, because `using defaults` is the answer a
+        // config-free machine now gets and it does not fit in ten. The *label*
+        // column is untouched, which is what the exact-spacing assertions in
+        // `tests/e2e.rs` pin.
+        let state = source.state.label();
+        let _ = writeln!(out, "  {:8} {state:14} {}", source.label, field(&path));
 
         // A continuation row, in the same two columns, rather than a fourth
         // section. The keys a repo layer is not allowed to set are dropped
@@ -348,7 +379,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         if !source.ignored.is_empty() {
             let _ = writeln!(
                 out,
-                "  {:8} {:10} {} — a repo layer may set {} only",
+                "  {:8} {:14} {} — a repo layer may set {} only",
                 "",
                 "ignored",
                 field(&source.ignored.join(", ")),
@@ -434,8 +465,20 @@ fn claude_wiring() -> Vec<String> {
         return vec!["$HOME is unset".to_string()];
     };
     let path = home.join(".claude").join("settings.json");
-    let Some(settings) = json::read_json_file(&path) else {
-        return vec![format!("{} is missing or unreadable", path.display())];
+    // Missing and unreadable are **different answers**, and the `cli-surface`
+    // cycle is what made the difference matter: `--configure` creates the first
+    // and refuses the second. A single "missing or unreadable" row sent a user
+    // whose file will not parse to run the one command that will decline to fix
+    // it, with nothing here to say why.
+    let settings = match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return vec![format!("{} does not exist — run --configure to create it", path.display())];
+        }
+        Err(e) => return vec![format!("{} could not be read — {e}", path.display())],
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(settings) => settings,
+            Err(e) => return vec![format!("{} is not valid JSON — {e}", path.display())],
+        },
     };
 
     let mut rows: Vec<String> = ["statusLine", "subagentStatusLine"]
@@ -447,7 +490,7 @@ fn claude_wiring() -> Vec<String> {
         .collect();
 
     let hook = caps_hook_command(&settings).unwrap_or("<not set>");
-    rows.push(format!("{:20} {hook}", "hooks.PostToolUse"));
+    rows.push(format!("{:20} {hook}", settings::HOOK_KEY));
     rows
 }
 
@@ -458,16 +501,24 @@ fn claude_wiring() -> Vec<String> {
 /// `node …/context-caps.js`, so that is **ours in its old form** and showing it
 /// is the point of the report — an upgrade that left it behind runs the old
 /// actuator alongside the new one. Anyone else's hook is not ours to report.
-fn caps_hook_command(settings: &serde_json::Value) -> Option<&str> {
-    settings
-        .get("hooks")?
-        .get("PostToolUse")?
+///
+/// "Ours" is [`settings::hook_ownership_of`] rather than a second pair of
+/// substring checks, and that is not tidiness. This report exists to tell a
+/// user what `--configure` is looking at; the two had already drifted by the
+/// *order* of the match — `--caps-hook claude-status` was ours here and
+/// somebody else's there — so `--debug` would have shown a hook that
+/// `--configure` was about to wire a second copy alongside.
+fn caps_hook_command(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get(settings::HOOKS)?
+        .get(settings::POST_TOOL_USE)?
         .as_array()?
         .iter()
-        .filter_map(|group| group.get("hooks")?.as_array())
+        .filter_map(|group| group.get(settings::HOOKS)?.as_array())
         .flatten()
-        .filter_map(|entry| entry.get("command")?.as_str())
-        .find(|command| command.contains("--caps-hook") || command.contains("context-caps.js"))
+        .filter_map(|entry| entry.get("command"))
+        .find(|command| settings::hook_ownership_of(Some(command)) != settings::Ownership::Foreign)
+        .and_then(serde_json::Value::as_str)
 }
 
 /// Representative facts for the sample render, so `--debug` shows a full bar
@@ -525,19 +576,25 @@ pub fn render_bar(facts: &MainFacts, git: &GitFacts, config: &Config, spend: Opt
 mod tests {
     use super::*;
 
+    /// A `Cli` for a mode that takes no modifiers.
+    fn plain(mode: Mode) -> Cli {
+        Cli { mode, debug: false, dry_run: false, unknown: Vec::new() }
+    }
+
     #[test]
     fn version_output_is_bare() {
         let expected = format!("{}\n", env!("CARGO_PKG_VERSION"));
-        let out = dispatch(Cli { mode: Mode::Version, debug: false });
-        assert_eq!(out, expected);
+        let out = dispatch(plain(Mode::Version));
+        assert_eq!(out.stdout, expected);
+        assert_eq!(out.code, 0);
 
-        let with_debug = dispatch(Cli { mode: Mode::Version, debug: true });
-        assert_eq!(with_debug, expected, "--debug must not decorate the version");
+        let with_debug = dispatch(Cli { mode: Mode::Version, debug: true, dry_run: false, unknown: Vec::new() });
+        assert_eq!(with_debug.stdout, expected, "--debug must not decorate the version");
     }
 
     #[test]
     fn the_missing_flag_answer_is_exactly_one_line() {
-        let out = dispatch(Cli { mode: Mode::MissingFlag, debug: false });
+        let out = dispatch(plain(Mode::MissingFlag)).stdout;
         assert_eq!(out.lines().count(), 1);
         assert!(out.ends_with('\n'));
         assert!(out.contains("--statusline"), "it names the fix");
@@ -545,12 +602,22 @@ mod tests {
 
     #[test]
     fn help_is_multi_line_and_names_both_surfaces() {
-        let out = dispatch(Cli { mode: Mode::Help, debug: false });
+        let out = dispatch(plain(Mode::Help)).stdout;
         assert!(out.lines().count() > 5);
         assert!(out.contains("--statusline") && out.contains("--subagent"));
     }
 
-    // `--subagent` and `--refresh-spend` are both covered in `tests/e2e.rs`
+    /// Every mode but `--configure` exits 0 whatever it found, because §1's
+    /// invariant 3 says a render never fails visibly. `--configure` is the one
+    /// carve-out, and it is tested in its own module.
+    #[test]
+    fn only_configure_can_exit_non_zero() {
+        for mode in [Mode::Version, Mode::Help, Mode::MissingFlag] {
+            assert_eq!(dispatch(plain(mode)).code, 0, "{mode:?} exited non-zero");
+        }
+    }
+
+    // `--subagent` and `--refresh` are both covered in `tests/e2e.rs`
     // rather than here. Neither is inert any more: the panel reads stdin, the
     // filesystem and the git root, and the refresh child fetches. A unit test
     // calling `dispatch` for either would inherit the real process's stdin and
@@ -593,6 +660,28 @@ mod tests {
         assert!(report.contains("--caps-hook"), "the caps hook must be reported: {report}");
     }
 
+    /// `--configure` creates a missing `settings.json` and **refuses** one it
+    /// cannot parse, so a report that calls both "missing or unreadable" sends
+    /// half its readers to run the command that will decline to help them.
+    #[test]
+    fn a_missing_settings_file_and_an_unparseable_one_read_differently() {
+        let home = tempfile::TempDir::new().unwrap();
+        let mut env = crate::_shared::env_lock();
+        env.set("HOME", home.path().to_str().unwrap());
+
+        let absent = claude_wiring().join("\n");
+        assert!(absent.contains("does not exist"), "{absent}");
+        assert!(absent.contains("--configure"), "it names the fix: {absent}");
+
+        let dir = home.path().join(".claude");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), "{ not json").unwrap();
+
+        let broken = claude_wiring().join("\n");
+        assert!(broken.contains("not valid JSON"), "{broken}");
+        assert!(!broken.contains("--configure"), "a file --configure will refuse must not be sold as its job: {broken}");
+    }
+
     #[test]
     fn an_unwired_caps_hook_reports_as_unset_rather_than_vanishing() {
         let (_home, rows) = wiring_for(serde_json::json!({
@@ -619,6 +708,31 @@ mod tests {
 
         let report = rows.join("\n");
         assert!(report.contains("context-caps.js"), "a stale hook must be visible: {report}");
+    }
+
+    /// `--debug` reports the wiring `--configure` is about to change, so the
+    /// two have to agree on what "ours" means. They did not: this used to be a
+    /// second pair of substring checks, unordered, so `--caps-hook
+    /// claude-status` read as ours here and as somebody else's there — and
+    /// `--configure` would have appended a second copy beside a hook `--debug`
+    /// had just shown the user as already wired.
+    #[test]
+    fn what_counts_as_our_hook_is_the_same_answer_the_writer_gives() {
+        for command in [
+            "claude-status --caps-hook",
+            "/opt/homebrew/bin/claude-status --caps-hook",
+            "node /h/.claude/hooks/context-caps.js",
+            "--caps-hook claude-status",
+            "/usr/bin/some-other-linter --fix",
+        ] {
+            let (_home, rows) = wiring_for(serde_json::json!({
+                "hooks": { "PostToolUse": [{ "hooks": [{ "type": "command", "command": command }] }] },
+            }));
+            let reported = rows.join("\n").contains(command);
+            let ours = settings::hook_ownership_of(Some(&serde_json::json!(command)))
+                != settings::Ownership::Foreign;
+            assert_eq!(reported, ours, "{command:?} is reported={reported} but owned={ours}");
+        }
     }
 
     #[test]

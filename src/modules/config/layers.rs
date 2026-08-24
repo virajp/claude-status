@@ -24,7 +24,7 @@ use serde_json::{Map, Value};
 
 use crate::config::Config;
 use crate::config::defaults::DEFAULTS_JSON;
-use crate::json::{deep_merge, read_json_file};
+use crate::json::deep_merge;
 
 /// The directory the user's config lives in, under `~/.config`.
 ///
@@ -63,7 +63,51 @@ pub const REPO_LAYER_KEY: &str = "projectName";
 /// reporting it would put a line in `--debug` for every correctly written file.
 const SCHEMA_KEY: &str = "$schema";
 
-/// Where one layer came from and whether it contributed, for `--debug`.
+/// What became of one layer.
+///
+/// Three states rather than a `loaded` boolean, because the boolean answered
+/// two questions at once and `--debug` needs them apart. Before
+/// `config-relocation`, "no user config" meant a half-installed machine and
+/// `not found` was the right word for it. Now the shipped defaults are embedded
+/// and **no file has to exist anywhere** — so absence is the supported state,
+/// while a file that is present and will not parse is still a real problem.
+/// Rendering both as `not found` told a user with a broken config that nothing
+/// was wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerState {
+    /// Read and merged. Always the embedded layer's state.
+    Loaded,
+    /// Nothing to read: no `$HOME`, no git root, or simply no file there. The
+    /// normal case, and not an error.
+    Absent,
+    /// A file is there and did not contribute — unreadable, not JSON, or not a
+    /// JSON object. Never silent, because nothing else in the binary is allowed
+    /// to complain about it: §1's invariant 3 means a broken layer costs its
+    /// own settings and never the bar, which leaves `--debug` as the only place
+    /// a user can find out.
+    Unusable,
+}
+
+impl LayerState {
+    /// The word `--debug` prints. `using defaults` rather than `not found`:
+    /// what the user wants to know is what the bar is drawing from, and with no
+    /// file that is the embedded layer, which is a complete answer rather than
+    /// a missing one.
+    ///
+    /// None of these may contain the substring `ignored` — that word belongs to
+    /// the continuation row below the path, and
+    /// `a_well_formed_repo_config_is_reported_as_ignoring_nothing` asserts its
+    /// absence over the whole report.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Loaded => "loaded",
+            Self::Absent => "using defaults",
+            Self::Unusable => "UNREADABLE",
+        }
+    }
+}
+
+/// Where one layer came from and what became of it, for `--debug`.
 pub struct LayerSource {
     /// One of [`LABEL_EMBEDDED`], [`LABEL_USER`] or [`LABEL_REPO`]. A `&str`
     /// rather than an enum because it is only ever displayed — but the three
@@ -71,7 +115,7 @@ pub struct LayerSource {
     /// when a layer is renamed or a fourth is added.
     pub label: &'static str,
     pub path: Option<PathBuf>,
-    pub loaded: bool,
+    pub state: LayerState,
     /// Keys the layer carried that were **dropped rather than merged**, in the
     /// order the file listed them.
     ///
@@ -129,38 +173,65 @@ pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
     let mut sources = vec![LayerSource {
         label: LABEL_EMBEDDED,
         path: None,
-        loaded: true,
+        state: LayerState::Loaded,
         ignored: Vec::new(),
     }];
 
     // The user layer: the whole config, merged as it stands.
     let user_path = home.map(user_config_path);
-    let user = user_path.as_deref().and_then(read_json_file).filter(Value::is_object);
-    let user_loaded = match user {
-        Some(layer) => {
+    let user_state = match read_layer(user_path.as_deref()) {
+        Ok(Some(layer)) => {
             deep_merge(&mut merged, &layer);
-            true
+            LayerState::Loaded
         }
-        None => false,
+        Ok(None) => LayerState::Absent,
+        Err(()) => LayerState::Unusable,
     };
-    sources.push(LayerSource { label: LABEL_USER, path: user_path, loaded: user_loaded, ignored: Vec::new() });
+    sources.push(LayerSource { label: LABEL_USER, path: user_path, state: user_state, ignored: Vec::new() });
 
     // The repo layer: one key, and a list of what it was not allowed to say.
     let repo_path = repo_root.map(repo_config_path);
-    let repo = repo_path.as_deref().and_then(read_json_file).filter(Value::is_object);
-    let (repo_loaded, ignored) = match repo {
-        Some(Value::Object(entries)) => {
+    let (repo_state, ignored) = match read_layer(repo_path.as_deref()) {
+        Ok(Some(Value::Object(entries))) => {
             let (kept, ignored) = narrow(entries);
             deep_merge(&mut merged, &Value::Object(kept));
-            (true, ignored)
+            (LayerState::Loaded, ignored)
         }
-        // `filter(Value::is_object)` above leaves only objects, so this arm is
-        // the `None` case alone.
-        _ => (false, Vec::new()),
+        // `read_layer` returns only objects in the `Some` arm, so this is the
+        // "no file" case alone.
+        Ok(_) => (LayerState::Absent, Vec::new()),
+        Err(()) => (LayerState::Unusable, Vec::new()),
     };
-    sources.push(LayerSource { label: LABEL_REPO, path: repo_path, loaded: repo_loaded, ignored });
+    sources.push(LayerSource { label: LABEL_REPO, path: repo_path, state: repo_state, ignored });
 
     Layers { config: Config::new(merged), sources }
+}
+
+/// One layer file, as the three answers `--debug` has words for:
+/// `Ok(Some(object))`, `Ok(None)` for "there is no file here", and `Err(())`
+/// for "there is one and it cannot be used".
+///
+/// **Deliberately not [`crate::json::read_json_file`]**, which collapses
+/// missing, unreadable and malformed into a single `None`. That is the right
+/// shape for a caller that only wants the value, and it is precisely the
+/// distinction this cycle needs: a machine with no config is working, and a
+/// machine with a config that will not parse is not. Nothing about the *merge*
+/// changes — an unusable layer still contributes nothing and still never fails
+/// the render.
+fn read_layer(path: Option<&Path>) -> Result<Option<Value>, ()> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(path) {
+        // A directory at the path lands here too, and `Unusable` is the honest
+        // answer for it: something is there and it is not a config.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(()),
+        Ok(text) => match serde_json::from_str::<Value>(&text) {
+            Ok(value) if value.is_object() => Ok(Some(value)),
+            _ => Err(()),
+        },
+    }
 }
 
 /// Splits a repo layer into the one key it may set and the keys it may not.
@@ -236,10 +307,12 @@ mod tests {
         // nothing loaded.
         let labels: Vec<&str> = layers.sources.iter().map(|s| s.label).collect();
         assert_eq!(labels, [LABEL_EMBEDDED, LABEL_USER, LABEL_REPO]);
-        assert!(source(&layers, LABEL_EMBEDDED).loaded);
+        assert!(source(&layers, LABEL_EMBEDDED).state == LayerState::Loaded);
         for label in [LABEL_USER, LABEL_REPO] {
             let s = source(&layers, label);
-            assert!(!s.loaded, "{label} loaded with no file");
+            // `Absent`, not merely "not loaded": with the defaults embedded,
+            // having no file is the supported state rather than a broken one.
+            assert_eq!(s.state, LayerState::Absent, "{label} loaded with no file");
             assert_eq!(s.path, None, "{label} named a path with no base to build one from");
         }
     }
@@ -254,7 +327,7 @@ mod tests {
         assert_eq!(layers.config.project_name.as_deref(), Some("from-repo"));
         assert_eq!(layers.config.default_fg, Some(json!("aqua")), "user still wins over embedded");
         assert_eq!(layers.config.gauge.width, 10, "untouched keys keep the embedded value");
-        assert!(layers.sources.iter().all(|s| s.loaded));
+        assert!(layers.sources.iter().all(|s| s.state == LayerState::Loaded));
     }
 
     #[test]
@@ -265,7 +338,7 @@ mod tests {
         let layers = load(Some(&home), None);
         assert_eq!(layers.config.default_fg, Some(json!("white")), "the render succeeds on the embedded layer");
         let user = source(&layers, LABEL_USER);
-        assert!(!user.loaded, "the layer is reported as not loaded");
+        assert!(user.state != LayerState::Loaded, "the layer is reported as not loaded");
         assert!(user.path.is_some(), "but the path it looked at is still reported");
     }
 
@@ -277,17 +350,20 @@ mod tests {
     /// to `Config::default()` — which is, by
     /// `the_embedded_defaults_deserialize_to_the_default_config`, *exactly*
     /// what the surviving embedded layer produces. Every value assertion
-    /// therefore holds in both outcomes. `loaded` and the stderr diagnostic
-    /// are the only things that differ, so `loaded` is what is asserted, and
-    /// the case with real data at stake is the sibling test below.
+    /// therefore holds in both outcomes. [`LayerState`] and the stderr
+    /// diagnostic are the only things that differ, so the state is what is
+    /// asserted, and the case with real data at stake is the sibling test below.
     #[test]
-    fn a_non_object_user_layer_can_only_be_caught_by_its_loaded_flag() {
+    fn a_non_object_user_layer_can_only_be_caught_by_its_layer_state() {
         for body in ["null", "0", "[]", "\"x\""] {
             let dir = tempfile::TempDir::new().unwrap();
             let home = seed_user(dir.path(), body);
 
             let layers = load(Some(&home), None);
-            assert!(!source(&layers, LABEL_USER).loaded, "{body} should not count as a loaded layer");
+            // `Unusable` and not merely "not loaded": these files exist, so
+            // reporting them as a machine with no config is the failure this
+            // cycle's step 6 is about.
+            assert_eq!(source(&layers, LABEL_USER).state, LayerState::Unusable, "{body}");
         }
     }
 
@@ -304,8 +380,54 @@ mod tests {
             let layers = load(Some(&home), Some(&repo));
             assert_eq!(layers.config.default_fg, Some(json!("aqua")), "{body} wiped the user layer");
             assert_eq!(layers.config.gauge.width, 3, "{body} wiped the user layer");
-            assert!(!source(&layers, LABEL_REPO).loaded, "{body} should not count as a loaded layer");
+            assert_eq!(source(&layers, LABEL_REPO).state, LayerState::Unusable, "{body}");
         }
+    }
+
+    /// **The distinction `--debug` is built on.** `loaded == false` used to
+    /// cover four different situations at once — no `$HOME`, no file, an
+    /// unreadable file, and a file that is not JSON — so a *broken* config
+    /// rendered in the report exactly like a *missing* one. After
+    /// `config-relocation`, having no file is the normal supported state; a
+    /// file that will not parse is not, and the report must not describe them
+    /// with the same word.
+    #[test]
+    fn an_absent_layer_and_an_unusable_one_are_different_states() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // No `$HOME` and no git root at all: nothing to look at.
+        let nowhere = load(None, None);
+        assert_eq!(source(&nowhere, LABEL_USER).state, LayerState::Absent);
+        assert_eq!(source(&nowhere, LABEL_REPO).state, LayerState::Absent);
+        assert_eq!(source(&nowhere, LABEL_EMBEDDED).state, LayerState::Loaded, "the embedded layer always is");
+
+        // A home with no config file in it — still normal.
+        let empty_home = dir.path().join("empty");
+        fs::create_dir_all(&empty_home).unwrap();
+        assert_eq!(source(&load(Some(&empty_home), None), LABEL_USER).state, LayerState::Absent);
+
+        // A file that is there and cannot contribute. Every one of these used
+        // to be indistinguishable from the two cases above.
+        for (i, body) in ["{ this is not json", "null", "[]", "\"x\"", "0"].iter().enumerate() {
+            let home = seed_user(&dir.path().join(format!("broken{i}")), body);
+            let state = source(&load(Some(&home), None), LABEL_USER).state;
+            assert_eq!(state, LayerState::Unusable, "{body} reads as a machine with no config");
+        }
+
+        let good = seed_user(&dir.path().join("good"), r#"{ "defaultFg": "aqua" }"#);
+        assert_eq!(source(&load(Some(&good), None), LABEL_USER).state, LayerState::Loaded);
+    }
+
+    /// A path that exists but is a directory is a file that cannot be read, not
+    /// a file that is absent — `~/.config/claude-status/config.json/` is a
+    /// plausible mistake and it should say so rather than look like a clean
+    /// machine.
+    #[test]
+    fn a_directory_where_the_config_should_be_is_unusable_rather_than_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(user_config_path(dir.path())).unwrap();
+
+        assert_eq!(source(&load(Some(dir.path()), None), LABEL_USER).state, LayerState::Unusable);
     }
 
     #[test]
@@ -331,7 +453,7 @@ mod tests {
         let layers = load(Some(dir.path()), None);
         assert_eq!(layers.config.default_fg, Some(json!("white")), "the old path was still read");
         assert_eq!(layers.config.project_name, None, "the old path was still read");
-        assert!(!source(&layers, LABEL_USER).loaded);
+        assert!(source(&layers, LABEL_USER).state != LayerState::Loaded);
     }
 
     #[test]
@@ -352,7 +474,7 @@ mod tests {
         let layers = load(None, Some(&repo));
         assert_eq!(layers.config.project_name.as_deref(), Some("widget-service"));
         let source = source(&layers, LABEL_REPO);
-        assert!(source.loaded);
+        assert!(source.state == LayerState::Loaded);
         assert!(source.ignored.is_empty(), "nothing was dropped");
     }
 
@@ -387,7 +509,7 @@ mod tests {
         assert_eq!(layers.config.gauge.width, 10, "a key neither layer may set here is the shipped one");
 
         let source = source(&layers, LABEL_REPO);
-        assert!(source.loaded, "the file was read — it just did not get to say most of it");
+        assert!(source.state == LayerState::Loaded, "the file was read — it just did not get to say most of it");
         assert_eq!(source.ignored, ["caps", "gauge"], "in the order the file listed them");
     }
 
