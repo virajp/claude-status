@@ -56,6 +56,7 @@
       <nav aria-label="Documentation">
         <a href="{{ get_url(path='@/install.md') | replace(from=config.base_url, to='') }}">Install</a>
         <a href="{{ get_url(path='@/configure.md') | replace(from=config.base_url, to='') }}">Configure</a>
+        <a href="{{ get_url(path='@/generate.md') | replace(from=config.base_url, to='') }}">Generate</a>
         <a href="{{ get_url(path='@/repo-config.md') | replace(from=config.base_url, to='') }}">Per-repo</a>
         <a href="{{ get_url(path='@/segments.md') | replace(from=config.base_url, to='') }}">Segments</a>
         <a href="{{ get_url(path='@/diagnosing.md') | replace(from=config.base_url, to='') }}">Diagnosing</a>
@@ -73,5 +74,14 @@
         <a href="{{ config.extra.repo_url }}/blob/main/LICENSE">MIT</a>
       </p>
     </footer>
+
+    {# Empty for every page but one. `generate.html` fills it with the config
+       generator's module, and `tests/site.rs` allowlists that single template
+       path — a `<script>` written anywhere else, this file included, fails.
+
+       At the end of the body rather than in the head: nothing on this site
+       needs a script to lay out or to navigate, so nothing should be allowed
+       to block the parse. #}
+    {% block scripts %}{% endblock scripts %}
   </body>
 </html>

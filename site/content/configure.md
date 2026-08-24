@@ -30,6 +30,10 @@ its own page — see [Per-repo](@/repo-config.md).
 Put only what you changed in it. Anything you leave alone follows the binary
 forward when you upgrade.
 
+[Generate a config](@/generate.md) builds this file from the published schema,
+with every key's description beside it — or write it by hand from the reference
+below.
+
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",

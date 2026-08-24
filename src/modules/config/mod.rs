@@ -347,8 +347,10 @@ impl Default for Gauge {
 #[serde(default)]
 pub struct SegmentStyle {
     #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Background colour for this segment."))]
     pub bg: Option<Value>,
     #[cfg_attr(feature = "schema", schemars(with = "schema::ColorSpec"))]
+    #[cfg_attr(feature = "schema", schemars(description = "Foreground colour. Unset falls through to `defaultFg`."))]
     pub fg: Option<Value>,
     /// Read with JavaScript truthiness, so the *type* is a [`Value`] — but the
     /// schema says `boolean`, because every other form is a config a reader
@@ -357,7 +359,10 @@ pub struct SegmentStyle {
     /// `null` is the exception, and it is admitted for the same reason a
     /// colour admits it: it is how a user *clears* a shipped `bold`, and it is
     /// what `write::non_defaults` writes back when they do.
-    #[cfg_attr(feature = "schema", schemars(with = "Option<bool>", description = ""))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Option<bool>", description = "Draw this segment's text bold. `null` clears a `bold` the defaults set.")
+    )]
     pub bold: Option<Value>,
 }
 
@@ -496,12 +501,16 @@ pub struct SubagentSegments {
     #[cfg_attr(feature = "schema", schemars(description = "The subagent's name (rendered when the task has one)."))]
     #[serde(deserialize_with = "style_block")]
     pub name: SegmentStyle,
+    #[cfg_attr(feature = "schema", schemars(description = "The task's model, with its reasoning effort in brackets after it."))]
     #[serde(deserialize_with = "style_block")]
     pub model: SegmentStyle,
+    #[cfg_attr(feature = "schema", schemars(description = "The task description, truncated to `descBudgetFraction` of the terminal width."))]
     #[serde(deserialize_with = "style_block")]
     pub desc: SegmentStyle,
+    #[cfg_attr(feature = "schema", schemars(description = "The task's token count (rendered when the payload carries one, `0` included)."))]
     #[serde(deserialize_with = "style_block")]
     pub tokens: SegmentStyle,
+    #[cfg_attr(feature = "schema", schemars(description = "How long the task has been running, from its `startTime`."))]
     #[serde(deserialize_with = "style_block")]
     pub duration: SegmentStyle,
 }

@@ -21,8 +21,7 @@ use claude_status::caps;
 use claude_status::config::Config;
 use claude_status::config::write;
 
-/// How many `description` strings the schema carried at this cycle's parent
-/// commit (`fca2aa2`), where it was hand-written.
+/// How many `description` strings the schema carries.
 ///
 /// Criterion 3 is "none is lost", and a count is the cheapest form of that
 /// which cannot be satisfied by accident. It was checked by pointer *and* text
@@ -33,7 +32,18 @@ use claude_status::config::write;
 /// text.
 /// A schema that grows a key and describes it makes this go up, which is a
 /// deliberate edit rather than a silent loss.
-const PARENT_DESCRIPTION_COUNT: usize = 39;
+///
+/// **Moved 39 → 49 by `website/02-config-generator`.** That cycle builds the
+/// site's config form out of this file, and a form built from a schema with no
+/// descriptions is a form of unlabelled boxes — so the ten named properties
+/// that had no prose got some, at the source, in the Rust types. They were
+/// exactly the ones the form's own widgets render from: the four unlabelled
+/// `subagent.segments` rows, and `bg`/`fg`/`bold` in both `$defs/style` and
+/// `$defs/segmentEntry`'s object branch. `/properties/$schema` is the
+/// eleventh and stays bare — it is a pointer rather than a setting, it is
+/// excluded from the form, and `every_top_level_property_is_described` already
+/// names it as the one allowed exception.
+const PARENT_DESCRIPTION_COUNT: usize = 49;
 
 /// FNV-1a of every `(pointer, description)` pair in the committed schema.
 ///
@@ -48,7 +58,13 @@ const PARENT_DESCRIPTION_COUNT: usize = 39;
 /// `~/.cache/claude-status/spend.json`. The site documents that path, so the
 /// published schema had to stop contradicting it. This guard firing is the
 /// guard working: the prose changed on purpose.
-const DESCRIPTION_DIGEST: u64 = 0x719a_9e0f_1460_dac6;
+///
+/// Moved again from `0x719a_9e0f_1460_dac6` by `website/02-config-generator`,
+/// for the ten added descriptions [`PARENT_DESCRIPTION_COUNT`] records. Only
+/// additions: every one of the 39 existing strings is byte-identical, which is
+/// what makes the count and the digest moving together the expected result
+/// rather than a swap hiding inside a rewrite.
+const DESCRIPTION_DIGEST: u64 = 0x1c21_9713_1913_d7d3;
 
 /// The only four `default` values the published schema has ever carried.
 ///

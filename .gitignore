@@ -13,6 +13,14 @@ graphify-out/
 # .github/workflows/site.yml. Nothing reads it from a checkout.
 site/public/
 
+# the config generator's two inputs, staged into the static tree by
+# `site:assets` on every build. They are copies of `schemas/` and `assets/`,
+# and a tracked copy would be reformatted by dprint into a file that no longer
+# matches its source. See the task for the whole reasoning; `tests/site.rs`
+# asserts these two lines are still here.
+site/static/claude-status.schema.json
+site/static/claude-status.defaults.json
+
 
 # Added by cargo
 

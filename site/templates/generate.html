@@ -1,0 +1,27 @@
+{# The config generator, and the ONLY page on this site that loads a script.
+
+   `tests/site.rs::the_layout_carries_the_static_marks_of_a_readable_phone_page`
+   allowlists this one path by name. Every other tracked `.html`, `.css` and
+   `.md` under `site/` must still be script-free, so a second `<script>`
+   anywhere — including in markdown, which the scan did not used to read —
+   fails the suite.
+
+   The page it renders is a complete reference WITHOUT the script. The markdown
+   carries the paths, the rules, the colour forms, the open-map table and the
+   repo-config snippet as ordinary prose; `config-generator.js` replaces one
+   empty `<div>` with the form and touches nothing else. That is criterion 8's
+   restatement: not a `<noscript>` block — which is a second copy of the docs
+   that nothing checks — but one set of docs that is always there.
+
+   `defer` is not needed and not written: a module script is deferred by
+   definition, so it runs after the document is parsed and `getElementById`
+   finds its mount.
+#}
+{% extends "page.html" %}
+
+{% block scripts %}
+  <script
+    type="module"
+    src="{{ get_url(path='config-generator.js') | replace(from=config.base_url, to='') }}"
+  ></script>
+{% endblock scripts %}

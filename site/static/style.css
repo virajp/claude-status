@@ -1,7 +1,7 @@
 /*
- * The whole front end. One hand-written stylesheet, no framework, no build
- * step — see site/config.toml for why that is a constraint rather than a
- * preference.
+ * The front end, less the one ES module beside this file. One hand-written
+ * stylesheet, no framework, no build step — see site/config.toml for why that
+ * is a constraint rather than a preference.
  *
  * The palette is the tool's own: these are the gruvbox-ish RGB triples in
  * assets/claude-status.defaults.json, written as hex. A page documenting a
@@ -258,6 +258,197 @@ pre {
   color: var(--fg-dim);
 }
 
+/* ---- the config generator ---------------------------------------------- */
+
+/*
+ * Everything under `#config-generator` is built by config-generator.js at
+ * runtime, so none of these class names appears in any tracked HTML. That is
+ * the point: a schema-driven form is a generated stack of inputs, and hand-
+ * writing markup for it would break the one property the whole page exists to
+ * have. Style the KINDS of widget, never the individual keys.
+ *
+ * The nesting is genuinely deep — `subagent.statuses.<bucket>.bg` is five
+ * levels — so groups are marked by a left rule rather than by indentation,
+ * which would run out of horizontal room on a phone before it ran out of
+ * schema.
+ */
+.gen-fields {
+  margin: 1.5rem 0;
+}
+
+.gen-group {
+  margin: 0.75rem 0;
+  padding: 0.25rem 0 0.25rem 0.85rem;
+  border: 0;
+  border-left: 2px solid var(--bg-line);
+}
+
+.gen-group > legend {
+  padding: 0;
+  color: var(--yellow);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.875rem;
+}
+
+.gen-choice > .gen-mode {
+  margin-bottom: 0.35rem;
+}
+
+.gen-row {
+  display: block;
+  margin: 0.6rem 0;
+}
+
+.gen-label {
+  display: block;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+/* The schema's own `description`, beside the field it belongs to. A form built
+ * from a schema with no descriptions is a form of unlabelled boxes — see the
+ * `PARENT_DESCRIPTION_COUNT` note in tests/schema.rs. */
+.gen-hint {
+  display: block;
+  max-width: 34rem;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.gen-fields input,
+.gen-fields select,
+.gen-fields textarea {
+  max-width: 100%;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid var(--bg-line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.gen-fields input[type="text"],
+.gen-fields textarea {
+  width: 22rem;
+}
+
+.gen-fields input[type="number"] {
+  width: 7rem;
+}
+
+.gen-fields input[type="checkbox"] {
+  width: auto;
+}
+
+.gen-fields input[type="color"] {
+  width: 2.75rem;
+  height: 2rem;
+  padding: 2px;
+}
+
+.gen-rgb {
+  width: 5rem !important;
+}
+
+.gen-rgb-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.gen-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.gen-entry > .gen-group,
+.gen-entry > .gen-row {
+  flex: 1 1 18rem;
+}
+
+.gen-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+
+.gen-fields button,
+.gen-actions button {
+  padding: 0.3rem 0.7rem;
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid var(--bg-line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.gen-fields button:hover,
+.gen-actions button:hover {
+  border-color: var(--yellow);
+}
+
+.gen-remove {
+  color: var(--fg-dim) !important;
+}
+
+.gen-order {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.gen-error {
+  display: block;
+  color: var(--red);
+  font-size: 0.8rem;
+}
+
+.gen-output {
+  max-height: 26rem;
+  overflow: auto;
+}
+
+.gen-path,
+.gen-provenance {
+  color: var(--fg-dim);
+  font-size: 0.875rem;
+}
+
+/* The "your list came out whole" explanation. Orange rather than red: it is
+ * the merge behaving correctly, not an error. */
+.gen-note:not(:empty) {
+  margin: 0.75rem 0;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--orange);
+  color: var(--fg-dim);
+  font-size: 0.875rem;
+}
+
+.gen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.gen-primary {
+  background: var(--green) !important;
+  border-color: var(--green) !important;
+}
+
+.gen-copied {
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+}
+
 /* ---- narrow screens ---------------------------------------------------- */
 
 /*
@@ -282,5 +473,13 @@ pre {
     /* Brand on its own line, links wrapping under it. */
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* The generator's text fields are sized for a comfortable desktop measure;
+   * at this width a fixed 22rem is wider than the viewport, which is the one
+   * way this page could make the DOCUMENT scroll sideways. */
+  .gen-fields input[type="text"],
+  .gen-fields textarea {
+    width: 100%;
   }
 }

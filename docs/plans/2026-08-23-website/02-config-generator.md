@@ -88,6 +88,11 @@ form of unlabelled boxes.
 
 ### 3. Emit only non-defaults
 
+> **Corrected during execution.** "From the schema's `default` values" is
+> unimplementable — the schema has four of them, all under `caps`. The values
+> live in `assets/claude-status.defaults.json`, which this plan never mentions,
+> and the page loads both documents. See Gaps.
+
 The page holds the defaults — from the schema's `default` values — and emits a
 key only where the user's value differs. Same rule as the binary's serialiser,
 and the same trap: a map whose default is non-empty must be diffed **entry by
@@ -95,7 +100,11 @@ entry**, or changing one palette colour emits the whole palette.
 
 `$schema` is always emitted.
 
-### 4. Port the renderer to JavaScript
+### 4. Port the renderer to JavaScript — **NOT DONE, and not what will be done**
+
+> **Deferred, and superseded.** The preview will be the Rust renderer compiled
+> to WebAssembly, which was proved to work and to reproduce the goldens byte for
+> byte. There is no JavaScript port and there should not be one. See Gaps.
 
 Enough of it to draw the main bar: segment assembly, the powerline separators
 and caps, colour resolution through the palette, the gauge, and the same
@@ -104,7 +113,7 @@ truncation rules. Output as styled HTML rather than ANSI.
 **This is a second implementation and it will drift.** Step 5 is what makes it
 acceptable; without step 5 this step should not ship.
 
-### 5. Gate the preview against the Rust goldens
+### 5. Gate the preview against the Rust goldens — **NOT DONE, and vacuous**
 
 A CI job that feeds the golden fixtures' inputs through the JS renderer and
 compares against `tests/golden/*.txt`.
@@ -144,14 +153,19 @@ needed there.
    downloaded, then it contains `$schema` and that one key.
 3. Given a change to one `palette` entry, then the output contains that entry
    alone, not the whole palette.
-4. Given the golden fixtures, when CI runs the JS renderer over them, then the
-   output is byte-identical to `tests/golden/*.txt`.
-5. Given a Rust change that alters a golden, when CI runs, then the JS gate
+4. ~~Given the golden fixtures, when CI runs the JS renderer over them, then the
+   output is byte-identical to `tests/golden/*.txt`.~~ **Deferred, and withdrawn
+   as written** — see Gaps. There is no JS renderer and there will not be one;
+   the preview is WebAssembly, so this criterion has no second implementation to
+   measure.
+5. ~~Given a Rust change that alters a golden, when CI runs, then the JS gate
    **fails** — the gate must be able to catch drift in both directions, not just
-   in the JS.
+   in the JS.~~ **Deferred, and vacuous as written** — same reason. The
+   follow-up cycle needs a build-reproducibility check on the committed `.wasm`,
+   not a differential one.
 6. Given a downloaded config, when it is placed at
    `~/.config/claude-status/config.json` and the bar is rendered, then the bar
-   matches what the preview showed.
+   matches what the preview showed. **Deferred** with the preview.
 7. Given every field in the form, then each shows the schema's description for
    that key.
 8. Given the page with JavaScript disabled, then it degrades to readable
@@ -205,4 +219,341 @@ visible, so the page should name the version it is generating for.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+### The cycle was cut: steps 4 and 5 are deferred, and so are criteria 4, 5 and 6
+
+**Built:** steps 1, 2, 3, 6, 7 and 8 — the form, the non-defaults emitter, the
+download and copy, the repo-config snippet, and the docs.
+
+**Deferred:** step 4 (a JavaScript port of the renderer) and step 5 (a CI job
+diffing it against `tests/golden/*.txt`), and with them acceptance criteria 4, 5
+and 6, all three of which are about that port. This is a scope decision, not a
+shortfall discovered late. The plan itself says step 4 "should not ship" without
+step 5, and step 5 is the larger half.
+
+Nothing half-built was left behind. There is no renderer, no partial one, and no
+placeholder — the page says plainly that it does not draw a bar and sends the
+reader to `--debug`.
+
+### When the preview lands it is WebAssembly, not a JavaScript port — and that
+
+### makes criteria 4 and 5 vacuous rather than hard
+
+**This is a plan edit, not a footnote.** A recon pass proved it by building it,
+and the result changes what the deferred cycle is:
+
+- The render path is **already pure**.
+  `render_main(&MainFacts, &GitFacts, &Config, Option<&str>) -> String`
+  (`src/modules/render/main_bar.rs:18`) touches no IO; the only `std::fs` under
+  `src/modules/render/` is inside a `#[cfg(test)]` block in `powerline.rs`.
+- It **compiles to `wasm32-unknown-unknown` today**, with a raw ABI — no
+  `wasm-bindgen`, no JavaScript toolchain, nothing that would put npm back in a
+  tree that spent `distribution/01` taking it out.
+- It reproduces `tests/golden/fixture.txt` **byte for byte** (669 bytes == 669
+  bytes) from the browser-shaped build.
+- **247 KB raw, 86 KB gzipped** — four times under the repository's 1024 KB
+  commit limit.
+- The blocking diff is small and none of it is in the render path: `ureq`
+  appears in exactly one file (`src/modules/spend/http.rs:13-14`), and there are
+  eleven Unix-trait errors across three files.
+
+The consequence for the criteria: **criterion 4 ("CI proves the JS renderer
+matches the goldens") and criterion 5 ("a Rust change that alters a golden fails
+the gate") become vacuous.** They are the mitigation for a second
+implementation, and with WebAssembly there is no second implementation to drift
+— the bytes in the browser *are* the bytes the binary runs. The gate they
+describe would be a test that the Rust renderer equals itself.
+
+What the follow-up cycle needs instead is a much smaller thing: proof that the
+committed `.wasm` was built from the committed source. That is a build
+reproducibility check, not a differential one, and it should be written as such
+rather than inherited from this plan's wording.
+
+The Risks section's "the JS renderer is the one real duplication in the whole
+project" is therefore **withdrawn**. It described a design that is not going to
+be built.
+
+### Criterion 1 could not be tested forwards, and is gated negatively instead
+
+"Given the committed schema with a key added, the form shows that key with no
+hand-edit" cannot be exercised against the committed schema: the drift check
+(`tests/schema.rs::the_committed_schema_is_what_the_config_types_generate`) and
+the `always_run` pre-commit hook both regenerate the file from the Rust types,
+so there is no way to add a key to it and leave it added.
+
+Split in two:
+
+- **Forwards**, in `tests/js/generator.test.mjs`: the form builder is a pure
+  function over a schema object, so the test feeds it a **synthetic** schema
+  carrying an invented key and an invented block, and asserts both appear with
+  the right widget, the right bounds and their descriptions.
+- **Negatively**, in
+  `tests/site.rs::no_config_key_is_hard_coded_into_the_pages
+  _that_build_the_form`:
+  no config key name may appear as a **string literal** in any tracked file
+  under `site/templates/` or `site/static/`. This is the half that actually
+  gates a regression — the day somebody writes `if (key === "palette")` to make
+  one field look nicer, the form stops being a function of the schema and every
+  other test stays green.
+
+The negative scan reads string literals with comments stripped, not bare
+identifiers: `width`, `name`, `id`, `match`, `head` and `bold` are all config
+keys *and* ordinary words in CSS and JavaScript, so a word scan would need an
+allowlist longer than the schema and would still fail on `input[type="number"]`.
+The limit is recorded above the test, and the test carries a control proving the
+scanner can fail.
+
+### Step 3 was unimplementable as written — the defaults are a second document
+
+The plan says *"the page holds the defaults — from the schema's `default`
+values"*. The committed schema has **four** `default` values, all under `caps`,
+against a default tree of about a hundred leaves. `config-and-cli/04` stripped
+the rest deliberately (`config::schema::strip`) so the palette, the twenty
+symbols and the two layout rows — which carry Nerd Font private-use codepoints —
+stay out of a file dprint formats, and
+`tests/schema.rs::the_only_defaults_in_the_schema_are_the_four_caps` pins it.
+
+Built on the schema's defaults, the page would have shown an empty config and
+emitted every key the user touched as a change against nothing.
+
+So the page loads **two** documents: the schema for the shape, and
+`assets/claude-status.defaults.json` — which this plan never mentions — for the
+values.
+
+### Where the two documents are served from, and the trade taken
+
+**Staged into `site/static/` at build time by a new `site:assets` task**,
+gitignored, dprint-excluded, and depended on by both `site:build` and
+`site:serve`.
+
+Not committed under `site/static/`: dprint's `includes` is `**/*.json` and its
+exclusion of the defaults asset is written at that path *only*, so a tracked
+copy would be reformatted on commit and would then differ, byte for byte, from
+the file it is a copy of — the same formatter-versus-generator loop
+`the_generated_schema_is_already_dprint_formatted` exists for.
+
+Not fetched at runtime from the `$id` URL, although that works —
+`raw.githubusercontent.com` serves the current file and sends
+`access-control-allow-origin: *`. Two reasons: it would make a static
+documentation page stop working offline, behind a proxy that blocks that host,
+or during a GitHub outage; and it would make the **form** newer than the **prose
+around it**, since the site deploys on a `site-v*` tag and everything else on
+the page is pinned at that tag.
+
+**The trade, stated:** a schema change does not reach the deployed page until
+the next `site-v*` tag. That is the same trade every other sentence on this site
+already takes, which is the argument for it — being uniformly one tag behind is
+a smaller lie than being internally inconsistent.
+
+`.github/workflows/site.yml`'s `pull_request.paths` was widened to `schemas/**`,
+`assets/claude-status.defaults.json` and `.config/mise/tasks/site/**`. Without
+that, a pull request renaming a config key would change what the generator page
+renders while touching nothing under `site/`, and the build that would have
+caught it would never have run.
+
+### The plan's step 2 undercounted the widget shapes
+
+Five defects, all found before implementation and all handled:
+
+- **Five open maps, not four.** The fifth is `subagent.statuses`, whose values
+  are *closed objects* (`match` / `symbol` / `bg`) rather than scalars — a
+  different widget from the other four. `write.rs:286-288` says in its own
+  comment that the previous cycle's inventory of these was short; this plan made
+  the same undercount again.
+- **`$defs/color` is a three-branch `oneOf`, not a triple.** The plan's "a
+  picker that emits the `[r, g, b]` triple the schema requires" would have been
+  actively harmful: the shipped defaults reference colours **by palette name**,
+  so a triple-only picker converts every colour it touches into a literal that
+  stops following the palette forward. And `null` is load-bearing —
+  `write.rs::clearing_a_default_emits_an_explicit_null` pins it as the only way
+  to clear a shipped colour. Built as a mode switcher over the schema's own
+  branches, with the live palette names offered as completions on the string
+  branch.
+- **`lines` had no rule at all.** It is an array of arrays of `segmentEntry`,
+  itself a `oneOf` of a bare id or a styled object, in which `name` and `id` are
+  aliases. Covered by the generic array and `oneOf` rules.
+- **`"type": ["boolean", "null"]`** (`bold`) is tri-state, not a checkbox.
+- **`$schema` is a declared property with no Rust field** and had to be excluded
+  from the form. It is excluded by the rule "properties whose name starts with
+  `$`", so the page never names it — and the pointer it emits is derived from
+  the document too: the key is that one `$`-prefixed property and the value is
+  the schema's `$id`, which `config::schema` injects from `write::SCHEMA_URL`.
+  Change that constant in Rust and the page follows with no edit.
+
+### Two JavaScript-only traps in the emitter, and one relief
+
+- **`JSON.stringify` comparison would have been wrong.** It is key-order
+  sensitive; `serde_json::Value` compares its `IndexMap` by content. Reordering
+  `subagent.statuses` would have emitted the entire map where the binary emits
+  nothing (`write.rs:366`). The emitter walks instead.
+- **Prototype pollution.** All five open maps take free-text keys.
+  `src/_shared/json.rs:15` drops `__proto__`, `constructor` and `prototype` at
+  every depth in the binary, where they are inert; in a browser they are not.
+  The page drops them on input, in the diff, and at every depth of a wholesale
+  emission.
+- **The relief:** `json!(15) != json!(15.0)` — cycle 02's `f64` trap — does not
+  exist in a browser, which has one number type.
+
+**A third trap was found during implementation and is not in any brief.** The
+binary compares two *serialized* `Config`s, in which every unset `Option` is an
+explicit `null`; the shipped defaults JSON simply omits those keys. Without
+handling it, clearing a colour that was never set would emit `"fg": null` where
+the binary emits nothing. The emitter's equality therefore reads a **missing key
+as `null`**, which reproduces the binary's trees rather than approximating them,
+and both directions are pinned by the harness.
+
+### "Remove" cannot mean remove
+
+`deep_merge` has no delete operator (`src/_shared/json.rs:149`), so
+`{"palette": {}}` merges as a no-op. Removing a row the defaults ship means
+**revert to shipped**, and the button says exactly that; a row the user added is
+genuinely removable, because removing it just stops it being emitted. The page's
+prose carries the same rule, since it is the sort of thing a user discovers by
+being surprised.
+
+The same applies to `lines`: it is replaced wholesale, never diffed
+(`write.rs:178-180`), so touching one segment emits both default rows. That is
+correct behaviour that looks like the non-defaults promise breaking, so the
+output pane says so whenever it happens — generically, for any array, rather
+than by naming the key.
+
+### Criterion 7 was fixed at the source: ten descriptions added to the Rust types
+
+Eleven of forty-seven named schema properties had no `description`, and they
+were exactly the ones the form's widgets render from: the four unlabelled
+`subagent.segments` rows, and `bg` / `fg` / `bold` in both `$defs/style` and
+`$defs/segmentEntry`'s object branch.
+
+Fixed where the schema comes from — `#[schemars(description = …)]` on the config
+types — rather than in the published file, then regenerated with
+`mise run code:schema`. `PARENT_DESCRIPTION_COUNT` moved 39 → 49 and
+`DESCRIPTION_DIGEST` moved with it; both constants moving together is the guard
+working as designed, and every one of the 39 existing strings is byte-identical
+(verified: the regenerated file's diff contains no removed `description` line).
+
+`/properties/$schema` is the eleventh and stays bare. It is a pointer rather
+than a setting, it is excluded from the form, and
+`every_top_level_property_is_described` already names it as the one allowed
+exception.
+
+### The `<script>` guard was strengthened rather than deleted
+
+`tests/site.rs` asserted no `<script>` in any tracked `site/**/*.html` or
+`*.css`. This cycle necessarily adds JavaScript, and deleting the guard was the
+easy move and the wrong one. It was replaced with three narrower ones, each
+stronger than what it replaced:
+
+1. **The nav assertion stays**, scoped to the `<nav>…</nav>` slice. Its stated
+   reason — a hamburger behind a script — is untouched by anything here.
+2. **Exactly one allowlisted path** may carry a script:
+   `site/templates/generate.html`. A second script anywhere fails, and the
+   allowlisted file must actually still have one, so a stale entry cannot leave
+   a spare permission lying around.
+3. **The scan now reads `site/content/*.md`**, which it did not. Zola passes raw
+   HTML in markdown through verbatim, so a `<script>` written into a content
+   page went straight past the old guard. That hole is closed.
+
+Both new guards were verified by mutation: a `<script>` added to a content page
+fails, and a config key written into the module fails.
+
+`site/config.toml:19` read "NO THEME, NO CSS FRAMEWORK, NO JAVASCRIPT" and
+became a lie in this commit. It now records what that line was always protecting
+— the absence of a **build**, not of a `<script>` tag — and names the three
+tests that hold it.
+
+### Criterion 8: the docs are the page, and the real check is human
+
+There is no headless browser here and adding one is the JavaScript toolchain
+`website/01-site`'s criterion 1 forbids — the same trade already recorded above
+`the_layout_carries_the_static_marks_of_a_readable_phone_page`.
+
+So the page is built the way that makes the criterion true by construction. The
+markdown carries the whole reference as ordinary static content — the target
+path, the three emission rules, the four colour forms, the open-map table, the
+forbidden key names, the repo-config snippet — and the script replaces one
+element and touches nothing else. **A `<noscript>` block was deliberately not
+used**: it is a second copy of the documentation that nothing checks, and the
+copy that rots is always the one nobody reads.
+
+`the_generator_page_reads_as_documentation_without_its_script` asserts the
+construction, in the source and in the built HTML ahead of the `<script>` tag.
+**The real check is a human one at the gate: open the page with JavaScript
+disabled and read it.**
+
+### Testing JavaScript without a JavaScript toolchain
+
+`tests/js/generator.test.mjs` runs the generator's pure core — the emitter and
+the form builder — against the **real** committed schema and the **real**
+shipped defaults. 60 checks: criteria 2 and 3, all five open maps, the prototype
+keys, the key-order and `null`-versus-absent rules, the colour branches, the
+tri-state `bold`, the layout's nested shape, and criterion 1's forward direction
+against a synthetic schema.
+
+**Nothing is installed to run it.** No `package.json`, no lockfile, no
+`node_modules` — `no_javascript_lockfile_or_node_modules_is_tracked` still
+passes and `code:sec`'s grype scan still sees no npm ecosystem. `node` is
+invoked as a bare binary, the way the suite already invokes `git`, `mise` and
+`dprint`, and the Rust side skips **loudly** when it is absent, following
+`the_generated_schema_is_already_dprint_formatted`.
+
+That skip is the honest weakness: on a machine with no `node`, those 60 checks
+do not run. It is mitigated by a `--self-check` mode that asserts something
+false on purpose, which `tests/site.rs` runs and requires to fail — because a
+harness invoked wrongly exits non-zero and is caught, while a harness whose
+assertions never run exits **zero** and looks exactly like a clean pass.
+
+The module is copied and renamed to `.mjs` for the run. Node decides a file's
+module system from its extension and the browser file has to stay `.js`, or a
+static host serves it as `application/octet-stream` and the browser rejects it.
+
+The DOM half — roughly five hundred lines of widget code — is not covered by the
+suite. It was exercised during execution under a scratch fake DOM (4583 elements
+built across every widget kind, then a mode switch, an add, a revert, a reorder
+and a download), and that probe was verified to fail on an introduced typo. It
+is not committed: a hand-rolled DOM stub is a second implementation of the
+browser, which is the kind of thing this plan is otherwise about not building.
+**The DOM path's real check is a human one at the gate.**
+
+### The version-skew mitigation had no source
+
+The Risks section says "the page should name the version it is generating for".
+There is no version to name: `Cargo.toml`'s is served nowhere, and the
+repository has **zero tags and zero releases**.
+
+Adding `[extra] version` to `site/config.toml` with a test cross-checking
+`Cargo.toml` was considered and rejected — it would be a second copy of a number
+that names nothing a user can install, earning its keep only once releases
+exist.
+
+Instead the page names its **provenance**, derived rather than copied: it
+displays the loaded schema's own `$id`, which is a `.../main/schemas/...` URL,
+and says in as many words that there are no releases yet so it is the schema on
+`main` at build time rather than one pinned to an installed version. Revisit
+once a `v*` tag exists.
+
+### Smaller corrections
+
+- **Step 6's repo-config example is three lines, not two.** It carries `$schema`
+  (`layers.rs:61-63`), matching what `site/content/configure.md:33` already
+  teaches.
+- **`projectName` appears in the form** because it is in the schema, and setting
+  it there writes it into the *user* config where it does nothing. Excluding it
+  would have meant naming a key in the page — the coupling criterion 1 forbids.
+  The schema's own description already says "**Repo-level only**", the form
+  shows that description, and the page says it again in prose. This is the right
+  trade but it is a real rough edge.
+- **An unrecognised schema shape becomes a raw JSON box**, not nothing. This is
+  what makes criterion 1 true for *shapes* rather than only for names: a
+  construct nobody anticipated stays editable — badly, but honestly — instead of
+  vanishing from a form that claims to be complete. The harness asserts that no
+  property of the committed schema falls back to it today, so the valve cannot
+  quietly become a resting place.
+- **Page weights renumbered.** `generate` is 3, and `repo-config`, `segments`
+  and `diagnosing` moved to 4, 5 and 6 so weight keeps mirroring nav order.
+  Nothing on this site reads a weight today; the ordering is for whoever adds a
+  section listing later.
+
+### Test count
+
+551 → **556** under `mise x -- cargo test --features schema` (549 → 554 bare),
+plus 60 JavaScript checks inside
+`the_generators_pure_core_holds_against_the_real_schema`.

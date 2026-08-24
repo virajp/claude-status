@@ -1,7 +1,7 @@
 +++
 title = "Segments"
 description = "The eleven pieces the bar is built from, and when each one sits out."
-weight = 4
+weight = 5
 +++
 
 The bar is rows of segments, and the rows are yours. `lines` in your config is

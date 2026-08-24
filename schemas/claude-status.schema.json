@@ -210,16 +210,20 @@
               "description": "The subagent's name (rendered when the task has one)."
             },
             "model": {
-              "$ref": "#/$defs/style"
+              "$ref": "#/$defs/style",
+              "description": "The task's model, with its reasoning effort in brackets after it."
             },
             "desc": {
-              "$ref": "#/$defs/style"
+              "$ref": "#/$defs/style",
+              "description": "The task description, truncated to `descBudgetFraction` of the terminal width."
             },
             "tokens": {
-              "$ref": "#/$defs/style"
+              "$ref": "#/$defs/style",
+              "description": "The task's token count (rendered when the payload carries one, `0` included)."
             },
             "duration": {
-              "$ref": "#/$defs/style"
+              "$ref": "#/$defs/style",
+              "description": "How long the task has been running, from its `startTime`."
             }
           },
           "description": "Styling for each subagent row segment."
@@ -255,16 +259,19 @@
       "additionalProperties": false,
       "properties": {
         "bg": {
-          "$ref": "#/$defs/color"
+          "$ref": "#/$defs/color",
+          "description": "Background colour for this segment."
         },
         "fg": {
-          "$ref": "#/$defs/color"
+          "$ref": "#/$defs/color",
+          "description": "Foreground colour. Unset falls through to `defaultFg`."
         },
         "bold": {
           "type": [
             "boolean",
             "null"
-          ]
+          ],
+          "description": "Draw this segment's text bold. `null` clears a `bold` the defaults set."
         }
       }
     },
@@ -287,16 +294,19 @@
               "description": "Alias for `name`."
             },
             "bg": {
+              "description": "Background colour, for this position only — overrides `segments.<id>`.",
               "$ref": "#/$defs/color"
             },
             "fg": {
+              "description": "Foreground colour, for this position only — overrides `segments.<id>`.",
               "$ref": "#/$defs/color"
             },
             "bold": {
               "type": [
                 "boolean",
                 "null"
-              ]
+              ],
+              "description": "Draw this entry bold, for this position only. `null` clears a `bold` `segments.<id>` sets."
             }
           }
         }
