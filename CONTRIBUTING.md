@@ -1,9 +1,8 @@
 # Contributing
 
 Building, testing and releasing `claude-status`. If you are here to *use* the
-status line, [readme.md](./readme.md) is the page you want — and note that it is
-written as the **npm listing page**, so keep developer detail out of it and put
-it here instead.
+status line, [readme.md](./readme.md) is the page you want — keep developer
+detail out of it and put it here instead.
 
 ## Setup
 
@@ -26,15 +25,14 @@ clippy and CI did not, and the first release failed on it.
 ## The tasks
 
 ```sh
-mise run code:test         # the suite — cargo test, tsc, tsup, node --test
+mise run code:test         # the suite — cargo test --features schema
 mise run code:lint         # clippy, -D warnings
 mise run code:format       # dprint
 mise run code:schema       # regenerate schemas/claude-status.schema.json
 mise run code:sec          # gitleaks + grype
 mise run code:toolchain    # dev and CI agree on the shared tools
 mise run build:statusline  # the bar
-mise run build:installer   # the npm package, staged into target/npm/
-mise run build:all         # both of the above, in order
+mise run build:all         # the whole publishable set — today, just the bar
 ```
 
 `code:schema` regenerates `schemas/claude-status.schema.json` from the Rust
@@ -54,15 +52,16 @@ otherwise nothing would ever compile the generator.
 just one. On a non-Mac host it stops and says so rather than staging an
 incomplete set.
 
-`build:installer` stages one npm package into `target/npm/`, with the binary
-inside it. The package's version is substituted from `Cargo.toml` and the task
-fails if the two disagree.
+`build:all` is a thin wrapper around `build:statusline`. It used to stage an npm
+package beside the binary and check the two agreed on a version; the `drop-npm`
+cycle deleted the package, so there is one artifact and nothing to disagree
+with.
 
 ## Platform support
 
 **Apple Silicon macOS only.** `supported_targets` in
 `.config/mise/tasks/_scripts/_rust` is where the list lives, and its comment
-names everything a new platform has to touch — three places that do *not* derive
+names everything a new platform has to touch — two places that do *not* derive
 from the table, so adding one is never a one-line change.
 
 [Contract §9](docs/spec/statusline-behaviour.md) is the durable record of why
@@ -103,20 +102,21 @@ published version, and what the binary self-reports — commit, then push a
 matching `v*` tag. CI checks the tag against `Cargo.toml` before it builds
 anything.
 
-The npm package and the binary carry **one** version. They were briefly split
-while the installer was being proven; embedding the binary made that one
-artifact claiming two versions of itself, so `crate_version()` is the single
-source again and `build:installer` fails if the staged manifest disagrees.
+There is **one** version, because there is one artifact. `crate_version()` is
+the single source, and the release workflow refuses to publish a binary whose
+`--version` disagrees with it.
 
-`release.yml` publishes to npm via OIDC trusted publishing, with no stored
-token. It cannot perform the *first* publish of a package — a Trusted Publisher
-is configured on a settings page that does not exist until the package does — so
-a new package name has to be created by hand once, with a granular token, before
-OIDC can be registered for it.
+**The release is the whole distribution — nothing is published to a registry.**
+Per target it carries a `.tar.gz` with `claude-status` at the archive root, the
+raw binary beside it, and a `SHA256SUMS` covering both. The tarball is what a
+Homebrew formula consumes; the raw binary is for anyone who wants it directly.
+`distribution/01` retired the npm channel and deleted the TypeScript installer,
+the Node toolchain and the OIDC trusted-publishing setup with it — see
+[contract §9](docs/spec/statusline-behaviour.md)'s fifth amendment for why.
 
-The GitHub Release carries the binary too. That is for anyone who wants it
-directly, and for a Homebrew tap later; nothing in the published npm package
-points at it.
+Both asset names come from `asset_name()` in
+`.config/mise/tasks/_scripts/_rust`, driven by `supported_targets`, so adding a
+target adds both shapes with no edit to the workflow.
 
 ## Conventions
 

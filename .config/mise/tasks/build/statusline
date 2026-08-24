@@ -20,10 +20,11 @@ cd "$MISE_PROJECT_ROOT"
 # stopped paying for itself: the host is always one of the two rows, so building
 # the table and then executing the host slice is strictly what both did.
 #
-# Everything lands in `target/<triple>/release/`, which is where `build:installer`
-# and `_rust_reassemble` look. Nothing writes the bare `target/release/` path any
-# more — the plain `cargo build --release` in the readme's from-source escape
-# hatch is the only thing that produces it, and no task reads it.
+# Everything lands in `target/<triple>/release/`, which is where
+# `_rust_reassemble` and the release workflow's collect step look. Nothing
+# writes the bare `target/release/` path any more — the plain
+# `cargo build --release` in the readme's from-source escape hatch is the only
+# thing that produces it, and no task reads it.
 #
 # CI builds each target on a runner that natively matches it, so the loop below
 # is the local path; the workflow passes `--target` and gets one row. Both
