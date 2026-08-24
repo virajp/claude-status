@@ -72,6 +72,28 @@ use crate::json::write_json_atomic_pretty;
 /// non-default: it is a pointer that makes the file editable rather than a
 /// setting, and a config the user is invited to hand-edit without completions
 /// is a config they will mistype. The same URL the shipped defaults carry.
+///
+/// **This is now the single source for the schema's own `$id`.** `schemars`
+/// never emits one, so `config::schema` injects it from here — the published
+/// document and the pointer inside every file `--configure` writes cannot
+/// disagree.
+///
+/// `tests/schema.rs::the_schemas_id_is_the_url_the_binary_writes` guards the
+/// *agreement*, not the wiring: replacing the injection with a hand-copied
+/// literal of today's value leaves it green, because the two still match.
+/// What it does catch is the case that matters — change this constant with a
+/// literal in place, and the regenerated `$id` is the old URL while the
+/// assertion reads the new one, so it goes red at the moment they diverge.
+/// Verified by mutation rather than assumed.
+///
+/// **Other copies of this literal exist and nothing checks them against this
+/// constant.** They all agree today, verified by grep:
+/// `installer/src/modules/config.ts` (deleted by `distribution/01` with the
+/// rest of the installer), `assets/claude-status.defaults.json` and its
+/// `npm/` mirror — both shipped — plus `src/_runtime/cli.rs`,
+/// `.config/claude-status.json`, `readme.md`, and the schema's own `$id`,
+/// which alone is generated from here. An earlier version of this comment said
+/// there was one other; there are several.
 pub const SCHEMA_URL: &str = "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json";
 
 /// The `$schema` key itself, which [`Config`] does not model — it is an

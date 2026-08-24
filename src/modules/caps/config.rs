@@ -44,15 +44,34 @@ pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 90, seven_day: 80, spe
 /// to degrade each key independently, but writing has one shape and no
 /// forgiveness to preserve. `rename_all` is what keeps the two halves agreeing
 /// on `fiveHour`/`sevenDay`.
+///
+/// The `JsonSchema` derive is a **third** reading of the same shape, and the
+/// only one that has to be told the bounds: [`cap`] enforces `0..=1000` in
+/// code, where a derive cannot see it. `#[serde(default)]` is absent here — the
+/// hand-written [`Deserialize`] already answers absence per key — so the
+/// generated schema is told not to require any of the four.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(inline, default, deny_unknown_fields, rename_all = "camelCase", description = "")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Caps {
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the context window. Default 65."))]
     pub context: u32,
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 5-hour rate-limit window. Default 90."))]
     pub five_hour: u32,
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 7-day rate-limit window. Default 80."))]
     pub seven_day: u32,
     /// The monthly budget cap, also a percentage — not an amount. A budget is
     /// an account-level figure in the account's own currency; a percentage is
     /// the only form that means the same thing on every seat.
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer."))]
     pub spend: u32,
 }
 

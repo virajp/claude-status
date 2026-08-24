@@ -17,6 +17,15 @@ fi
 print_header "Linting (clippy) ..."
 # Warnings are errors: the render path must not accumulate lint debt, and the
 # pre-commit hook is the only thing enforcing it.
+#
+# Twice, because the two builds are different code. The bare pass is what
+# `cargo build --release` compiles — the shipped binary, with no `schemars`
+# anywhere in it. The `--features schema` pass is the author-time generator,
+# which `--all-targets` alone would never reach: `required-features` skips the
+# `schema` bin and `#[cfg(feature = "schema")]` skips the module.
 cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets ${VERBOSE} -- -D warnings
+
+print_header "Linting (clippy --features schema) ..."
+cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --features schema ${VERBOSE} -- -D warnings
 
 print_header "Linting done"

@@ -512,6 +512,47 @@ only the user layer.
 > Layer 3 is still written by hand and by nothing else. `--help` is where it is
 > documented, per the note above.
 
+> **Amended 2026-08-24** (`schema-and-validation` cycle). **The JSON schema is
+> generated output**, and `--debug` reports what it could not make sense of.
+>
+> `schemas/claude-status.schema.json` is produced from the Rust config types by
+> `mise run code:schema`, behind an off-by-default `schema` Cargo feature — so
+> the released binary carries no `schemars`. A pre-commit hook and a test under
+> `tests/` both run the `--check` mode, which means a field added to `Config`
+> without regenerating fails the commit and fails CI, naming the command that
+> fixes it. `$id` is injected from the same `SCHEMA_URL` constant `--configure`
+> stamps into every file it writes, so the published schema and the pointer
+> inside a user's config cannot disagree.
+>
+> **`$schema` stays a declared property.** `Config` does not model it — it is a
+> pointer rather than a setting — and the root is `additionalProperties: false`,
+> so without an explicit declaration every file `--configure` writes would fail
+> to validate against its own schema.
+>
+> **One thing the hand-written schema got wrong is now fixed:** a colour accepts
+> `null`. An explicit `null` clears a colour the defaults set, so the segment
+> falls through to `defaultFg`, and `--configure` writes that key back verbatim
+> — the old schema called the binary's own output invalid. `bold` accepts `null`
+> for the same reason.
+>
+> **Validation is advisory and always has been.** Nothing it finds changes a
+> byte of stdout or the exit code; §1's third invariant is not renegotiated in a
+> diagnostics cycle. In particular the render path keeps the **permissive**
+> types: `deny_unknown_fields` appears only in the `schemars` namespace, where
+> it shapes the schema, and never in `serde`, where one mistyped key inside
+> `powerline` would blank the block and draw a bar with no separators.
+>
+> **Unknown-key detection covers closed objects only.** Five maps are open at
+> the key level — `palette`, `symbols`, `typeSymbols`, `segments` and
+> `subagent.statuses` — because their keys are names the user chooses, so no key
+> in them can be *unknown*. Their **values** are still closed: `segments.foo` is
+> a legal segment id this build may not know, while `segments.foo.bge` is a typo
+> and is reported as one. Where the binary has a list to check an open key
+> against it says so as a note rather than a warning; for `typeSymbols` and
+> `subagent.statuses` it has none, because every key in both is read. This is
+> the limit the original ask ran into and it cannot be removed: see §5 for what
+> `--debug` prints instead.
+
 ### Colour specs
 
 Three accepted forms, anywhere a colour is expected — resolve in this order:
@@ -998,6 +1039,45 @@ calling that `not found` described a supported state as a missing one. The third
 exists because the same word used to cover a file that is present and will not
 parse — which is a real problem, is silent everywhere else (invariant 3 leaves
 nowhere to complain to), and so is only visible here.
+
+> **Amended 2026-08-24** (`schema-and-validation` cycle). **`CONFIG LAYERS`
+> gains a validation section**, printed as continuation rows under the layer
+> that caused each finding — because the answer to "why is the key I wrote doing
+> nothing" is which of three files it is written in, and after the merge that is
+> no longer answerable.
+>
+> ```text
+> CONFIG LAYERS (low to high)
+>   embedded loaded         <embedded>
+>   user     loaded         ~/.config/claude-status/config.json
+>            ⚠ unknown key `powerlin` (did you mean `powerline`?)
+>            · symbols.contxt is not a key this binary reads
+>            · gauge.width 0 → 10
+>   repo     using defaults <no git root>
+> ```
+>
+> Three kinds, and the middle one is **never** a warning:
+>
+> - **⚠ unknown key** — a key in a closed object. A typo, reportable with
+>   confidence, with a did-you-mean when one is close enough to be worth the
+>   risk of being wrong.
+> - **· not a key this binary reads** — a key in an open map that nothing in
+>   this build asks for. Legal, and warning about a working config would be
+>   worse than saying nothing.
+> - **· coerced** — what the binary actually *did* with a value: a `0` width
+>   that renders ten, an empty gauge glyph, a `worktreePattern` that will not
+>   compile. **The one no schema can give you**, and the one a user staring at a
+>   wrong-looking bar actually needs.
+>
+> **Advisory, in the strict sense.** Findings change nothing on stdout and
+> nothing about the exit code, in every mode. `--debug` is not a hot path — it
+> already does git discovery and reads the spend cache — so the walk's cost is
+> not a consideration.
+>
+> The embedded layer is not validated: it is this binary's own, and
+> `defaults_integrity` already holds it to the types. The repo layer is
+> validated over what survived the narrowing, because everything else is already
+> named on the `ignored` row above it.
 
 ---
 

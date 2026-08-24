@@ -66,13 +66,23 @@ impl Verdict {
 /// key by key: the block is closed in the schema, and the module that reads a
 /// block owns its shape.
 #[derive(Debug, PartialEq, Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(inline, deny_unknown_fields, description = ""))]
 #[serde(default, rename_all = "camelCase")]
 pub struct SpendConfig {
     /// Genuinely zero when set to zero — this is the one numeric config value
     /// where 0 is a meaningful setting rather than "unset". A value that is
     /// not a number at all is the shipped interval, and costs only itself.
+    #[cfg_attr(feature = "schema", schemars(range(min = 0)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Minimum minutes between fetches of the OAuth usage endpoint (the file-based timer). 0 disables the background refresh entirely; the segment then renders whatever the cache holds. Default 15."))]
     #[serde(deserialize_with = "refresh_minutes")]
     pub refresh_minutes: f64,
+    /// A `String` and not an enum in the types, because [`verdict`] renders on
+    /// **anything that is not `auto`** — so a third value is a working config
+    /// rather than an error. The schema still enumerates the two that mean
+    /// something, which is what an editor's completion list is for.
+    #[cfg_attr(feature = "schema", schemars(with = "crate::config::schema::ShowMode"))]
+    #[cfg_attr(feature = "schema", schemars(description = "`auto` (default) renders only for team/enterprise seats — the plans whose budget is a monthly spend limit. `always` renders whenever budget data exists (e.g. to watch a Pro/Max extra-usage credit cap)."))]
     #[serde(deserialize_with = "show")]
     pub show: String,
 }

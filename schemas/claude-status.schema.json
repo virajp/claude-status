@@ -11,38 +11,38 @@
     },
     "caps": {
       "type": "object",
-      "description": "Thresholds the `--caps-hook` PostToolUse actuator measures usage against, as percentages. When one is exceeded the hook injects a directive telling the agent to hand off and stop, once per escalation. Resolved through all three config layers like any other key, so a repo-level file overrides your user one outright — there is no tighten-only clamp. A key that is absent, negative, non-numeric or above 1000 falls back to its shipped default; `0` is a real cap meaning \"breach on any usage at all\".",
       "additionalProperties": false,
       "properties": {
         "context": {
           "type": "integer",
-          "minimum": 0,
           "maximum": 1000,
-          "default": 65,
-          "description": "Percent of the context window. Default 65."
+          "minimum": 0,
+          "description": "Percent of the context window. Default 65.",
+          "default": 65
         },
         "fiveHour": {
           "type": "integer",
-          "minimum": 0,
           "maximum": 1000,
-          "default": 90,
-          "description": "Percent of the 5-hour rate-limit window. Default 90."
+          "minimum": 0,
+          "description": "Percent of the 5-hour rate-limit window. Default 90.",
+          "default": 90
         },
         "sevenDay": {
           "type": "integer",
-          "minimum": 0,
           "maximum": 1000,
-          "default": 80,
-          "description": "Percent of the 7-day rate-limit window. Default 80."
+          "minimum": 0,
+          "description": "Percent of the 7-day rate-limit window. Default 80.",
+          "default": 80
         },
         "spend": {
           "type": "integer",
-          "minimum": 0,
           "maximum": 1000,
-          "default": 90,
-          "description": "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer."
+          "minimum": 0,
+          "description": "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer.",
+          "default": 90
         }
-      }
+      },
+      "description": "Thresholds the `--caps-hook` PostToolUse actuator measures usage against, as percentages. When one is exceeded the hook injects a directive telling the agent to hand off and stop, once per escalation. Resolved through all three config layers like any other key, so a repo-level file overrides your user one outright — there is no tighten-only clamp. A key that is absent, negative, non-numeric or above 1000 falls back to its shipped default; `0` is a real cap meaning \"breach on any usage at all\"."
     },
     "projectName": {
       "type": "string",
@@ -50,7 +50,6 @@
     },
     "palette": {
       "type": "object",
-      "description": "Named colours as 24-bit RGB triples. Referenced by name anywhere a colour is expected.",
       "additionalProperties": {
         "type": "array",
         "items": {
@@ -60,13 +59,17 @@
         },
         "minItems": 3,
         "maxItems": 3
-      }
+      },
+      "description": "Named colours as 24-bit RGB triples. Referenced by name anywhere a colour is expected."
     },
     "powerline": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Powerline divider glyphs (require a Nerd Font).",
       "properties": {
+        "cap": {
+          "type": "string",
+          "description": "Rounded left cap that opens each line."
+        },
         "sep": {
           "type": "string",
           "description": "Right-fill triangle between differently-coloured segments."
@@ -75,15 +78,12 @@
           "type": "string",
           "description": "Thin divider used when two neighbours share a background."
         },
-        "cap": {
-          "type": "string",
-          "description": "Rounded left cap that opens each line."
-        },
         "thinFg": {
           "$ref": "#/$defs/color",
           "description": "Foreground colour of the thin divider."
         }
-      }
+      },
+      "description": "Powerline divider glyphs (require a Nerd Font)."
     },
     "defaultFg": {
       "$ref": "#/$defs/color",
@@ -92,10 +92,10 @@
     "gauge": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The fixed-width meter used by the `context` segment.",
       "properties": {
         "width": {
           "type": "integer",
+          "maximum": 1000,
           "minimum": 1,
           "description": "Number of blocks in the gauge."
         },
@@ -107,7 +107,8 @@
           "type": "string",
           "description": "Glyph for empty blocks."
         }
-      }
+      },
+      "description": "The fixed-width meter used by the `context` segment."
     },
     "worktreePattern": {
       "type": "string",
@@ -115,15 +116,14 @@
     },
     "symbols": {
       "type": "object",
-      "description": "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, project, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens.",
       "additionalProperties": {
         "type": "string"
-      }
+      },
+      "description": "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, project, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens."
     },
     "spend": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches.",
       "properties": {
         "refreshMinutes": {
           "type": "number",
@@ -138,46 +138,45 @@
           ],
           "description": "`auto` (default) renders only for team/enterprise seats — the plans whose budget is a monthly spend limit. `always` renders whenever budget data exists (e.g. to watch a Pro/Max extra-usage credit cap)."
         }
-      }
+      },
+      "description": "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches."
     },
     "typeSymbols": {
       "type": "object",
-      "description": "Subagent `type` (lower-cased) -> glyph. `_default` is the fallback for unknown types.",
       "additionalProperties": {
         "type": "string"
-      }
+      },
+      "description": "Subagent `type` (lower-cased) -> glyph. `_default` is the fallback for unknown types."
     },
     "segments": {
       "type": "object",
-      "description": "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`.",
       "additionalProperties": {
         "$ref": "#/$defs/style"
-      }
+      },
+      "description": "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."
     },
     "lines": {
       "type": "array",
-      "description": "Ordered list of rows; each row is an ordered list of segment entries. A row that resolves to no visible segments is dropped.",
       "items": {
         "type": "array",
         "items": {
           "$ref": "#/$defs/segmentEntry"
         }
-      }
+      },
+      "description": "Ordered list of rows; each row is an ordered list of segment entries. A row that resolves to no visible segments is dropped."
     },
     "subagent": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Configuration for the subagent panel surface.",
       "properties": {
         "descBudgetFraction": {
           "type": "number",
-          "minimum": 0,
           "maximum": 1,
-          "description": "Fraction of the terminal width allotted to the description before it is truncated."
+          "description": "Fraction of the terminal width allotted to the description before it is truncated.",
+          "minimum": 0
         },
         "statuses": {
           "type": "object",
-          "description": "Status buckets, tried in order. The first whose `match` regex hits the task status wins; an entry with an empty `match` is the fallback for unmatched statuses.",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
@@ -191,16 +190,16 @@
                 "description": "Glyph shown for this status."
               },
               "bg": {
-                "$ref": "#/$defs/color",
-                "description": "Head-segment background for this status."
+                "description": "Head-segment background for this status.",
+                "$ref": "#/$defs/color"
               }
             }
-          }
+          },
+          "description": "Status buckets, tried in order. The first whose `match` regex hits the task status wins; an entry with an empty `match` is the fallback for unmatched statuses."
         },
         "segments": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Styling for each subagent row segment.",
           "properties": {
             "head": {
               "$ref": "#/$defs/style",
@@ -222,14 +221,16 @@
             "duration": {
               "$ref": "#/$defs/style"
             }
-          }
+          },
+          "description": "Styling for each subagent row segment."
         }
-      }
+      },
+      "description": "Configuration for the subagent panel surface."
     }
   },
   "$defs": {
     "color": {
-      "description": "A palette name, a hex string (#rgb or #rrggbb), or an RGB triple.",
+      "description": "A palette name, a hex string (#rgb or #rrggbb), or an RGB triple. `null` clears a colour the defaults set, so the segment falls through to `defaultFg`.",
       "oneOf": [
         {
           "type": "string"
@@ -243,6 +244,9 @@
           },
           "minItems": 3,
           "maxItems": 3
+        },
+        {
+          "type": "null"
         }
       ]
     },
@@ -257,7 +261,10 @@
           "$ref": "#/$defs/color"
         },
         "bold": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     },
@@ -286,7 +293,10 @@
               "$ref": "#/$defs/color"
             },
             "bold": {
-              "type": "boolean"
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           }
         }

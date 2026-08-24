@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate schemas/claude-status.schema.json from the config types"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--check" help="fail if the committed schema has drifted, instead of rewriting it"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+cd "$MISE_PROJECT_ROOT"
+
+# `--features schema` is the whole reason this is a task rather than a plain
+# `cargo run`: the feature is off by default so the released binary carries no
+# `schemars` (cycle criterion 8), which also means the generator target does
+# not exist without it — `required-features` in Cargo.toml skips the bin
+# outright.
+if [[ "${usage_check:-false}" == "true" ]]; then
+  print_header "Checking the JSON schema for drift ..."
+  cargo run --quiet --features schema --bin schema -- --check
+  print_header "Schema is in step with the config types"
+else
+  print_header "Generating the JSON schema ..."
+  cargo run --quiet --features schema --bin schema
+  print_header "Schema written"
+fi
