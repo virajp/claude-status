@@ -19,8 +19,8 @@ BINARY_NAME="claude-status"
 
 # The supported target, as a `<rust-triple> <os> <cpu>` row. The os/cpu names
 # are npm's spelling, kept after `distribution/01` dropped npm because
-# `asset_name` and `hostKey()` already spoke it and renaming them would rename
-# every published asset for nothing.
+# `asset_name` already spoke it and renaming it would rename every published
+# asset for nothing.
 #
 # **Apple Silicon macOS, and nothing else.** This table carried six targets
 # once, then two, and now one. Each cut was made on evidence rather than taste:

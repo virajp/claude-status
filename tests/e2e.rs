@@ -1499,84 +1499,62 @@ const OLD_REFRESH_FLAG: &str = concat!("--refresh", "-spend");
 fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
-    // **The repo root is in scope, and it is the important one.** An earlier
-    // version listed only the source and contract directories, which left
-    // `readme.md` — the most reader-facing file in the repository — unwalked:
-    // a genuine reintroduction there, phrased as a current instruction, passed.
-    // `target/` is skipped by `walk_files`. `installer/` and `npm/` were
-    // skipped too, as trees `distribution/01` would delete; that cycle deleted
-    // them, so the exemption went with them and the scan is that much wider.
-    for dir in [".", "src", "tests", "docs/spec", ".config", ".github"] {
-        walk_files(&root.join(dir), &mut |path| {
-            // `docs/plans/` is out of scope: a cycle plan whose step 1 *is* this
-            // rename has to be allowed to name what it renamed. Excluded by
-            // path rather than by directory name, so it cannot silently widen.
-            if path.starts_with(root.join("docs").join("plans")) {
-                return;
-            }
-            // **Gitignored trees are out of scope, and this bit twice.**
-            // Walking the repo root reaches whatever happens to be sitting in
-            // the working copy, and `docs/scratchpad/`, `graphify-out/` and
-            // `docs/memory/handoff/` are all `.gitignore`d artifacts that exist
-            // in a normal checkout and *not* in a fresh worktree. So this test
-            // passed in the worktree it was written in and failed the moment it
-            // ran on `main` — the scan was policing files no reader will ever
-            // be handed and no commit can ever change. Excluded by path, like
-            // `docs/plans/`.
-            //
-            // `docs/memory/handoff/` is the second occurrence, and it arrived
-            // without any commit touching this file: `/vwf:handoff` writes
-            // `next.md` there, and it writes the old flag with an arrow to the
-            // new one rather than the word this guard looks for — a rename
-            // recorded in a shape the scan cannot recognise. A generated,
-            // untracked document turned `main` red retroactively.
-            if path.starts_with(root.join("docs").join("scratchpad"))
-                || path.starts_with(root.join("graphify-out"))
-                || path.starts_with(root.join("docs").join("memory"))
-            {
-                return;
-            }
-            let Ok(text) = std::fs::read_to_string(path) else {
-                return;
-            };
-            for (n, line) in text.lines().enumerate() {
-                if line.contains(OLD_REFRESH_FLAG) && !line.contains("rename") {
-                    found.push(format!("{}:{}", path.strip_prefix(root).unwrap().display(), n + 1));
-                }
-            }
-        });
-    }
-    assert_eq!(found, Vec::<String>::new(), "the old flag name is still being used, not merely recorded");
-}
 
-/// Every file under `dir`, recursively, skipping the trees that are not this
-/// cycle's to police.
-///
-/// `target/`, `.git/` and `.claude/` are build, VCS and agent state. The list
-/// used to carry `installer/` and `npm/` as well — trees that still described
-/// the npm world and were `distribution/01`'s to delete. That cycle deleted
-/// them, so both entries went with it: an exemption outliving the tree it
-/// exempted is a hole waiting for something to be written into it.
-///
-/// Everything else — including the repo root, so `readme.md`, `CLAUDE.md` and
-/// `CONTRIBUTING.md` are all covered — is walked.
-fn walk_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
-    const SKIP: [&str; 3] = ["target", ".git", ".claude"];
+    // **Tracked files, from git — not a filesystem walk with an exclusion
+    // list.** The walk was the bug. It reached whatever happened to be sitting
+    // in the working copy, so a tree that is gitignored — and therefore exists
+    // in a normal checkout but not in a fresh worktree — made this test pass
+    // where it was written and fail on `main`, with nothing in `git status` to
+    // explain it. It happened four times, and each fix added one more path:
+    // `docs/scratchpad/`, `graphify-out/`, `docs/memory/handoff/`, and a
+    // `node_modules/` that no longer has anything to regenerate it. The fifth
+    // would have been another path.
+    //
+    // Asking git instead closes the class: an untracked file is one no reader
+    // is handed and no commit can change, which is exactly the scope this test
+    // wanted all along. `target/`, `.claude/`, `node_modules/` and every
+    // gitignored doc tree fall out for free, and nothing has to be maintained.
+    let listing = std::process::Command::new("git")
+        .args(["ls-files", "-z"])
+        .current_dir(root)
+        .output()
+        .expect("git ls-files runs in a checkout");
+    assert!(listing.status.success(), "git ls-files failed: {}", String::from_utf8_lossy(&listing.stderr));
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if path.is_dir() {
-            if !SKIP.contains(&name.as_str()) {
-                walk_files(&path, visit);
+    let files: Vec<&str> = std::str::from_utf8(&listing.stdout)
+        .expect("git paths are utf-8 here")
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    // A scan of nothing passes. Cycle 03 shipped a guard that never walked the
+    // repo root and cycle 04 one that could not fail; this is the assertion
+    // that keeps *this* one from joining them.
+    assert!(files.len() > 100, "git ls-files returned {} files — the scan would be vacuous", files.len());
+
+    let mut scanned = 0usize;
+    for rel in files {
+        // `docs/plans/` is out of scope: a cycle plan whose step 1 *is* this
+        // rename has to be allowed to name what it renamed. Excluded by path
+        // rather than by directory name, so it cannot silently widen.
+        if rel.starts_with("docs/plans/") {
+            continue;
+        }
+        let path = root.join(rel);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue; // a binary or deleted-but-staged path is not prose
+        };
+        scanned += 1;
+        for (n, line) in text.lines().enumerate() {
+            if line.contains(OLD_REFRESH_FLAG) && !line.contains("rename") {
+                found.push(format!("{rel}:{}", n + 1));
             }
-        } else {
-            visit(&path);
         }
     }
+    assert!(scanned > 50, "only {scanned} readable files scanned — the scan would be vacuous");
+
+    found.sort();
+    assert_eq!(found, Vec::<String>::new(), "the old flag name is still being used, not merely recorded");
 }
 
 #[test]

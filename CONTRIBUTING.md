@@ -112,7 +112,7 @@ raw binary beside it, and a `SHA256SUMS` covering both. The tarball is what a
 Homebrew formula consumes; the raw binary is for anyone who wants it directly.
 `distribution/01` retired the npm channel and deleted the TypeScript installer,
 the Node toolchain and the OIDC trusted-publishing setup with it — see
-[contract §9](docs/spec/statusline-behaviour.md)'s sixth amendment for why.
+[contract §9](docs/spec/statusline-behaviour.md)'s fifth amendment for why.
 
 Both asset names come from `asset_name()` in
 `.config/mise/tasks/_scripts/_rust`, driven by `supported_targets`, so adding a

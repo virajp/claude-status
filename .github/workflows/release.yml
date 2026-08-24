@@ -19,8 +19,19 @@ name: Release
 # ONE version. Cargo.toml owns it: the binary self-reports it, and `verify`
 # below checks the tag against it before anything is built.
 #
-# `--clobber` on the upload path makes a re-run idempotent, so a partially
-# failed release is safe to retry.
+# `--clobber` on the upload path makes a re-run *recoverable* — a partially
+# failed release is safe to retry, and the assets that land are correct.
+#
+# It does NOT make a re-run byte-identical, and the difference matters to the
+# next cycle. `tar -czf` embeds the file's mtime, so a rebuild produces a
+# tarball with the same contents and a different sha256. Retrying today is
+# harmless. Once `distribution/02`'s formula pins that digest, a retry would
+# silently break `brew install` for everyone with nothing to signal it. The fix
+# when it is needed is a deterministic tar (`--sort=name`, `--mtime`, and a
+# fixed owner/group), which is GNU-tar-only — `publish` runs on ubuntu, so that
+# is available, but the collect step is also run by hand on macOS during
+# review, where bsdtar rejects those flags. Owned by `distribution/02`, which
+# is the cycle that gains something from it.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v1.0.1).
@@ -185,6 +196,16 @@ jobs:
           mkdir -p release-assets
           while read -r target os cpu; do
             [ -z "$target" ] && continue
+            # The count guard below cannot see a *mode*. `cp` and `tar` both
+            # preserve whatever they are handed, so losing the `chmod` in
+            # `_rust_reassemble` ships a 644 binary and a 644 tarball with the
+            # job still green — the one failure downstream of reassemble that
+            # is silent. Two comments already call that `chmod` load-bearing;
+            # this is the line that makes them true.
+            [ -x "target/$target/release/$BINARY_NAME" ] || {
+              echo "::error::$target binary is not executable — the reassemble step's chmod is what restores it"
+              exit 1
+            }
             cp "target/$target/release/$BINARY_NAME" "release-assets/$(asset_name "$os" "$cpu")"
             # `-C` is what puts the binary at the archive ROOT rather than under
             # a `target/<triple>/release/` prefix — a formula's `bin.install`

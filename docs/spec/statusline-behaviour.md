@@ -434,17 +434,18 @@ only the user layer.
 > binary forward across upgrades. The output always carries `$schema` — not a
 > setting, but the pointer that makes the file editable.
 >
-> **This property is not yet delivered end to end, and the gap is on purpose.**
-> The installer still seeds `assets/claude-status.defaults.json` **verbatim**
-> (`installer/src/modules/config.ts`, pinned by a test asserting the seeded file
-> is sha-identical to the asset), so every install performed through it still
-> freezes every shipped value at whatever version happened to be installed —
-> exactly the freeze this rule exists to end. The `config-relocation` cycle
-> changed the binary's writer and deliberately left the installer alone;
-> [distribution/01](../plans/2026-08-23-distribution/01-drop-npm.md) deletes the
-> installer outright and owns retiring both the seeding and the test that pins
-> it. Until then the freeze outlives this cycle, and a reader must not take the
-> paragraph above as describing the whole system.
+> **This property is now delivered end to end.** It was not for two cycles, and
+> the gap was on purpose: the npm installer seeded
+> `assets/claude-status.defaults.json` **verbatim**, pinned by a test asserting
+> the seeded file was sha-identical to the asset, so every install performed
+> through it froze every shipped value at whatever version happened to be
+> installed — exactly the freeze this rule exists to end. The
+> `config-relocation` cycle changed the binary's writer and deliberately left
+> the installer alone.
+> [distribution/01](../plans/2026-08-23-distribution/01-drop-npm.md) deleted the
+> installer outright, and the seeding and its test went with it. **The paragraph
+> above now describes the whole system**; the binary's writer is the only writer
+> there is.
 >
 > Open maps are diffed **entry by entry**. `palette`, `symbols`, `typeSymbols`,
 > `segments` and `subagent.statuses` all have non-empty defaults, so emitting a
@@ -1356,12 +1357,17 @@ file, which a `PostToolUse` hook then reads.
 
 ## 9. Distribution — resolved: GitHub Release assets, Homebrew as the channel
 
-**The heading changed on 2026-08-23; everything under it up to the sixth
-amendment did not.** npm was the resolved channel from the distribution cycle
-until `distribution/01` retired it — see **Amended 2026-08-23 (`drop-npm`)** at
-the end of this section, which is the current answer. The npm prose below is
-kept unedited, as the rest of this section is: it is the record of a decision,
-and a revisited channel should see what was actually weighed.
+**The heading changed on 2026-08-23.** npm was the resolved channel from the
+distribution cycle until `distribution/01` retired it — see **Amended 2026-08-23
+(`drop-npm`)** at the end of this section, which is the current answer.
+
+The npm prose below is kept rather than rewritten: it is the record of a
+decision, and a revisited channel should see what was actually weighed. **Two
+things under this heading were edited by that same cycle**, both because they
+were statements of present fact rather than record: the numbered list of what
+cannot derive the target table lost the two entries naming files the cycle
+deleted, and the paragraph above it describing the platform gates was marked
+superseded. Everything else is as it was written.
 
 **Resolved by the distribution cycle, against the recommendation below.** The
 options are kept because the reasoning still matters if the channel is ever
@@ -1413,9 +1419,12 @@ weigh at the time:
   runners — for a platform that cannot be tested here.
 
 Nothing had been published when this was decided, so no user lost a platform.
-The narrowing is stated at three layers: the wrapper's `"os": ["darwin"]` makes
-npm refuse the install, the installer names the host it will not serve before
-writing anything, and the readme leads with it.
+The narrowing **was** stated at three layers: the wrapper's `"os": ["darwin"]`
+made npm refuse the install, the installer named the host it would not serve
+before writing anything, and the readme led with it. **Two of the three went
+with `distribution/01`** — see the fifth amendment. Only the readme still says
+so, and it now says the opposite of a gate: nothing stops an install on an
+unsupported host until the tap lands.
 
 `supported_targets()` in `.config/mise/tasks/_scripts/_rust` remains the single
 source; nothing that can *derive* the list or its length may hard-code it. Two
@@ -1427,11 +1436,13 @@ things cannot derive it, and each is kept in step by hand:
    architecture. Both are failures, and only the first is currently caught.
 2. The crate, where a platform may need a `cfg` that macOS does not.
 
-This list was **four** items until 2026-08-23. The two that went were `PACKAGES`
-in `installer/src/modules/binary.ts` and `"os": ["darwin"]` in
-`npm/claude-status/package.json`; `distribution/01` deleted both files. They
-were also the two *gates* — see the sixth amendment for what that costs until
-the tap lands.
+This list was **four** items until 2026-08-23. The two that went were the
+installer's host allowlist — `SUPPORTED`, a one-element `["darwin:arm64"]`,
+which earlier revisions of this list misnamed `PACKAGES` — and
+`"os":
+["darwin"]` in the npm wrapper's manifest; `distribution/01` deleted both
+files. They were also the two *gates* — see the fifth amendment for what that
+costs until the tap lands.
 
 > **Amended 2026-08-22** (`github-artifacts` cycle). The channel is still npm —
 > `npx @askviraj/claude-status --install` is unchanged and is still what a user
@@ -1645,7 +1656,7 @@ current one has: record what was there before, so an uninstall *restores* the
 than being deleted and leaving them with none. Files it wrote are removed, not
 restored to some earlier name; the two are different obligations. And replacing
 a statusline the installer did not write must require explicit consent.~~
-**Superseded 2026-08-23** — see the sixth amendment. There is no installer, no
+**Superseded 2026-08-23** — see the fifth amendment. There is no installer, no
 receipt and no uninstall; consent for replacing a foreign statusline is a
 warning on stderr rather than a prompt.
 
@@ -1684,7 +1695,7 @@ credential path works on a live machine.
 
 ### Phase 4 — distribution
 
-The GitHub Release assets §9's sixth amendment resolved on — a `.tar.gz` per
+The GitHub Release assets §9's fifth amendment resolved on — a `.tar.gz` per
 target with the binary at its root, the raw binary beside it, and `SHA256SUMS`
 covering both — plus `--version` and `--configure`. The Homebrew tap that
 consumes the tarball is its own cycle.
@@ -1708,7 +1719,7 @@ here. `context-caps.js` goes with it — the `caps-hook` cycle moved that actuat
 into this binary as `--caps-hook`, and `--configure` replaces a
 `node …context-caps.js` command with `claude-status --caps-hook` rather than
 leaving a Node hook behind. Nothing sweeps the rest of an `ai-plugins` install
-any more; see §9's sixth amendment.
+any more; see §9's fifth amendment.
 
 ---
 

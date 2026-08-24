@@ -346,7 +346,7 @@ full-asset seed is exactly what `config-relocation` set out to remove — but th
 *restores* the `settings.json` keys it overwrote". `config-and-cli/03`
 deliberately shipped no receipt and no `--unconfigure`, so the spec was already
 contradicted **before** this cycle. The paragraph is struck through and the
-sixth amendment records why, rather than being quietly deleted.
+fifth amendment records why, rather than being quietly deleted.
 
 ### What the 57 deleted tests covered
 
@@ -356,11 +356,11 @@ plan requires. The split, counted per block:
 
 | Verdict                                                                                 | Count | What                                                                                                                                                                                                                                                |
 | --------------------------------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Covered** by a Rust test asserting the same thing                                     | 12    | help/no-args, the three wired keys, the node-hook replacement, foreign-hook survival, `--dry-run`, `--version`, settings merge, stale-command rewrite, idempotence, an existing user config left alone                                              |
-| **Covered by inversion** — a Rust test asserts the *new*, deliberately different answer | 7     | foreign status line (refuse → replace-and-report), the seeded config (byte-copy of the asset → `$schema` pointer alone), `--configure`'s meaning, a non-object config (refuse → ignore), verb-pairing (help → refuse)                               |
+| **Covered** by a Rust test asserting the same thing                                     | 11    | the three wired keys, the node-hook replacement, foreign-hook survival, `--dry-run`, `--version`, settings merge, stale-command rewrite, idempotence, an existing user config left alone                                                            |
+| **Covered by inversion** — a Rust test asserts the *new*, deliberately different answer | 8     | help/no-args (see below), foreign status line (refuse → replace-and-report), the seeded config (byte-copy of the asset → `$schema` pointer alone), `--configure`'s meaning, a non-object config (refuse → ignore), verb-pairing (help → refuse)     |
 | **Dropped outright**, no counterpart                                                    | 38    | the whole `--uninstall`/receipt surface (5), the user-level `statusline.json` migration (10), the repo-layer *writing* surface (9), the binary-placement surface (4), the ai-plugins sweep (3), platform gating (1 block / 5 cases), and six others |
 
-12 + 7 + 38 = 57.
+11 + 8 + 38 = 57.
 
 **The recon pass reported this as "20 covered, 31 dropped", which does not sum
 to 57.** The numbers above were recounted block by block against the surviving
@@ -391,3 +391,85 @@ Flagged rather than fixed, because none of it traces to this cycle's request:
 - **`app.rs:544` and `app.rs:742`** were on the brief's fix list but describe
   the **`ai-plugins`** installer — a different, external tool this cycle does
   not touch. Both remain accurate and were left unedited.
+
+### Second fix round — what adversarial review found
+
+Two reviewers ran in **separate worktrees** (cycle 04 shipped a defect where two
+mutate-then-revert reviewers shared one and corrupted each other). Between them
+they found eleven issues; nine were acted on.
+
+**The chronic defect recurred, and worse than before.** Cycles 02, 03 and 04
+each shipped one comment claiming coverage it lacked or citing something that
+moved. This cycle shipped **four dangling or falsified references, three of them
+written by the same commit that deleted what they pointed at**:
+
+- **The contract passage that named this cycle as its own owner.** §4 carried
+  live prose — *"The installer still seeds… `distribution/01` deletes the
+  installer outright and owns retiring both the seeding and the test that pins
+  it"* — with a citation into `installer/src/modules/config.ts` and a closing
+  instruction telling the reader the paragraph above did not describe the whole
+  system. The cycle retired the mechanism and left the sentence assigning it the
+  job. Now past tense, citation dropped, instruction inverted.
+- **"Sixth amendment" is the fifth.** §9 has five `> **Amended` blocks; the
+  label was repeated across six sites in four files, and
+  `docs/spec/DRIFT-2026-08-23.md:163` ("Four amendments below never touched the
+  heading") settles the count. Corrected everywhere.
+- **`hostKey()` cited by a line this cycle added.** The symbol existed only in
+  `installer/src/modules/binary.ts`, deleted in the same commit — and the same
+  file, seventy lines below, *removed* that exact citation from another comment.
+  Half the stated rationale was void; the reason stands on `asset_name` alone.
+- **`PACKAGES` never existed.** The identifier is `SUPPORTED`, and
+  `DRIFT-2026-08-23.md:165` had already recorded the name as false. The cycle
+  rewrote that very sentence, carried the known-wrong identifier through, and
+  then deleted the only file that could disprove it.
+- **§9's new preamble contradicted its own commit**, claiming nothing under the
+  heading changed while the same diff rewrote the numbered list. Now states what
+  was edited and why.
+- **Present-tense npm prose** three lines above a paragraph the cycle *did* fix
+  — the tense pass was applied inconsistently within one document.
+
+**The gitignored-tree scan was fixed structurally rather than patched a fifth
+time.** `node_modules/` was outside the SKIP list, and because it is ignored by
+the maintainer's *global* ignore file, a violation there turned the suite red
+with `git status` completely clean — the same signature that turned `main` red
+in cycles 04 and 05. Each previous fix added one more path. The scan now
+enumerates **tracked files via `git ls-files`**, so every untracked or ignored
+tree is out of scope by construction and there is no list to maintain. Two
+vacuity assertions were added, because a scan of nothing passes. Verified by
+mutation across six cases: clean tree passes; `node_modules/`, the three
+gitignored doc trees and `docs/plans/` are ignored; a tracked violation in
+`readme.md` and a **newly `git add -N`'d file** are both caught. `walk_files`
+became dead and was removed.
+
+**The release could ship a non-executable binary, green.** The collect step's
+guard counts assets and cannot see a *mode*. Deleting the whole reassemble step
+aborts loudly — that blocker is caught — but deleting only its `chmod` line
+passes with exit 0 and publishes a 644 binary inside a 644 tarball. Two comments
+already called that `chmod` load-bearing; nothing enforced it. An `-x` check now
+does, proven both ways: 755 passes, 644 fails with the reason.
+
+**Corrected in this round:** the covered/inverted split is **11 / 8 / 38**, not
+12 / 7 / 38 — the deleted "prints help and mutates nothing when given no
+arguments" case is an *inversion* (the binary prints a one-line diagnostic, and
+`tests/e2e.rs` asserts exactly that), and its mutates-nothing half is asserted
+nowhere: `no_mode_writes_outside_the_cache_directory` has no empty-args row.
+
+### Left for later, deliberately
+
+- **The `.tar.gz` is not byte-reproducible.** `tar -czf` embeds mtime, so a
+  `workflow_dispatch` retry produces identical contents with a different sha256.
+  Harmless while nothing pins the digest — but
+  [distribution/02](./02-homebrew-formula.md)'s formula will pin it, and then a
+  retry silently breaks every `brew install` with no signal. The header comment
+  no longer claims byte-idempotence, and names the fix (`--sort=name`,
+  `--mtime`, fixed owner/group — GNU tar only, which `publish` has and a macOS
+  reviewer does not). **Owned by `distribution/02`.**
+- **`jdx/mise-action@v4` is dead weight in `publish`** now that no `mise run`
+  survives there. Installing a full Rust toolchain is a failure surface between
+  a green build and the actual release. Safe follow-up, not this cycle's.
+- **`launch.json` was never live** — a suspicion raised during review and
+  disproved: it targets `projects/service` and `projects/web`, which
+  `git log
+  --all -- projects/` shows never existed, and the deleted
+  `package.json` had no `scripts` block at all. `pnpm run dev` was unrunnable
+  before this cycle. Not broken by it, not fixed here.
