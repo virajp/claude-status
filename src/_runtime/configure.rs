@@ -1,8 +1,8 @@
 //! `--configure`: wire Claude Code to this binary, and seed a user config.
 //!
 //! `brew install` then `claude-status --configure` is the whole setup. The npm
-//! installer that used to do this is being deleted, so this is the only thing
-//! left that knows how Claude Code is wired.
+//! installer that used to do this was deleted by `distribution/01`, so this is
+//! the only thing left in the repo that knows how Claude Code is wired.
 //!
 //! This is the **only mode that writes under `$HOME`** outside the spend cache,
 //! and the only one that can exit non-zero. Both are deliberate, and both are
@@ -20,8 +20,9 @@
 //!   refuse. Name the file, change nothing, exit non-zero.
 //! - **readable** — merge the three keys and leave every other one alone.
 //!
-//! The TypeScript did not draw that line. `readSettings`
-//! (`installer/src/modules/settings.ts:66-71`) parsed inside a bare
+//! The TypeScript did not draw that line. Its `readSettings` — in the
+//! installer `distribution/01` deleted, so there is no file left to cite —
+//! parsed inside a bare
 //! `catch { return null }`, fell back to `{}`, and the write that followed
 //! **replaced the user's entire Claude Code configuration with three keys**.
 //! Silent data loss on a file we do not own, reachable from a single stray
@@ -34,22 +35,23 @@
 //! entire mitigation, and it is why a *foreign* value is quoted back on stderr
 //! rather than merely counted.
 //!
-//! # `--configure` means something else in the installer
+//! # `--configure` meant something else in the installer
 //!
-//! `installer/src/_runtime/configure.ts` used the same flag for the opposite
-//! thing: giving the repo you are standing in a repo-level config layer, and it
-//! advertises itself as "the only one that writes nothing under `~`". The name
-//! is **deliberately repurposed** — this `--configure` writes only under `~`,
-//! and the repo layer is now written by hand (see `--help`). A reader who knows
-//! the old flag should find that said out loud rather than infer it.
+//! The deleted installer used the same flag for the opposite thing: giving the
+//! repo you are standing in a repo-level config layer, advertising itself as
+//! "the only one that writes nothing under `~`". The name is **deliberately
+//! repurposed** — this `--configure` writes only under `~`, and the repo layer
+//! is now written by hand (see `--help`). A reader who knows the old flag
+//! should find that said out loud rather than infer it, and anyone who ran
+//! `npx @askviraj/claude-status --configure` before this cycle got the other
+//! meaning.
 //!
-//! The two also now write the **same path**: `installer/src/_shared/paths.ts`
-//! puts its `config` at `~/.config/claude-status/config.json`, which is what
-//! step 4 below seeds. No data is at risk — this one writes only when the file
-//! is absent, and the installer's uninstall is sha-guarded — but until
-//! `distribution/01` deletes the installer, two tools write one file with
-//! different contents: the installer seeds the whole defaults asset verbatim,
-//! this seeds a `$schema` pointer alone. Recorded, not solved here.
+//! The two also wrote the **same path**, `~/.config/claude-status/config.json`,
+//! which is what step 4 below seeds. That was a real overlap while both
+//! existed — two tools writing one file with different contents, the installer
+//! seeding the whole defaults asset verbatim and this seeding a `$schema`
+//! pointer alone. `distribution/01` ended it by deleting the installer; there
+//! is one writer now.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -74,8 +76,8 @@ const QUOTE_LIMIT: usize = 200;
 ///
 /// Every line a real run would have printed as an action is prefixed instead,
 /// because a dry run whose output is indistinguishable from a real one teaches
-/// the user nothing about which it was. The TypeScript used the same two words
-/// (`installer/src/_shared/io.ts:30-32`).
+/// the user nothing about which it was. The deleted TypeScript installer used
+/// the same two words, which is why they are these two.
 const WOULD: &str = "would ";
 
 pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {

@@ -1,34 +1,26 @@
 name: Release
 
-# Publishes @askviraj/claude-status to npm, and the binary as a GitHub Release
-# asset. ONE npm package, with the binary INSIDE it — the release is for people
-# who want the binary directly, and nothing in the published package points at
-# it.
+# Builds the binary and publishes it as GitHub Release assets. The release IS
+# the distribution: per target a `.tar.gz` with the binary at its root — what a
+# Homebrew formula consumes — plus the raw binary for people who want it
+# directly, and a SHA256SUMS manifest covering both.
+#
 # Triggered two ways:
 #   1. a pushed version tag (v*)   — the normal release path
-#   2. workflow_dispatch           — manual re-publish of an existing tag
+#   2. workflow_dispatch           — manual re-run against an existing tag
 #
-# Auth is OIDC "trusted publishing" (no stored token) — npm verifies this repo +
-# workflow's GitHub identity and adds provenance automatically. npm validates
-# the ENTRY-POINT workflow's filename, so every publish path must enter through
-# THIS file; `workflow_call` is unusable for that reason.
+# THERE IS NO REGISTRY STEP, and adding one back is a decision, not a fix. npm
+# was the channel until `distribution/01` retired it: shipping a Rust binary
+# through npm asked every user for a Node toolchain to deliver something that
+# needs none, and made this repo two-language to serve one artifact. That is
+# also why OIDC trusted publishing and `id-token: write` are gone — the only
+# thing that ever needed them was the publish. See contract §9.
 #
-# One-time setup: on npmjs.com, register this repo + `release.yml` as the
-# Trusted Publisher for @askviraj/claude-status. One package, one registration —
-# the per-platform packages this used to need are gone.
+# ONE version. Cargo.toml owns it: the binary self-reports it, and `verify`
+# below checks the tag against it before anything is built.
 #
-# THIS WORKFLOW CANNOT PERFORM THE FIRST PUBLISH. A Trusted Publisher is
-# configured on a package's settings page, which does not exist until the
-# package does — so the package has to be created by hand, once, with a granular
-# token, before OIDC can be registered. See npm/cli#8544.
-#
-# ONE version. Cargo.toml owns it: the binary self-reports it, the npm package
-# is stamped from it by `build:installer`, and `verify` below checks the tag
-# against it. There was briefly a second, hand-set npm version; embedding the
-# binary made that one artifact claiming two versions of itself.
-#
-# Order between the two publishes no longer matters — the package carries its
-# binary, so it works whether or not the release exists.
+# `--clobber` on the upload path makes a re-run idempotent, so a partially
+# failed release is safe to retry.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v1.0.1).
@@ -38,11 +30,10 @@ on:
       - "v*"
   workflow_dispatch: {}
 
-# id-token: write is required for OIDC trusted publishing.
 permissions:
-  # `contents: write` creates the release and uploads the binaries to it.
+  # `contents: write` creates the release and uploads the binaries to it. It is
+  # the only permission this workflow needs, now that nothing publishes.
   contents: write
-  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -104,9 +95,6 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
-
-      - name: Install build dependencies
-        run: pnpm install --frozen-lockfile
 
       # Cheap, and it guards the config that decides whether the lint below
       # even has a linter — which is how the first release failed.
@@ -178,26 +166,19 @@ jobs:
           pattern: binary-*
           path: artifacts
 
-      # Put each binary back where build:installer expects it, and restore the
-      # executable bit — upload-artifact does not preserve it.
+      # Put each binary back where the collect step below reads it, and restore
+      # the executable bit — upload-artifact does not preserve it, and a
+      # non-executable binary inside the tarball is a broken release.
       - name: Reassemble the build outputs
         run: |
           set -e
-          # Driven by the same table build:installer reads, so adding a target does
-          # not need this step edited too.
+          # Driven by the same table the collect step reads, so adding a target
+          # does not need this step edited too.
           .config/mise/tasks/_scripts/_rust_reassemble
 
-      # tsup bundles the installer, so the build dependencies are needed here
-      # too — `build:installer` refuses to stage without a bundle.
-      - name: Install build dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Stage the npm package
-        run: mise run build:installer
-
-      # The binary the package carries is the binary the release publishes —
-      # one build, two destinations, so they cannot disagree.
-      - name: Collect the release asset
+      # Two assets per target from the one build, so the tarball and the raw
+      # binary cannot disagree about what they contain.
+      - name: Collect the release assets
         run: |
           set -e
           source .config/mise/tasks/_scripts/_rust
@@ -205,17 +186,24 @@ jobs:
           while read -r target os cpu; do
             [ -z "$target" ] && continue
             cp "target/$target/release/$BINARY_NAME" "release-assets/$(asset_name "$os" "$cpu")"
+            # `-C` is what puts the binary at the archive ROOT rather than under
+            # a `target/<triple>/release/` prefix — a formula's `bin.install`
+            # reads the root and nothing else.
+            tar -czf "release-assets/$(asset_name "$os" "$cpu").tar.gz" \
+              -C "target/$target/release" "$BINARY_NAME"
           done < <(supported_targets)
           ( cd release-assets && shasum -a 256 * > SHA256SUMS )
           count="$(find release-assets -type f -not -name SHA256SUMS | wc -l | tr -d ' ')"
-          if [ "$count" != "$(target_count)" ]; then
-            echo "::error::collected $count assets, expected $(target_count)"
+          expected="$(( $(target_count) * 2 ))"
+          if [ "$count" != "$expected" ]; then
+            echo "::error::collected $count assets, expected $expected"
             exit 1
           fi
 
-      # Not load bearing for npm any more — the package carries its own binary.
-      # This is for people who want the binary directly, and for a Homebrew tap
-      # later. `--clobber` makes a re-run idempotent, as the npm publish is.
+      # This step IS the release now — there is no second destination behind it.
+      # The tarball is what the Homebrew formula (`distribution/02`) will point
+      # at; the raw binary and SHA256SUMS are for people who fetch by hand.
+      # `--clobber` makes a re-run idempotent.
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,22 +218,3 @@ jobs:
               --title "$tag" \
               --generate-notes
           fi
-
-      # OIDC trusted publishing needs npm >= 11.5.1; the bundled npm may lag.
-      - name: Ensure npm supports OIDC trusted publishing
-        run: npm install -g npm@latest
-
-      # Idempotent: an already-published version is skipped, not failed, so a
-      # re-run or a partially-failed release is safe to retry. Republishing the
-      # same npm version is impossible on npm, and this is what keeps that from
-      # failing the whole job.
-      - name: Publish the npm package
-        run: |
-          set -e
-          version="${{ needs.verify.outputs.version }}"
-          if npm view "@askviraj/claude-status@$version" version >/dev/null 2>&1; then
-            echo "@askviraj/claude-status@$version is already published — skipping."
-            exit 0
-          fi
-          echo "Publishing @askviraj/claude-status@$version ..."
-          npm publish --access public target/npm/claude-status

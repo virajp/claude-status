@@ -637,8 +637,11 @@ mod tests {
     /// `<not set>`, `--configure` appends a second group beside it, and the
     /// actuator fires twice per tool call, silently.
     ///
-    /// **Accepted deliberately.** No shipped npm install can produce it: the
-    /// installer always wrote a path containing `claude-status`. What the
+    /// **Accepted deliberately, and less reachable than it was.** No shipped
+    /// install can produce it: the npm installer always wrote a path
+    /// containing `claude-status`, and since `distribution/01` deleted it the
+    /// only wiring path left is `--configure`, which writes the bare name.
+    /// Reaching this state now takes a hand edit. What the
     /// narrowing buys is that the report and the writer agree on the same
     /// definition — the divergence that had `--debug` showing a hook as wired
     /// while `--configure` was about to duplicate it — and that is worth more

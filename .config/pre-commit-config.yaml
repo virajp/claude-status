@@ -91,17 +91,8 @@ repos:
             --config dprint.json \
             --allow-no-files \
             --log-level warn
-        exclude: (^|.*/)package\.json$
         language: system
         stages: [ pre-commit ]
-
-  # - repo: local
-  #   hooks:
-  #     - id: linter
-  #       name: Linter
-  #       entry: mise x -- pnpm dlx @askviraj/linter --fix
-  #       language: system
-  #       stages: [ pre-commit ]
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0

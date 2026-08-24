@@ -2,9 +2,10 @@
 env_shell_expand     = true
 status.missing_tools = "always"
 
-# Only what CI never runs. Rust, node and pnpm are shared and live in
-# mise.toml — a `core:rust` line here would override the base profile silently,
-# which is the bug this file used to carry.
+# Only what CI never runs. Rust is shared and lives in mise.toml — a
+# `core:rust` line here would override the base profile silently, which is the
+# bug this file used to carry. node and pnpm were shared too until
+# `distribution/01` deleted the npm installer and the toolchain with it.
 [tools]
 dprint     = { version = "latest" }
 gitleaks   = { version = "latest" }

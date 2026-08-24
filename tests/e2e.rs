@@ -792,7 +792,8 @@ fn a_legacy_node_caps_hook_is_replaced_rather_than_joined() {
 
 /// **The most dangerous behaviour in the TypeScript this replaces.**
 ///
-/// `readSettings` (`installer/src/modules/settings.ts:66-71`) parsed inside a
+/// Its `readSettings` — in the installer `distribution/01` deleted, so there is
+/// no file left to cite — parsed inside a
 /// bare `catch { return null }` and fell back to `{}`, so a single stray comma
 /// in a user's `settings.json` cost them their **entire** Claude Code
 /// configuration on the next install. Absent and corrupt are different things
@@ -1502,8 +1503,9 @@ fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
     // version listed only the source and contract directories, which left
     // `readme.md` — the most reader-facing file in the repository — unwalked:
     // a genuine reintroduction there, phrased as a current instruction, passed.
-    // `installer/`, `npm/` and `target/` are skipped by `walk_files`; the first
-    // two are `distribution/01`'s to delete and still describe the npm world.
+    // `target/` is skipped by `walk_files`. `installer/` and `npm/` were
+    // skipped too, as trees `distribution/01` would delete; that cycle deleted
+    // them, so the exemption went with them and the scan is that much wider.
     for dir in [".", "src", "tests", "docs/spec", ".config", ".github"] {
         walk_files(&root.join(dir), &mut |path| {
             // `docs/plans/` is out of scope: a cycle plan whose step 1 *is* this
@@ -1550,12 +1552,16 @@ fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
 /// Every file under `dir`, recursively, skipping the trees that are not this
 /// cycle's to police.
 ///
-/// `installer/` and `npm/` still describe the npm world and are
-/// `distribution/01`'s to delete; `target/` and `.git/` are build and VCS
-/// state. Everything else — including the repo root, so `readme.md`,
-/// `CLAUDE.md` and `CONTRIBUTING.md` are all covered — is walked.
+/// `target/`, `.git/` and `.claude/` are build, VCS and agent state. The list
+/// used to carry `installer/` and `npm/` as well — trees that still described
+/// the npm world and were `distribution/01`'s to delete. That cycle deleted
+/// them, so both entries went with it: an exemption outliving the tree it
+/// exempted is a hole waiting for something to be written into it.
+///
+/// Everything else — including the repo root, so `readme.md`, `CLAUDE.md` and
+/// `CONTRIBUTING.md` are all covered — is walked.
 fn walk_files(dir: &Path, visit: &mut dyn FnMut(&Path)) {
-    const SKIP: [&str; 5] = ["installer", "npm", "target", ".git", ".claude"];
+    const SKIP: [&str; 3] = ["target", ".git", ".claude"];
 
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

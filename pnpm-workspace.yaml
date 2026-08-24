@@ -1,8 +1,0 @@
-# pnpm settings live here as of pnpm 11 — the `pnpm` key in package.json is no
-# longer read.
-#
-# esbuild's install script fetches its own platform binary, and tsup cannot
-# bundle without it. Allowed by name rather than disabling the build-script
-# guard for every dependency.
-allowBuilds:
-  esbuild: true

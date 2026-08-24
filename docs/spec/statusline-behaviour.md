@@ -1015,11 +1015,12 @@ the machine.
 > editor — landing inside the read→rename window, roughly 1 ms of a ~3 ms
 > process. The file always remains valid JSON.
 >
-> **`--configure` means the opposite thing in the npm installer**, where it gave
+> **`--configure` meant the opposite thing in the npm installer**, where it gave
 > the repo you were standing in a repo-level config layer and advertised itself
 > as the only command that wrote nothing under `~`. The name is deliberately
 > repurposed: this one writes only under `~`, and the repo layer is now written
-> by hand — see `--help`.
+> by hand — see `--help`. `distribution/01` deleted that installer, so the two
+> meanings no longer coexist.
 
 `--debug` as a modifier narrates decisions on **stderr**. It must compose:
 `--version --debug` still prints a bare version; a render with `--debug` still
@@ -1353,7 +1354,14 @@ file, which a `PostToolUse` hook then reads.
 
 ---
 
-## 9. Distribution — resolved: npm with platform binaries
+## 9. Distribution — resolved: GitHub Release assets, Homebrew as the channel
+
+**The heading changed on 2026-08-23; everything under it up to the sixth
+amendment did not.** npm was the resolved channel from the distribution cycle
+until `distribution/01` retired it — see **Amended 2026-08-23 (`drop-npm`)** at
+the end of this section, which is the current answer. The npm prose below is
+kept unedited, as the rest of this section is: it is the record of a decision,
+and a revisited channel should see what was actually weighed.
 
 **Resolved by the distribution cycle, against the recommendation below.** The
 options are kept because the reasoning still matters if the channel is ever
@@ -1410,16 +1418,20 @@ npm refuse the install, the installer names the host it will not serve before
 writing anything, and the readme leads with it.
 
 `supported_targets()` in `.config/mise/tasks/_scripts/_rust` remains the single
-source; nothing that can *derive* the list or its length may hard-code it. Four
+source; nothing that can *derive* the list or its length may hard-code it. Two
 things cannot derive it, and each is kept in step by hand:
 
-1. `PACKAGES` in `installer/src/modules/binary.ts` — the host→package map.
-2. `"os": ["darwin"]` in `npm/claude-status/package.json`.
-3. The `build` **and** `test` matrices in `.github/workflows/release.yml`. One
+1. The `build` **and** `test` matrices in `.github/workflows/release.yml`. One
    runner per published target in each: a build matrix that skips a target does
    not ship it, and a test matrix that skips one ships it untested on its own
    architecture. Both are failures, and only the first is currently caught.
-4. The crate, where a platform may need a `cfg` that macOS does not.
+2. The crate, where a platform may need a `cfg` that macOS does not.
+
+This list was **four** items until 2026-08-23. The two that went were `PACKAGES`
+in `installer/src/modules/binary.ts` and `"os": ["darwin"]` in
+`npm/claude-status/package.json`; `distribution/01` deleted both files. They
+were also the two *gates* — see the sixth amendment for what that costs until
+the tap lands.
 
 > **Amended 2026-08-22** (`github-artifacts` cycle). The channel is still npm —
 > `npx @askviraj/claude-status --install` is unchanged and is still what a user
@@ -1576,12 +1588,66 @@ things cannot derive it, and each is kept in step by hand:
 > is a real cap meaning "breach on any usage at all", and is not mistaken for
 > unset.
 
-Whatever the channel, **the installer must keep the receipt discipline** the
+> **Amended 2026-08-23** (`drop-npm` cycle). **npm is retired as a channel,
+> before it ever shipped a real version.** The release *is* the distribution:
+> per target a `.tar.gz` with the binary at its root, the raw binary beside it,
+> and a `SHA256SUMS` covering both. The Homebrew tap that consumes the tarball
+> is `distribution/02`.
+>
+> **The reason is the one the table's npm row understated.** "Awkward for a repo
+> with no other JS" turned out to mean a second language in the tree for the
+> life of the project: a TypeScript installer, its own test suite, `tsup`,
+> `pnpm`, a lockfile, a `tsconfig`, and node in the toolchain — all of it to
+> deliver a Rust binary that needs none of it. The thing npm bought was the
+> `pnpx` invocation existing `ai-plugins` users knew, and `config-and-cli/03`
+> had already moved the wiring into the binary as `--configure`, so installing
+> from the tap and running `--configure` replaces it with no Node anywhere.
+>
+> **The `ai-plugins` upgrade path is knowingly dropped.** Nothing now sweeps the
+> orphans a previous `pnpx @askviraj/ai-plugins --statusline` left behind — the
+> `statusline` script under `~/.claude/scripts/`, the `statusline.json` receipt
+> under `~/.config/ai-plugins/receipts/`, and `~/.claude/hooks/context-caps.js`
+> — and any machine that ran `npx @askviraj/claude-status --install` keeps an
+> orphaned `~/.config/claude-status/receipt.json`. `--debug` still *reports* a
+> stale `node …/context-caps.js` hook and `--configure` still replaces it, so
+> the one consequence that changes what renders is handled; the rest is litter.
+> §8's usage mirror is untouched and remains a live contract with that repo.
+>
+> **Nothing gates the platform between this cycle and the tap.** The two gates
+> named above — the npm manifest's `os`/`cpu` and the installer's
+> unsupported-platform message — were deleted here, and the formula that
+> replaces them is `distribution/02`'s. A non-`darwin:arm64` user is told
+> nothing in the meantime. Accepted deliberately rather than papered over with a
+> runtime host check, because the check would outlive the window and the binary
+> would then be refusing to run on a platform the formula had already refused to
+> install.
+>
+> **The receipt discipline below is not met, and was not met before this
+> cycle.** `config-and-cli/03` shipped `--configure` with **no receipt and no
+> `--unconfigure`**, deliberately: a statusLine belonging to another tool is
+> overwritten after the foreign value is quoted back on stderr, which is the
+> whole mitigation. So the paragraph that follows describes an obligation the
+> landed code does not discharge. It is struck through rather than deleted,
+> because if a channel ever regains an uninstall the reasoning is the reasoning.
+>
+> **The npm name is not reclaimed.** `@askviraj/claude-status` stays as it is;
+> unpublishing is neither possible nor wanted. What is on the registry today is
+> **unverified** — the package 404s to an anonymous fetch while the same
+> account's `@askviraj/ai-plugins` returns 200, which is consistent with either
+> a placeholder that was never published or one published and since removed.
+> Nothing in this cycle contacts the registry, so this document does not assert
+> either. Deprecating the name to point at the tap is `distribution/02`'s, since
+> until the tap exists there is nowhere to point.
+
+~~Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather
 than being deleted and leaving them with none. Files it wrote are removed, not
 restored to some earlier name; the two are different obligations. And replacing
-a statusline the installer did not write must require explicit consent.
+a statusline the installer did not write must require explicit consent.~~
+**Superseded 2026-08-23** — see the sixth amendment. There is no installer, no
+receipt and no uninstall; consent for replacing a foreign statusline is a
+warning on stderr rather than a prompt.
 
 ---
 
@@ -1618,19 +1684,31 @@ credential path works on a live machine.
 
 ### Phase 4 — distribution
 
-The npm packages §9 resolved on, plus `--version` and the installer.
+The GitHub Release assets §9's sixth amendment resolved on — a `.tar.gz` per
+target with the binary at its root, the raw binary beside it, and `SHA256SUMS`
+covering both — plus `--version` and `--configure`. The Homebrew tap that
+consumes the tarball is its own cycle.
 
-*Verify:* install into a throwaway `$HOME` (`mktemp -d`, with `HOME`,
-`XDG_CONFIG_HOME` and `XDG_DATA_HOME` redirected), render with the *installed*
-binary, then uninstall and confirm the tree is byte-identical to before.
+*Verify:* on a tag, the release carries both shapes per target and every digest
+in `SHA256SUMS` agrees with its asset; extracting the tarball puts an executable
+`claude-status` at the archive root. Then `--configure` into a throwaway `$HOME`
+(`mktemp -d`, with `HOME`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` redirected) and
+render with that binary.
+
+**This phase's verification used to end "then uninstall and confirm the tree is
+byte-identical to before".** There is no uninstall to run — `--configure` ships
+without one, deliberately — so that round trip is unverifiable rather than
+merely unperformed. The snapshot harness that would apply it survives in
+`tests/e2e.rs`; what it has no counterpart for is the second half.
 
 ### Phase 5 — cut over
 
 Update `ai-plugins` to stop shipping `tools/statusline/` and point its docs
 here. `context-caps.js` goes with it — the `caps-hook` cycle moved that actuator
-into this binary as `--caps-hook`, so the installer replaces the
+into this binary as `--caps-hook`, and `--configure` replaces a
 `node …context-caps.js` command with `claude-status --caps-hook` rather than
-leaving a Node hook behind.
+leaving a Node hook behind. Nothing sweeps the rest of an `ai-plugins` install
+any more; see §9's sixth amendment.
 
 ---
 

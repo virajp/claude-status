@@ -4,9 +4,9 @@
 #MISE hide=true
 
 # The crate version, which is the single source of truth for everything
-# published: the binary self-reports it, the npm packages carry it, and the
-# release workflow checks the tag against it. Deliberately NOT duplicated into a
-# package.json that could drift.
+# published: the binary self-reports it, and the release workflow checks the tag
+# against it. Deliberately NOT duplicated into a second manifest that could
+# drift — which is what a package.json here used to be.
 crate_version() {
   cargo pkgid | sed -E 's/.*[@#]([0-9]+\.[0-9]+\.[0-9]+.*)$/\1/'
 }
@@ -17,7 +17,10 @@ crate_version() {
 # to remember to ignore it.
 BINARY_NAME="claude-status"
 
-# The supported target, as a `<rust-triple> <npm-os> <npm-cpu>` row.
+# The supported target, as a `<rust-triple> <os> <cpu>` row. The os/cpu names
+# are npm's spelling, kept after `distribution/01` dropped npm because
+# `asset_name` and `hostKey()` already spoke it and renaming them would rename
+# every published asset for nothing.
 #
 # **Apple Silicon macOS, and nothing else.** This table carried six targets
 # once, then two, and now one. Each cut was made on evidence rather than taste:
@@ -32,6 +35,13 @@ BINARY_NAME="claude-status"
 #     swap helps. A target whose build tooling has abandoned it is a gap this
 #     repo would own indefinitely.
 #
+#     **That reason has since lapsed and the cut still stands.**
+#     `distribution/01` removed pnpm from the toolchain, so an Intel runner has
+#     nothing left to fail to install. What did not change is the bar below: a
+#     target costs a native `test` runner and a native `build` runner, and
+#     contract §9 will not take one back without them. Re-adding darwin-x64 is
+#     now a decision about whether it is worth two runners, not a blocked one.
+#
 # Linux was surveyed before being declined and came back *viable* — credentials
 # already degrade off macOS, the crate's platform-specific spots are Unix rather
 # than Apple, and TLS pulls in no system library. It costs two native runners, a
@@ -40,21 +50,15 @@ BINARY_NAME="claude-status"
 # produce a Linux binary at all. See contract §9.
 #
 # Everything that COUNTS targets derives from this function — `target_count`,
-# `build:installer`, `_rust_reassemble`, and the release workflow's asset
-# upload. Three things do NOT, and adding a platform back means editing every
-# one of them; nothing here catches a miss:
+# `_rust_reassemble`, and the release workflow's collect step, which names both
+# the raw asset and the tarball from the row. Two things do NOT, and adding a
+# platform back means editing both; nothing here catches a miss:
 #
-#   1. `"os"` and `"cpu"` in `npm/claude-status/package.json` — npm refuses the
-#      install off Apple Silicon, so re-adding a row without widening these
-#      ships a package that cannot be installed on the platform it now claims to
-#      serve. With one target the two fields express the set exactly; with more
-#      they are independent arrays and cannot, so the installer's own
-#      unsupported-platform message becomes the real gate again.
-#   2. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
+#   1. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
 #      runner each, so no artifact reaches a release untested on its own
 #      architecture. That rule is why adding a target is expensive, and it is
 #      the rule contract §9 says must be met before any target comes back.
-#   3. The crate itself, in three places — **Windows will not compile** until
+#   2. The crate itself, in three places — **Windows will not compile** until
 #      every one of them goes back behind a `cfg`, and restoring only the first
 #      still fails, after a full CI matrix has run:
 #        - `spawn_detached` in `src/_shared/proc.rs` calls a Unix API
@@ -63,6 +67,13 @@ BINARY_NAME="claude-status"
 #          `sleep`, their `cmd /C` twin deleted;
 #        - `tests/e2e.rs` chmods a `#!/bin/sh` shim through `PermissionsExt`.
 #      None of the three blocks Linux; all three block Windows.
+#
+# **Nothing gates the platform at install time right now.** The `"os"`/`"cpu"`
+# fields in the npm manifest were the third item on this list and the thing that
+# refused the install off Apple Silicon; `distribution/01` deleted them, and the
+# Homebrew formula that replaces them is `distribution/02`'s. Until it lands, a
+# non-darwin:arm64 user is told nothing — a knowing window, recorded in that
+# cycle's plan rather than patched over with a runtime host check.
 #
 # `printf`, not a `cat` heredoc: `cat` is shimmed to `bat` on the maintainer's
 # machine and would inject ANSI decoration into the rows.
@@ -80,8 +91,10 @@ target_count() {
 #
 # Every target's binary is `claude-status` on disk, so they cannot all be
 # uploaded to one release under that name. The os/cpu suffix is what makes them
-# distinguishable, and it is the same `<os>-<cpu>` key the checksum manifest and
-# `hostKey()` use — one shape, three consumers.
+# distinguishable, and it is the same `<os>-<cpu>` key the checksum manifest
+# uses. Two consumers now name a target from it — the raw asset and the
+# `.tar.gz` beside it — which is why the tarball derives its name here rather
+# than spelling one out in the workflow.
 asset_name() {
   printf 'claude-status-%s-%s' "$1" "$2"
 }

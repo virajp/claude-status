@@ -47,94 +47,79 @@ marker.](https://cdn.virajp.me/claude-status/statusline.png)
 
 ## Install
 
+> **There is no published install route yet.** `claude-status` used to be an npm
+> package; that channel was retired before it ever shipped a real version,
+> because it asked you for a Node toolchain to deliver a binary that needs none.
+> Homebrew replaces it, and the tap is not published yet — until it is, build
+> from source below.
+
+Once the tap exists it will be two commands:
+
 ```sh
-npx @askviraj/claude-status --install
+brew install virajp/tap/claude-status
+claude-status --configure
 ```
 
-That's it. The binary lands at `~/.claude/bin/claude-status` and Claude Code
-gets wired up for you. The binary ships inside the package, so the install needs
-no network access at all — it works on a plane.
+`--configure` wires Claude Code's `~/.claude/settings.json` to the binary.
+Restart Claude Code and the bar is there.
 
 The bar draws in full from the defaults baked into the binary, so no config file
 is needed at all — `~/.config/claude-status/config.json` is yours to write when
-you want something different.
+you want something different, and `--configure` creates it holding a `$schema`
+pointer and nothing else.
 
-> **Today the installer still writes one for you**, a full copy of those
-> defaults, which pins every value at the version you installed. That is being
-> removed along with the npm installer itself; until then, deleting that file
-> costs you nothing and lets new defaults reach you on upgrade.
+Already have a status line? `--configure` **replaces** it and prints what it
+replaced. There is no undo, so set yours again to get it back.
 
-Restart Claude Code and the bar is there.
+### From source
 
-Already have a status line? The installer won't stomp on it without asking, and
-`--uninstall` puts your old one back exactly as it was.
+Works today, and needs only a Rust toolchain:
+
+```sh
+git clone https://github.com/virajp/claude-status
+cd claude-status
+cargo build --release
+# put target/release/claude-status somewhere on your PATH, then:
+claude-status --configure
+```
 
 ### Requirements
 
-**Apple Silicon Mac.** You'll also need Node 18+ to run the installer once —
-nothing after that, because Claude Code talks to the binary directly rather than
-through Node.
+**Apple Silicon Mac.** Nothing else — no Node, no runtime, no second language;
+Claude Code talks to the binary directly.
 
-Intel Macs, Linux and Windows aren't served today. `npm install` will politely
-refuse rather than leave you with something that can't work.
+Intel Macs, Linux and Windows aren't served today, and **nothing currently stops
+you installing on one** — the npm manifest that used to refuse went with the npm
+channel, and the Homebrew formula that will refuse again is not published yet.
+See [Building it elsewhere](CONTRIBUTING.md#platform-support) if you want to try
+anyway.
 
 ### The commands
 
-| Command       | Does                                                               |
-| ------------- | ------------------------------------------------------------------ |
-| `--install`   | place the binary, seed your config, wire Claude Code               |
-| `--uninstall` | remove it, and restore the `settings.json` keys it changed         |
-| `--configure` | give the repo you're in its own [config layer](#per-repo-settings) |
-| `--help`      | the same list, with detail                                         |
-| `--version`   | print the installed version                                        |
+| Command       | Does                                                       |
+| ------------- | ---------------------------------------------------------- |
+| `--configure` | wire Claude Code to this binary, and seed your user config |
+| `--debug`     | report configuration, wiring and a sample render           |
+| `--help`      | the full list, with detail                                 |
+| `--version`   | print the version                                          |
 
-> **`--configure` is two different flags**, and it is worth knowing which one
-> you are running. The table above is the **npm installer's**: it writes a
-> repo-level file and nothing under `~`. The **binary** now has a `--configure`
-> of its own that does the opposite — `claude-status --configure` wires Claude
-> Code's `~/.claude/settings.json` and seeds your user config, and writes
-> nothing in the repo. The name is reused on purpose: the installer is being
-> removed, the binary's flag is what replaces it, and `claude-status --help`
-> documents how to write a repo layer by hand.
->
-> **While both exist, running one can undo the other.** The installer wires an
-> absolute `~/.claude/bin/claude-status --statusline`; the binary's
-> `--configure` recognises that as its own earlier work and quietly rewrites it
-> to the bare name `claude-status`, which is then resolved from `PATH`. That
-> survives a `brew upgrade`, which the absolute path does not — but **if
-> `claude-status` is not on the `PATH` Claude Code itself sees, your bar goes
-> blank straight after running the command meant to set it up.** A GUI-launched
-> app does not always inherit your shell's `PATH`. Run `claude-status --debug`
-> to see what is wired, and re-run the installer to put the absolute path back
-> if you need it.
->
-> In the same direction: the installer's `--uninstall` restores the status line
-> that was there *before it ran*, so on a machine that has since been wired by
-> the binary it will discard that wiring rather than restore it.
+`--dry-run` pairs with `--configure` to print every change and write nothing.
 
-Add these to any of them:
-
-| Modifier    | Does                                                                         |
-| ----------- | ---------------------------------------------------------------------------- |
-| `--dry-run` | show every change and touch nothing                                          |
-| `--yes`     | answer prompts in advance — handy in a setup script or CI, which have no TTY |
-| `--force`   | replace a status line this installer didn't write, without being asked       |
-
-One thing to know if you're scripting it: replacing a status line the installer
-didn't write needs a yes, and with no terminal to ask in it stops rather than
-guessing. Pass `--yes` or `--force` and it'll go ahead.
+> **`--configure` used to mean the opposite.** The npm installer's flag of the
+> same name gave the repo you were standing in a config layer and wrote nothing
+> under `~`. The binary's `--configure` writes only under `~`, and the per-repo
+> layer is now written [by hand](#per-repo-settings). The name was reused on
+> purpose: the installer is gone and this is what replaces it.
 
 ## Uninstalling
 
-```sh
-npx @askviraj/claude-status --uninstall
-```
+Delete the binary, and remove the `statusLine`, `subagentStatusLine` and
+`PostToolUse` hook entries `--configure` added to `~/.claude/settings.json`.
 
-It takes back what it added and nothing else. A receipt at
-`~/.config/claude-status/receipt.json` remembers how your machine looked
-**before** the install, so the status line you had returns verbatim, a config
-you've since edited is left alone, and a setting that was absent goes back to
-being absent rather than set to some default.
+There is no `--unconfigure` and no receipt of what was there before. That is
+deliberate rather than missing — but it does mean a status line `--configure`
+replaced is not recoverable from anything this tool kept. Run
+`claude-status --debug` to see exactly what is wired before you change it.
 
 ## Making it yours
 
@@ -179,23 +164,8 @@ a colour can be a palette name, a `#rrggbb` string or an `[r, g, b]` triple.
 
 ### Per-repo settings
 
-Want one project to look different, or just to be named properly in the bar? Run
-this inside it:
-
-```sh
-npx @askviraj/claude-status --configure
-```
-
-That writes layer 3 and names the project after its directory. An existing file
-is kept as-is and only gains `projectName` if it was missing.
-
-> **This is the npm installer's `--configure`, not the binary's.** They are
-> different commands that happen to share a name — `claude-status --configure`
-> wires Claude Code and writes nothing in the repo. See the note under
-> [the commands](#the-commands). Writing the file yourself, below, works
-> whichever you have.
-
-Or write it yourself — the whole file is two keys:
+Want one project to look different, or just to be named properly in the bar?
+Write the file yourself — the whole thing is two keys:
 
 ```jsonc
 {

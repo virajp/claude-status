@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-#MISE description="Put CI's downloaded build artifacts back where build:installer expects them"
+#MISE description="Put CI's downloaded build artifacts back where the release collect step expects them"
 #MISE hide=true
 
 # Each build job uploads one binary; `actions/download-artifact` lands them in
 # `artifacts/binary-<target>/`. This puts them back under `target/<triple>/
-# release/`, restoring the executable bit that upload-artifact drops.
+# release/`, which is the ONLY thing that creates the path the release
+# workflow's collect step copies and tars from — delete this and the release
+# job fails before it ever reaches `gh release create`.
+#
+# The `chmod` below is load-bearing for the same reason: upload-artifact drops
+# the executable bit, and nothing else restores it, so without it the release
+# ships a binary — and a tarball containing one — that cannot be run.
 #
 # Driven by `supported_targets`, so adding a platform is a one-line change in
 # one file rather than an edit here as well.

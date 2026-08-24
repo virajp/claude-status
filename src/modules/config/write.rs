@@ -88,12 +88,15 @@ use crate::json::write_json_atomic_pretty;
 ///
 /// **Other copies of this literal exist and nothing checks them against this
 /// constant.** They all agree today, verified by grep:
-/// `installer/src/modules/config.ts` (deleted by `distribution/01` with the
-/// rest of the installer), `assets/claude-status.defaults.json` and its
-/// `npm/` mirror — both shipped — plus `src/_runtime/cli.rs`,
-/// `.config/claude-status.json`, `readme.md`, and the schema's own `$id`,
-/// which alone is generated from here. An earlier version of this comment said
-/// there was one other; there are several.
+/// `assets/claude-status.defaults.json` (shipped), `src/_runtime/cli.rs`,
+/// `.config/claude-status.json`, `readme.md`, and two test fixtures —
+/// `tests/defaults_integrity.rs` and `tests/e2e.rs`. The schema's own `$id` is
+/// the one copy that is not a copy: it is generated from here.
+///
+/// There used to be two more — the installer's TypeScript twin and the `npm/`
+/// mirror of the defaults asset — and `distribution/01` deleted both with the
+/// installer. An earlier version of this comment said there was one other
+/// copy; there are several, and the count is smaller than it was.
 pub const SCHEMA_URL: &str = "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json";
 
 /// The `$schema` key itself, which [`Config`] does not model — it is an

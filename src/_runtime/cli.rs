@@ -263,7 +263,7 @@ mod tests {
     }
 
     /// **Criterion 7.** `--help` is the only documentation that ships in the
-    /// binary once the npm installer is gone, and after `config-relocation`
+    /// binary now that the npm installer is gone, and after `config-relocation`
     /// deleted the autoseed the repo layer has **no other discovery route** —
     /// a vague `--help` is the feature being gone in practice.
     #[test]

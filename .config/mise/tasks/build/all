@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build every target and stage the publishable npm packages"
+#MISE description="Build every published target"
 #MISE dir="{{ config_root }}"
 #MISE depends=["build:clean"]
 
@@ -13,25 +13,17 @@ cd "$MISE_PROJECT_ROOT"
 
 [[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG="--debug" || DEBUG_FLAG=""
 
-# What CI does across its per-target runners, in one command on one machine.
-# Both published targets are macOS, so this needs nothing but a Mac and the two
-# rustup targets.
+# There is one thing to build. This task used to build the binary and then
+# stage an npm package beside it, and check the two agreed on a version;
+# `distribution/01` deleted the package, and the check with it — one artifact
+# cannot disagree with itself.
+#
+# It is kept rather than folded away because `build:all` is the name
+# CONTRIBUTING points people at, and because the day a second artifact returns
+# it belongs here rather than inside `build:statusline`.
 line_sep "-"
 mise run build:statusline ${DEBUG_FLAG}
 
-line_sep "-"
-mise run build:installer ${DEBUG_FLAG}
-
-# `build:installer` fails outright when the binary is missing, so reaching here
-# means the package is staged with it. What is still worth asserting is that the
-# staged package and the crate agree on a version — one artifact, one number.
-line_sep "-"
 VERSION="$(crate_version)"
-PKG_VERSION="$(node -p "require('./target/npm/claude-status/package.json').version")"
-if [[ "${PKG_VERSION}" != "${VERSION}" ]]; then
-  print_error "the staged package says ${PKG_VERSION}, Cargo.toml says ${VERSION}"
-  exit 1
-fi
-
-print_header "claude-status ${VERSION}: the npm package is staged in target/npm/."
-print_yellow "  Publishing is CI's job — push a v${VERSION} tag to release."
+print_header "claude-status ${VERSION}: built into target/<triple>/release/."
+print_yellow "  Releasing is CI's job — push a v${VERSION} tag."
