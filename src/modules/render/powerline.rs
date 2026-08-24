@@ -176,9 +176,10 @@ mod tests {
 
         let layers = crate::config::layers::load(Some(home.path()), None);
         // Not vacuous: the layer has to have been read for the assertions below
-        // to mean anything. A fixture at the wrong path loads as "not found",
+        // to mean anything. A fixture at the wrong path reads as `Absent`,
         // hands back the shipped glyphs, and passes having tested nothing.
-        assert!(layers.sources.iter().any(|s| s.label == crate::config::layers::LABEL_USER && s.loaded));
+        use crate::config::layers::{LABEL_USER, LayerState};
+        assert!(layers.sources.iter().any(|s| s.label == LABEL_USER && s.state == LayerState::Loaded));
 
         let pl = Powerline::from_config(&layers.config);
         assert!(!pl.cap.contains('\u{1b}'), "cap: {:?}", pl.cap);

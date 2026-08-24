@@ -5,5 +5,6 @@ pub mod config;
 pub mod git;
 pub mod payload;
 pub mod render;
+pub mod settings;
 pub mod spend;
 pub mod usage;

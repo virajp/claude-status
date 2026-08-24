@@ -46,8 +46,18 @@
 //! malformed. Degradation is lossy by design, mapping `5`, `"x"`, `null` and
 //! `[]` onto one state; round-tripping it would preserve the damage.
 //!
-//! Neither can bite yet — nothing calls [`write()`]. They are pinned so the
-//! cycle that adds `--configure` inherits a known boundary.
+//! **Neither bites today, but the reason changed with `--configure`.** It used
+//! to be that nothing called [`write()`] at all. There is now exactly one
+//! caller — the `--configure` runtime — and it passes [`Config::default`],
+//! whose tree carries no removed key and no degraded block by construction. So
+//! the guarantee is no longer "unreachable"; it is "the only caller cannot
+//! reach it".
+//!
+//! That distinction is load-bearing. A future caller passing a **loaded**
+//! config would arm both exemptions at once: a user whose `subagent` block had
+//! degraded would find `statuses: {}` silently normalised back to the shipped
+//! values, on disk, permanently. The `--configure` runtime records the same
+//! reasoning at its call site; the two must not drift.
 
 use std::path::Path;
 
@@ -66,7 +76,7 @@ pub const SCHEMA_URL: &str = "https://raw.githubusercontent.com/virajp/claude-st
 
 /// The `$schema` key itself, which [`Config`] does not model — it is an
 /// unknown key to the types, deliberately.
-const SCHEMA_KEY: &str = "$schema";
+pub const SCHEMA_KEY: &str = "$schema";
 
 /// `config` reduced to `$schema` plus everything that differs from
 /// [`Config::default`].
