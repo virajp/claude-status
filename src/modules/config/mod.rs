@@ -125,7 +125,7 @@ pub struct Config {
     pub symbols: BTreeMap<String, String>,
     /// Owned by [`crate::spend`], for the same reason `caps` is owned by
     /// [`crate::caps`]: the module that reads a block should own its shape.
-    #[cfg_attr(feature = "schema", schemars(description = "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/ai-plugins/spend.json; override with $AI_PLUGINS_SPEND_CACHE). A render never fetches."))]
+    #[cfg_attr(feature = "schema", schemars(description = "The `spend` segment — the account's monthly budget (claude.ai → Settings → Usage), fetched by a detached background refresh into a machine-global cache (~/.cache/claude-status/spend.json; override with $CLAUDE_STATUS_SPEND_CACHE). A render never fetches."))]
     #[serde(deserialize_with = "spend_block")]
     pub spend: SpendConfig,
     /// An open map keyed by a task's `type`, plus the `_default` entry.

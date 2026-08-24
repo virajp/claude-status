@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#MISE description="Build the documentation site (zola) and check its internal links"
+#MISE dir="{{ config_root }}"
+
+#USAGE flag "--drafts" help="include pages marked draft"
+#USAGE flag "--minify" help="minify the generated HTML"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+cd "$MISE_PROJECT_ROOT"
+
+# No `--debug` flag, unlike every `code:*` task. Those pass `--verbose` through
+# to cargo; zola 0.23 has no verbosity control at all, so the flag would be a
+# lie in the usage output. `--drafts` and `--minify` are the two knobs it does
+# have that anyone would reach for.
+#
+# This task chains into NOTHING, and that is deliberate.
+#
+# It is not in `code:all`. `code:all` is the code-quality gate — format, lint,
+# test, security scan — and it is what the pre-commit hook and the release
+# workflow both run. Hanging the docs build off it would couple a typo fix to
+# the binary's gate in exactly the direction this cycle set out to avoid: the
+# whole reason the site ships on its own `site-v*` tag line is that a docs
+# correction should not need a binary release, and a docs *build* should not
+# need the binary's test suite either.
+#
+# It is not in `build:all` either, which `depends=["build:clean"]` — an
+# `rm -rf target` that has nothing to do with `site/` and costs a full Rust
+# rebuild afterwards.
+#
+# Run it directly, or let .github/workflows/site.yml run it. Nothing else does.
+
+[[ "${usage_drafts:-false}" == "true" ]] && DRAFT_FLAG="--drafts" || DRAFT_FLAG=""
+[[ "${usage_minify:-false}" == "true" ]] && MINIFY_FLAG="--minify" || MINIFY_FLAG=""
+
+SITE_DIR="${MISE_PROJECT_ROOT}/site"
+
+print_header "Building the site (zola) ..."
+
+# `--root` rather than a `cd`: zola resolves `content/`, `templates/`,
+# `static/` and the output directory relative to it, so the task stays runnable
+# from anywhere and the paths it prints stay absolute.
+zola --root "${SITE_DIR}" build ${DRAFT_FLAG} ${MINIFY_FLAG}
+
+# The internal-link check, and the reason this site pins no separate crawler.
+#
+# `zola check` validates `@/page.md` links in CONTENT and nothing else. It does
+# not look at a root-relative `/nope/`, a `../gone/`, or any href inside a Tera
+# template — all three were probed against 0.23.4 and all three pass silently.
+# So the site holds two conventions that turn the build itself into the check:
+#
+#   content   — every internal link is `@/<page>.md`, which `zola check` reads
+#   templates — every internal link is `get_url(path="@/<page>.md")`, which
+#               the `zola build` above hard-fails on when the target is gone
+#
+# `tests/site.rs` enforces both mechanically, so the conventions are not left to
+# whoever edits the site next.
+#
+# `--skip-external-links` is not laziness: leaving them on makes a green build
+# depend on github.com and anthropic.com being up, and a docs deploy that
+# cannot ship because someone else had an outage is worse than a stale link.
+# External links are a human check.
+print_header "Checking internal links (zola check) ..."
+zola --root "${SITE_DIR}" check --skip-external-links
+
+print_header "Site built into ${SITE_DIR}/public"

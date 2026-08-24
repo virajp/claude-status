@@ -29,6 +29,26 @@ things Rust expresses more honestly than a script leaning on `try {} catch {}`.
 behaviour, not a design to imitate. Where this document describes behaviour,
 match it. Where it describes structure, use your judgement.
 
+> **This document is not user documentation, and is not where users are sent.**
+> [claude-status.virajp.dev](https://claude-status.virajp.dev) is the
+> user-facing documentation — install, configuration, the per-repo layer, the
+> segment catalogue, and `--debug`. Its sources are in [`site/`](../../site/).
+> `readme.md` is a pointer at that site and carries nothing the site does not.
+>
+> The split is deliberate and it has a direction: **a user-facing fact belongs
+> on the site, and this document is where the behaviour it describes is
+> pinned.** Anything here that a *user* rather than an implementer needs must be
+> reachable from the site — §1–§7 in particular, which is the condition the
+> `spec-retirement` cycle checks before it deletes this file. Adding a
+> user-facing detail here and nowhere else is how that condition quietly stops
+> holding.
+>
+> Two sections are especially poor places to send anyone. **§3 Configuration**
+> is buried under amendment boxes describing behaviour that no longer exists;
+> the site's Configure and Per-repo pages are current and this is not. **§9
+> Distribution** is an explicit historical record and its target count is
+> already stale.
+
 ---
 
 ## 1. What it is
@@ -753,6 +773,21 @@ side of the whole text.
 >   follow one space, and each is conditional.
 > - **`context`** — with no data at all it still renders, as
 >   `{context}·▱▱▱▱▱▱▱▱▱▱·?/?·(0%)`.
+
+> **Amended 2026-08-24** (`website/01-site` cycle), against
+> `render::segments::branch`. **The `{worktree}` prefix on `branch` is
+> conditional**, and neither the table row nor the amendment above says so: it
+> is pushed only `if git.worktree_subpath.is_some()`, so an ordinary checkout
+> renders `{branch}·main` with no worktree glyph at all. The 2026-08-19
+> amendment corrected the *order* of the two glyphs and listed only the ahead
+> and dirty markers as conditional, which reads as though the prefix were always
+> present. The row is left unedited above, as this section's convention
+> requires; this block is the correction.
+>
+> Found while writing the user-facing docs, which had mirrored the error — as
+> had `segments.rs`'s own doc comment, since fixed. The site's hero screenshot
+> shows the correct behaviour (`main ±`, no worktree glyph) and therefore
+> contradicted the page describing it.
 
 An unknown segment id in `lines` writes `statusline: unknown segment "<id>"` to
 **stderr** and omits the segment. It must not fail the render, and the exit code

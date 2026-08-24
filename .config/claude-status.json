@@ -1,4 +1,4 @@
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
-  "projectName": "@askviraj/claude-status"
+  "projectName": "virajp/claude-status"
 }

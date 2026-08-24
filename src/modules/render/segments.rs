@@ -153,8 +153,13 @@ fn rate_limit(limit: &RateLimit, now_ms: i64, symbol: &str, config: &Config) -> 
         .into()
 }
 
-/// `{worktree} {branch} main ↑ ±` — every part after the branch glyph is
-/// conditional, and each is preceded by exactly one space.
+/// `{worktree} {branch} main ↑ ±`, where every part except the branch glyph and
+/// the name is conditional and each is preceded by exactly one space. The
+/// worktree glyph is the one that trips readers: it sits *before* the branch
+/// glyph and appears only inside a worktree, so the common case opens with the
+/// branch glyph. An earlier version of this comment said "every part after the
+/// branch glyph", which read as if the prefix were unconditional; the site and
+/// the contract both copied that error.
 fn branch(git: &GitFacts, config: &Config) -> Option<String> {
     let name = git.branch.as_deref().filter(|b| !b.is_empty())?;
 

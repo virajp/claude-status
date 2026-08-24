@@ -1,0 +1,156 @@
++++
+title = "Install"
+description = "Get the binary, then wire Claude Code to it."
+weight = 1
++++
+
+## There is no published install route yet
+
+`claude-status` has no release, no tap, no registry entry. It used to be an npm
+package; that channel was retired before it shipped a real version, because it
+asked you for a Node toolchain in order to deliver a binary that needs none.
+Homebrew replaces it, and the tap is not published.
+
+Until it is, **build from source**. That is not a fallback — it is currently the
+only thing that works.
+
+## From source
+
+Needs a Rust toolchain and nothing else.
+
+```sh
+git clone https://github.com/virajp/claude-status
+cd claude-status
+cargo build --release
+```
+
+That leaves the binary at `target/release/claude-status`. Put it somewhere on
+your `PATH` — the wiring step below invokes it **by name**, so a binary that is
+not on your `PATH` will not be found by Claude Code even though it works when
+you run it yourself.
+
+## Once the tap exists
+
+> **Not published yet.** This is what the route will be, recorded here so the
+> shape is not a surprise. It does not work today.
+
+```sh
+brew install virajp/tap/claude-status
+```
+
+## Then wire Claude Code to it
+
+Both routes end at the same command, and it is the step people skip:
+
+```sh
+claude-status --configure
+```
+
+Restart Claude Code and the bar is there.
+
+### What `--configure` writes
+
+Three keys in `~/.claude/settings.json`, each invoking `claude-status` by name
+from your `PATH`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "claude-status --statusline",
+    "padding": 0,
+    "refreshInterval": 4
+  },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "claude-status --subagent"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "claude-status --caps-hook" }]
+      }
+    ]
+  }
+}
+```
+
+Every other key in that file is left as it was, and another tool's `PostToolUse`
+hooks are kept alongside this one.
+
+It also creates `~/.config/claude-status/config.json` if you have none, holding
+a `$schema` pointer and nothing else. An existing one is never touched.
+
+> **A status line belonging to something else IS replaced.** `--configure`
+> prints what it replaced, and there is no undo — set yours again to get it
+> back. Run `claude-status --debug` first if you want to see what is currently
+> wired.
+
+Want to see the changes without making them?
+
+```sh
+claude-status --configure --dry-run
+```
+
+`--dry-run` prints every change and writes nothing. Note that `--configure` is
+the one surface that **refuses** an argument it does not recognise: every other
+flag ignores a stray token, but here a typo in `--dry-run` must not turn a
+preview into a real write.
+
+> **`--configure` used to mean the opposite.** The retired npm installer had a
+> flag of the same name that gave the repository you were standing in a config
+> layer and wrote nothing under `~`. The binary's `--configure` writes only
+> under `~`, and the per-repo layer is now written [by hand](@/repo-config.md).
+> The name was reused on purpose: the installer is gone and this is what
+> replaces it.
+
+## The surfaces
+
+One binary, several surfaces, each selected by an explicit flag. Claude Code
+invokes the first three for you — you will not run those by hand.
+
+| Flag           | Does                                                   |
+| -------------- | ------------------------------------------------------ |
+| `--statusline` | render the main bar from a payload on stdin            |
+| `--subagent`   | render the subagent panel from stdin (NDJSON)          |
+| `--caps-hook`  | the `PostToolUse` cap actuator; silent unless breached |
+| `--configure`  | wire Claude Code to this binary                        |
+| `--refresh`    | refresh the spend cache and exit                       |
+| `--debug`      | report configuration, wiring and a sample render       |
+| `--version`    | print the version and exit                             |
+| `--help`       | the full list, with detail                             |
+
+Two modifiers pair with them: `--debug` works on any of the above and narrates
+to stderr without changing a byte of stdout, and `--dry-run` pairs with
+`--configure`.
+
+**Every surface but `--configure` ignores an argument it does not recognise**,
+so a stray token can never cost you a status bar.
+
+## Nothing has to exist
+
+With no config file anywhere, the bar renders in full from the defaults compiled
+into the binary. That is a supported state, not a degraded one — see
+[Configure](@/configure.md) when you want something different.
+
+## What you need
+
+**A Nerd Font in your terminal**, and 24-bit colour. The powerline separators,
+the branch glyph and the gauge blocks are all font glyphs; without one you get
+tofu where the seams should be. Nothing else is required — no Node, no runtime,
+no second language.
+
+**Apple Silicon macOS** is what is built and tested. Intel Macs, Linux and
+Windows are not served today, and nothing currently stops you trying: the npm
+manifest that used to refuse went with the npm channel, and the Homebrew formula
+that will refuse again is not published. `cargo build --release` may well work
+on your platform; it is simply not something anyone checks.
+
+## Removing it
+
+Delete the binary, then remove the `statusLine`, `subagentStatusLine` and
+`PostToolUse` hook entries from `~/.claude/settings.json`.
+
+There is no `--unconfigure` and no receipt of what was there before. That is
+deliberate rather than missing, but it does mean a status line that
+`--configure` replaced is not recoverable from anything this tool kept.

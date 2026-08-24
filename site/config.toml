@@ -1,0 +1,65 @@
+# Zola configuration for claude-status.virajp.dev.
+#
+# Zola is pinned to 0.23.4 in .config/mise.toml. The pin is exact on purpose,
+# and 0.23 is why: it moved syntax highlighting out of `[markdown]` into
+# `[markdown.highlighting]` AND renamed the keys, so `highlight_code` and
+# `highlight_theme` are now rejected outright wherever you put them. The
+# replacements are `style` and `theme`. Every pre-0.23 example on the web fails
+# against this binary, including the ones that only move the section.
+#
+# The theme SET changed too, which is the part that bites second. The old
+# syntect names are gone — `base16-ocean-dark`, `gruvbox`, `one-dark`,
+# `zenburn`, `kronuz`, `agola-dark`, `inspired-github`, `visual-studio-dark`
+# were all probed against 0.23.4 and none exists. What ships instead is a
+# modern set: `nord`, `dracula`, `monokai`, `ayu-dark`, `ayu-light`,
+# `solarized-dark`, `solarized-light`, `github-dark`, `tokyo-night`,
+# `catppuccin-mocha`, `everforest-dark`, `rose-pine`. Omitting `theme` while
+# highlighting is on is an error, not a default.
+#
+# NO THEME, NO CSS FRAMEWORK, NO JAVASCRIPT. The templates and the one
+# stylesheet in `static/` are the whole front end. That is not taste: the repo
+# spent `distribution/01` removing its only non-Rust toolchain, and a generator
+# that wants npm to build a stylesheet would put it straight back. Zola is a
+# single static Rust binary and keeps the tree single-language.
+#
+# `search` is off and there is no taxonomy. Six pages do not need an index.
+#
+# Key order here is not meaningful — dprint runs taplo with `reorder_keys` on,
+# so this file is re-sorted on every commit. Do not encode intent in ordering.
+
+base_url = "https://claude-status.virajp.dev"
+
+description = "A powerline status line for Claude Code, in Rust."
+title       = "claude-status"
+
+# No SCSS to compile — `static/style.css` is hand-written CSS served as-is.
+compile_sass = false
+
+build_search_index = false
+
+# NOTE: taplo re-sorts this file's keys on every commit (`reorder_keys = true`
+# in .config/taplo.toml), so a comment placed above a key does not stay above
+# it. Anything that must survive belongs in a block like this one, which
+# describes the file rather than a single setting.
+#
+# Internal links are written `@/page.md` throughout, and templates resolve URLs
+# with `get_url`. Both forms make `zola build` hard-fail on a broken target,
+# which is what stands in for a link checker here. A root-relative `/page/` or a
+# literal href would NOT fail the build, so `tests/site.rs` rejects those forms
+# outright. External links are checked by hand: gating the build on other
+# people's uptime would make a docs typo unfixable on a bad day.
+
+generate_feeds = false
+
+[markdown]
+render_emoji      = false
+smart_punctuation = true
+
+[markdown.highlighting]
+style = "inline"
+# Dark, which matters — every snippet on this site is a terminal command or a
+# JSON config, and the screenshot beside them is a dark terminal.
+theme = "nord"
+
+[extra]
+repo_url = "https://github.com/virajp/claude-status"
