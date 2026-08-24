@@ -462,12 +462,20 @@ built two vacuous probes of its own before a control caught them.
   `@media` breakpoint, nav as plain anchors, no `<script>` — is verified in the
   *built* output, but it only says the page is not built in a way that
   guarantees failure on a phone.
-- **The hero screenshot still shows `@askviraj/claude-status`**, the retired npm
-  scope, on both the site and the readme. `.config/claude-status.json` was
-  corrected this cycle, so a re-render fixes it; the recipe is above and cannot
-  be automated (Nerd Font private-use glyphs, no headless renderer with that
-  font). A test asserts the file exists and is a real PNG; **nothing can assert
-  it is current.**
+- **The hero screenshot was re-rendered by the maintainer and is now correct** —
+  it reads `virajp/claude-status`, the npm scope is gone, and it independently
+  corroborates this round's `branch` fix by showing `main ±` with no worktree
+  glyph. Swapped into `site/static/`, the repo's tracked `assets/` copy, and the
+  readme, whose URL also moved from `cdn.virajp.me` to `cdn.virajp.dev` — the
+  old host still serves the stale image. **A test asserts the file exists and is
+  a real PNG; nothing can assert it is current**, and it cannot be regenerated
+  non-interactively (Nerd Font private-use glyphs, no headless renderer here has
+  the font). The recipe is above.
+- **`cdn.virajp.dev` resolves even though the apex and
+  `claude-status.virajp.dev` do not** — so the Cloudflare zone is live and
+  already serving a subdomain. Adding the `claude-status` record is a small step
+  rather than a from-scratch setup, which lowers the cost of closing
+  criterion 2.
 - **The readme now routes all user documentation through five links to a domain
   that does not resolve.** Recorded as a scope consequence rather than a defect,
   but the cost lands on users until a `site-v*` tag ships.
