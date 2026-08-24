@@ -1512,6 +1512,17 @@ fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
             if path.starts_with(root.join("docs").join("plans")) {
                 return;
             }
+            // **Gitignored trees are out of scope, and this bit once.** Walking
+            // the repo root reaches whatever happens to be sitting in the
+            // working copy, and `docs/scratchpad/` and `graphify-out/` are both
+            // `.gitignore`d build-ish artifacts that exist in a normal checkout
+            // and *not* in a fresh worktree. So this test passed in the worktree
+            // it was written in and failed the moment it ran on `main` — the
+            // scan was policing files no reader will ever be handed and no
+            // commit can ever change. Excluded by path, like `docs/plans/`.
+            if path.starts_with(root.join("docs").join("scratchpad")) || path.starts_with(root.join("graphify-out")) {
+                return;
+            }
             let Ok(text) = std::fs::read_to_string(path) else {
                 return;
             };
