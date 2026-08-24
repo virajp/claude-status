@@ -39,7 +39,7 @@ whole text.
 | `duration` | `{sym.duration}·9hr 19m`                 | the duration is **absent**; `0` renders |
 | `project`  | `{sym.project}·my-repo`                  | `projectName` is not set **in config**  |
 | `worktree` | `{sym.worktree}·{sym.folder}·sub/path`   | you are not inside a worktree           |
-| `branch`   | `{sym.worktree}·{sym.branch}·main·↑·±`   | no branch could be resolved             |
+| `branch`   | `{sym.branch}·main·↑·±`                  | no branch could be resolved             |
 
 Three of those have a detail worth knowing:
 
@@ -47,10 +47,13 @@ Three of those have a detail worth knowing:
   known; the percentage alone renders otherwise.
 - **`context` always renders**, even with no data at all — as
   `{sym.context}·▱▱▱▱▱▱▱▱▱▱·?/?·(0%)`.
-- **`branch`** is prefixed by the *worktree* glyph, then the branch glyph. The
-  `↑` (ahead of upstream) and `±` (dirty) markers each follow one space and each
-  is conditional. Dirty is `+` for additions only, `-` for deletions only, `±`
-  for both.
+- **`branch`** carries the branch glyph, then the name. Three things around it
+  are conditional: the *worktree* glyph appears **before** the branch glyph only
+  when you are inside a worktree, and the `↑` (ahead of upstream) and `±`
+  (dirty) markers follow it. Each is preceded by exactly one space. Dirty is `+`
+  for additions only, `-` for deletions only, `±` for both. So an ordinary
+  checkout renders `{sym.branch}·main`, and the same branch inside a worktree
+  renders `{sym.worktree}·{sym.branch}·main`.
 
 ## Where `project` comes from
 
@@ -65,9 +68,11 @@ Four gates hide it, checked in this order:
 
 1. `spend` is not in your `lines`.
 2. There is no usable cached figure yet.
-3. The account has no monthly budget block.
-4. The seat is one that `show: "auto"` hides — which is every Pro and Max seat,
-   and much the most common answer.
+3. The budget is unusable — either disabled, or a limit of zero. (A *missing*
+   budget block is gate 2, not this one.)
+4. The seat is one that `show: "auto"` hides. `auto` shows the segment only for
+   `team` and `enterprise` seats, so every other plan — and any cache with no
+   plan recorded at all — is hidden here. Much the most common answer.
 
 [`--debug`](@/diagnosing.md) reports all four and tells you which one applied.
 More on the segment in [Configure](@/configure.md).

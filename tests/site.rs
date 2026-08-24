@@ -303,32 +303,86 @@ fn a_binary_tag_and_a_site_tag_cannot_trigger_each_others_workflow() {
 fn the_pull_request_path_builds_and_cannot_reach_a_deploy_secret() {
     let workflow = read(".github/workflows/site.yml");
 
-    let build_at = workflow.find("\n  build:").expect("site.yml has a `build` job");
-    let deploy_at = workflow.find("\n  deploy:").expect("site.yml has a `deploy` job");
-    assert!(build_at < deploy_at, "the jobs were reordered — the slice below no longer means what it says");
+    // **Job spans, not a two-way slice.** An earlier version cut the file at
+    // `\n  build:` and `\n  deploy:` and asserted over the two halves. Two
+    // ordinary edits walked straight past it, both found by mutation: a
+    // workflow-level `env:` holding the token sits *above* `jobs:`, and so
+    // above the first cut; and a third job appended after `deploy:` lands
+    // inside the "deploy" half, where the real deploy job already satisfies
+    // every assertion. Enumerating each job closes both.
+    let (preamble, jobs) = split_jobs(&workflow);
 
-    let build_job = &workflow[build_at..deploy_at];
-    let deploy_job = &workflow[deploy_at..];
-
-    assert!(build_job.contains("mise run site:build"), "the PR job no longer builds the site");
     assert!(
-        !build_job.contains("secrets."),
-        "the job a pull request runs names a secret — a fork PR must not be able to reach one:\n{build_job}"
+        !preamble.contains("secrets."),
+        "a secret is referenced above `jobs:` — a workflow-level `env` reaches every job, \
+         including the one a pull request runs:\n{preamble}"
     );
-    assert!(!build_job.contains("wrangler"), "the job a pull request runs deploys");
 
-    // And the deploy is fenced off behind the tag, not merely behind the
-    // absence of a reason to run.
-    assert!(
-        deploy_job.contains("if: startsWith(github.ref, 'refs/tags/site-v')"),
-        "the deploy job lost its tag guard, so a pull request could reach it:\n{deploy_job}"
+    assert!(jobs.len() >= 2, "expected at least a build and a deploy job, found {}", jobs.len());
+    let names: Vec<&str> = jobs.iter().map(|(n, _)| *n).collect();
+    assert!(names.contains(&"build"), "site.yml lost its `build` job; found {names:?}");
+    assert!(names.contains(&"deploy"), "site.yml lost its `deploy` job; found {names:?}");
+
+    for (name, body) in &jobs {
+        if *name == "build" {
+            assert!(body.contains("mise run site:build"), "the PR job no longer builds the site");
+            assert!(!body.contains("wrangler"), "the job a pull request runs deploys");
+            assert!(!body.contains("secrets."), "the job a pull request runs names a secret:\n{body}");
+        } else {
+            // Stated for every non-build job rather than for `deploy` by name,
+            // so that adding a job cannot quietly create an unguarded path.
+            assert!(
+                body.contains("if: startsWith(github.ref, 'refs/tags/site-v')"),
+                "job `{name}` has no site-v tag guard, so a pull request could reach it:\n{body}"
+            );
+        }
+    }
+
+    let deploy = jobs.iter().find(|(n, _)| *n == "deploy").map(|(_, b)| b).expect("checked above");
+    assert!(deploy.contains("secrets.CLOUDFLARE_API_TOKEN"), "the deploy job stopped authenticating");
+
+    // Every secret in the file must sit inside a tag-guarded job, wherever it
+    // was written.
+    let guarded: String = jobs.iter().filter(|(n, _)| *n != "build").map(|(_, b)| b.as_str()).collect();
+    assert_eq!(
+        workflow.matches("secrets.").count(),
+        guarded.matches("secrets.").count(),
+        "a `secrets.` reference lives outside a tag-guarded job"
     );
-    assert!(deploy_job.contains("secrets.CLOUDFLARE_API_TOKEN"), "the deploy job stopped authenticating");
 
-    // The PR trigger exists at all — the criterion is about a PR *touching*
-    // site/, so the path filter is part of it.
     assert!(workflow.contains("pull_request:"), "site.yml has no pull_request trigger");
-    assert!(workflow.contains(r#"- "site/**""#), "the pull_request path filter no longer covers site/");
+    assert!(workflow.contains("- \"site/**\""), "the pull_request path filter no longer covers site/");
+}
+
+/// Splits a workflow into everything before `jobs:` and each job under it.
+///
+/// A job opens at exactly two spaces of indent and runs to the next line at
+/// that indent, or EOF. Enough structure to ask "which job is this secret in?"
+/// without taking a YAML dependency for one assertion.
+fn split_jobs(workflow: &str) -> (String, Vec<(&str, String)>) {
+    let jobs_at = workflow.find("\njobs:").expect("site.yml has no `jobs:` block");
+    let preamble = workflow[..jobs_at].to_string();
+
+    let mut jobs: Vec<(&str, String)> = Vec::new();
+    let mut current: Option<(&str, Vec<&str>)> = None;
+    for line in workflow[jobs_at..].lines() {
+        let is_header = line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+            && !line.trim_start().starts_with('#');
+        if is_header {
+            if let Some((name, body)) = current.take() {
+                jobs.push((name, body.join("\n")));
+            }
+            current = Some((line.trim().trim_end_matches(':'), vec![line]));
+        } else if let Some((_, body)) = current.as_mut() {
+            body.push(line);
+        }
+    }
+    if let Some((name, body)) = current.take() {
+        jobs.push((name, body.join("\n")));
+    }
+    (preamble, jobs)
 }
 
 // ---------------------------------------------------------------------------

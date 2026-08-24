@@ -37,10 +37,18 @@ compile_sass = false
 
 build_search_index = false
 
-# `zola check` reports a broken `@/`-style internal link as a build-time error,
-# which is the whole reason every internal link on this site is written that
-# way. External links are checked separately, and only by hand: leaving them on
-# would make the site build depend on other people's uptime.
+# NOTE: taplo re-sorts this file's keys on every commit (`reorder_keys = true`
+# in .config/taplo.toml), so a comment placed above a key does not stay above
+# it. Anything that must survive belongs in a block like this one, which
+# describes the file rather than a single setting.
+#
+# Internal links are written `@/page.md` throughout, and templates resolve URLs
+# with `get_url`. Both forms make `zola build` hard-fail on a broken target,
+# which is what stands in for a link checker here. A root-relative `/page/` or a
+# literal href would NOT fail the build, so `tests/site.rs` rejects those forms
+# outright. External links are checked by hand: gating the build on other
+# people's uptime would make a docs typo unfixable on a bad day.
+
 generate_feeds = false
 
 [markdown]

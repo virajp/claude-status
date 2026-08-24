@@ -6,7 +6,8 @@ flow.
 `claude-status` draws a powerline bar under Claude Code with the things you
 actually keep checking: which model you're on, how much context you've burned,
 how close you are to your rate limits, what the session has cost, and which
-branch you're standing on. One Rust binary, no runtime, ~1–2 ms per render.
+branch you're standing on. One Rust binary, no runtime, nothing to keep up to
+date.
 
 ![The claude-status bar: two powerline lines. The first shows the model and
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with

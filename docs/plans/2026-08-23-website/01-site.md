@@ -364,3 +364,118 @@ facts and the project name are real, which is why step 2 matters.
 `.config/claude-status.json` in this repository said `@askviraj/claude-status` —
 the npm name, retired by `distribution/01` — and now says
 `virajp/claude-status`.
+
+### Fix round — what adversarial review found
+
+Two reviewers ran in **separate worktrees**. Between them: nine confirmed
+defects, 25 of 27 mutations killed, and a 30-item verified-correct list.
+
+**Six of the nine were user-visible falsehoods on a documentation site**, which
+is the failure mode this cycle exists to avoid — nothing fails when prose
+drifts.
+
+- **The performance claim was a startup figure sold as a per-render figure.**
+  The readme said "~1-2 ms per render" and the landing page leaned the
+  four-second-refresh argument on it. Measured: `--version` sits about a
+  millisecond above bare process spawn, so the number is right *for startup* —
+  but `--statusline` inside a git repository costs tens of milliseconds, because
+  `git.rs` shells out to up to four `git` subprocesses per render. The origin is
+  `statusline-behaviour.md:17-19`, where the number is explicitly a **startup**
+  comparison against Node. Both pages now say what is actually true, and say why
+  the repository case is slower.
+- **"Drawing the bar never writes to disk" was false**, and the same page
+  contradicted it 110 lines later. A render writes the usage mirror
+  synchronously, in-process, on every render when `CLAUDE_STATUS_USAGE_DIR` is
+  set. Inherited verbatim from the old readme — **the shrink moved a false claim
+  onto a user-facing site rather than introducing one**. Deleting 250 lines did
+  not audit the 67 that survived.
+- **The caps hook is inert unless `CLAUDE_STATUS_USAGE_DIR` is set, and nothing
+  said so.** `--configure` wires the hook; the actuator reads that variable;
+  there is no default. Unset, it exits silently and successfully every time, so
+  a broken setup is indistinguishable from a quiet one. Three pages presented
+  caps as a working shipped feature. Now documented, including that `--debug`
+  will not tell you either.
+- **The `branch` segment's worktree glyph is conditional**, and the site, the
+  contract, and `segments.rs`'s **own doc comment** all said or implied
+  otherwise. The comment read "every part after the branch glyph is
+  conditional", which is exactly wrong about the one part that comes *before*
+  it. The site's own hero screenshot shows the correct behaviour and therefore
+  contradicted the page describing it. All three fixed; the contract gets a
+  dated amendment rather than a rewrite, per that section's convention.
+- **The `--debug` block was framed as a capture and was not one** — shortened
+  paths, a reflowed `VERDICT`, and an `ignored` row that only appears when a
+  repo config carries a key beyond `projectName`. Reframed as illustrative, with
+  the difference stated.
+- Plus three wording defects: the subagent status colours one segment rather
+  than the row, gate 3 is "budget unusable" (a *missing* block is gate 2), and
+  `show: "auto"` admits only `team` and `enterprise` — so "every Pro and Max
+  seat" understated it, since a cache with no plan recorded is hidden too.
+
+**The PR-secret guard was a text slice with two demonstrated bypasses.** It cut
+the workflow at `\n  build:` and `\n  deploy:` and asserted over the halves. A
+workflow-level `env:` holding the token sits *above* `jobs:` — above the first
+cut — and a third job appended after `deploy:` lands inside the "deploy" half,
+where the real job already satisfies every assertion. Both survived; both are
+ordinary edits, not contrivances. Rewritten to enumerate job spans by
+indentation and assert that **every** `secrets.` reference sits inside a
+tag-guarded job and that **every** non-build job carries the guard — stated for
+all jobs rather than for `deploy` by name, so adding a job cannot create an
+unguarded path. No YAML dependency taken for one assertion. Verified: control
+green, both bypasses now red.
+
+Two smaller ones: a comment in `site/build` cited `tests/e2e.rs` for tests that
+live in `tests/site.rs` — the "cites a file that moved" class, now four cycles
+running — and a comment about link checking had been stranded above
+`generate_feeds` by taplo's `reorder_keys`. The link commentary now sits in a
+file-level block, with a note explaining why comments cannot be attached to
+individual keys here.
+
+### Verified correct, worth recording
+
+The build is genuinely Node-free: with `node`, `npm`, `pnpm`, `npx`, `tsc`,
+`tsup`, `yarn`, `bun`, `deno` and `esbuild` all shimmed to exit 127 — and the
+harness proven able to fail by a control that trips one — `site:build` exits 0
+with zero shims tripped, and two clean builds are byte-identical by sha256.
+`otool -L` on zola shows system libraries only.
+
+Criterion 6 holds without a link checker: breaking an internal link in content
+**or** in a template hard-fails `zola build`, so the build is the check. The
+silent forms (a root-relative `/page/`, a literal `href`) are closed by
+`tests/site.rs` instead, and both mutations were killed.
+
+The `site/config.toml` theme list was probed against 0.23.4 and is exactly
+right: twelve available, eight rejected, and a nonsense name rejected
+identically as a control. **This corrects the recon pass**, which reported only
+four themes exist — its probe had failed for an unrelated reason
+(`mise x --
+zola` does not resolve outside the repo) and reported the failure as
+absence. The orchestrator repeated that claim in the implementation brief, and
+built two vacuous probes of its own before a control caught them.
+
+### Left open
+
+- **Criterion 2 (a live site) is deferred**, with evidence: neither
+  `claude-status.virajp.dev` nor the apex resolves, though the zone is on
+  Cloudflare, and the repository has zero secrets. Four out-of-band human steps
+  are listed in the workflow header.
+- **Criterion 8's real check is human.** The static proxy — viewport meta, an
+  `@media` breakpoint, nav as plain anchors, no `<script>` — is verified in the
+  *built* output, but it only says the page is not built in a way that
+  guarantees failure on a phone.
+- **The hero screenshot still shows `@askviraj/claude-status`**, the retired npm
+  scope, on both the site and the readme. `.config/claude-status.json` was
+  corrected this cycle, so a re-render fixes it; the recipe is above and cannot
+  be automated (Nerd Font private-use glyphs, no headless renderer with that
+  font). A test asserts the file exists and is a real PNG; **nothing can assert
+  it is current.**
+- **The readme now routes all user documentation through five links to a domain
+  that does not resolve.** Recorded as a scope consequence rather than a defect,
+  but the cost lands on users until a `site-v*` tag ships.
+- **`code:sec` cannot fail at any severity** — no `.config/grype.yaml`, no
+  `--fail-on`. Pre-existing. The standing `actions/download-artifact@v4`
+  advisory is almost certainly a false positive (`@v4` floats well past the
+  fixed 4.1.3; grype compares the literal tag), and this cycle adds a second use
+  of that action rather than diverging from house style.
+- **`grype` run from a worktree under `/tmp` scans sibling worktrees**, which
+  produced a phantom npm finding from another agent's pre-drop-npm checkout.
+  Worth knowing before believing a `code:sec` result from there.

@@ -21,7 +21,10 @@ Your access token never appears on either stream.
 
 ## What it prints
 
-Run in a fresh checkout with no user config, it looks like this:
+An illustrative report, assembled to show every section at once — the layer
+paths are shortened to `~/…` for width, and the `ignored` row only appears when
+a repo config actually carries a key beyond `projectName`. Your own output
+prints fully expanded absolute paths:
 
 ```text
 claude-status 0.1.0
@@ -113,4 +116,6 @@ If `--debug` does not explain it,
 [open an issue](https://github.com/virajp/claude-status/issues) and paste its
 output. It is designed to be pasteable — no token appears on either stream, and
 `SAMPLE RENDER` carries sample figures rather than your session's. Do glance
-over the `GIT` block first: it prints the absolute path you ran it from.
+over it first, though: `GIT`, `CONFIG LAYERS` and `SPEND` all print absolute
+paths, so your home directory and the name of whatever you were working on go
+with it.

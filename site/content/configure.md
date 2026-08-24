@@ -49,10 +49,13 @@ will then complete the key names and reject the ones that do not exist. The
 is generated from the binary's own types, so it cannot drift from what the
 binary accepts.
 
-**Drawing the bar never writes to disk.** Whatever it needs, it reads. The only
-thing a render writes is the spend cache under `~/.cache/claude-status/`, and
-only from a background refresh. The one command that writes is `--configure`,
-which you run yourself.
+**Drawing the bar never writes to your configuration.** Whatever it needs to
+draw, it reads. A render does write two things, neither of them yours: the spend
+cache under `~/.cache/claude-status/`, from a detached background refresh; and —
+only when you have set `CLAUDE_STATUS_USAGE_DIR` — a small usage mirror for that
+session, written in-process on every render so the caps hook has something to
+read. The one command that writes a *config* file is `--configure`, which you
+run yourself.
 
 ## The keys
 
@@ -100,6 +103,23 @@ overrides its colours just for that position:
 The `--caps-hook` runs after each tool call and compares your usage to these.
 Cross one and it injects a directive telling Claude to finish the current step,
 write a handoff, and stop — once per escalation, so it will not nag.
+
+**The hook does nothing until you set `CLAUDE_STATUS_USAGE_DIR`.** It reads your
+usage from a mirror written there by the render, and there is no default
+location — with the variable unset the hook exits silently and successfully
+every time, so a broken setup looks exactly like a quiet one. `--configure`
+wires the hook but cannot set the variable for you, because it belongs to the
+environment Claude Code runs in rather than to a file this binary owns. Set it
+wherever that environment is defined:
+
+```sh
+export CLAUDE_STATUS_USAGE_DIR="$HOME/.cache/claude-status/usage"
+```
+
+`claude-status --debug` will not tell you the variable is missing either — the
+caps thresholds it prints are the ones the hook *would* use. If you want to know
+the hook is live, set the variable, run a session, and check that files appear
+in that directory.
 
 ```json
 {
@@ -154,10 +174,13 @@ process the render never waits on.
 
 ## Environment variables
 
-Three, and none is needed in normal use:
+Two are optional. The third is not, if you want the caps hook to do anything:
 
-| Variable                    | Does                                                  |
-| --------------------------- | ----------------------------------------------------- |
-| `CLAUDE_STATUS_SPEND_CACHE` | override the spend cache path                         |
-| `CLAUDE_STATUS_SPEND_URL`   | override the usage endpoint — for testing             |
-| `CLAUDE_STATUS_USAGE_DIR`   | where the usage mirror the caps hook reads is written |
+| Variable                    | Does                                                                      |
+| --------------------------- | ------------------------------------------------------------------------- |
+| `CLAUDE_STATUS_SPEND_CACHE` | override the spend cache path                                             |
+| `CLAUDE_STATUS_SPEND_URL`   | override the usage endpoint — for testing                                 |
+| `CLAUDE_STATUS_USAGE_DIR`   | where the usage mirror is written — **the caps hook is inert without it** |
+
+`AI_PLUGINS_USAGE_DIR` is still honoured as a fallback for the last of these,
+from before the tool was renamed. Prefer the current name.

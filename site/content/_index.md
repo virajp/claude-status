@@ -12,9 +12,10 @@ burned, how close you are to your rate limits, what the session has cost, and
 which branch you are standing on.
 
 It is one Rust binary. No runtime, no Node, nothing to keep up to date — Claude
-Code invokes it directly, and it renders in a couple of milliseconds, which is
-what makes a bar that redraws every four seconds in every open session
-tolerable.
+Code invokes it directly, and it starts in about a millisecond. Most of a render
+is spent asking `git` about your working tree, so inside a repository the whole
+thing costs tens of milliseconds rather than a couple; outside one it is barely
+more than the process starting.
 
 ![Two powerline lines under a Claude Code prompt. The first carries the model
 and effort, a context gauge with the token count and percentage, the 5-hour and
@@ -32,7 +33,8 @@ marker.](statusline.png)
   than the rolling windows — that budget beside it.
 - **Your subagents.** The same binary draws a second panel: a row per subagent
   with its name, model, what it is working on, tokens, elapsed time and a status
-  glyph that colours the row.
+  glyph. The status colours that first segment; the rest of the row keeps its
+  own configured colours.
 - **Git, from the filesystem.** Branch, worktree and dirty markers, resolved by
   reading the repository rather than shelling out for everything.
 

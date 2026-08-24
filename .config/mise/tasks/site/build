@@ -54,7 +54,7 @@ zola --root "${SITE_DIR}" build ${DRAFT_FLAG} ${MINIFY_FLAG}
 #   templates — every internal link is `get_url(path="@/<page>.md")`, which
 #               the `zola build` above hard-fails on when the target is gone
 #
-# `tests/e2e.rs` enforces both mechanically, so the conventions are not left to
+# `tests/site.rs` enforces both mechanically, so the conventions are not left to
 # whoever edits the site next.
 #
 # `--skip-external-links` is not laziness: leaving them on makes a green build
