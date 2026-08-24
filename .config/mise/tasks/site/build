@@ -64,4 +64,50 @@ zola --root "${SITE_DIR}" build ${DRAFT_FLAG} ${MINIFY_FLAG}
 print_header "Checking internal links (zola check) ..."
 zola --root "${SITE_DIR}" check --skip-external-links
 
+# **Make self-links root-relative.**
+#
+# Zola resolves both `get_url()` and a markdown `@/page.md` link against
+# `base_url`, so the built HTML is full of `https://claude-status.virajp.dev/…`.
+# The templates strip the prefix themselves (see `base.html`), but markdown
+# links have no filter hook, so the last 22 come out absolute regardless.
+#
+# Absolute self-links break every host that is not production: Cloudflare Pages
+# serves preview deployments from `*.pages.dev`, and a reviewer clicking a nav
+# link would be thrown to the production domain -- which, until the DNS record
+# exists, does not resolve at all. The same applies to opening `public/` locally.
+#
+# `base_url` stays the production URL rather than becoming `/`, because it is
+# what makes `sitemap.xml`'s `<loc>` entries and `robots.txt`'s `Sitemap:` line
+# absolute, which the sitemaps spec requires. So the rewrite is scoped to
+# `*.html` and those two files keep their prefix -- which is asserted below,
+# because a `find` that quietly widened would silently break the sitemap.
+BASE_URL="$(awk -F'"' '/^base_url/ { print $2 }' "${SITE_DIR}/config.toml")"
+[ -n "${BASE_URL}" ] || { print_error "could not read base_url from config.toml"; exit 1; }
+
+print_header "Rewriting self-links to root-relative ..."
+# `perl -pi`, not `sed -i`. BSD sed wants `-i ''` and GNU sed reads that empty
+# string as a filename, so the macOS form fails on the ubuntu runner this
+# workflow actually uses -- and the workflow has never run, so nothing would
+# have said so until the first `site-v*` tag. `perl -pi -e` behaves identically
+# on both, and perl is preinstalled on macOS and on ubuntu-24.04 (it is what
+# `shasum` is written in, which the release workflow already depends on).
+# `\Q…\E` quotes the URL so its `/` and `:` are literal.
+find "${SITE_DIR}/public" -name '*.html' -exec perl -pi -e "s|\Q${BASE_URL}\E/|/|g" {} +
+
+remaining="$(grep -rl "${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | wc -l | tr -d ' ')"
+if [ "${remaining}" != "0" ]; then
+  print_error "${remaining} built page(s) still carry an absolute self-link"
+  grep -rn "${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | head -5
+  exit 1
+fi
+
+# The other direction: the rewrite must NOT have reached the two files whose
+# whole job is to carry absolute URLs.
+for must_keep in sitemap.xml robots.txt; do
+  if ! grep -q "${BASE_URL}" "${SITE_DIR}/public/${must_keep}"; then
+    print_error "${must_keep} lost its absolute base_url — the rewrite was too wide"
+    exit 1
+  fi
+done
+
 print_header "Site built into ${SITE_DIR}/public"
