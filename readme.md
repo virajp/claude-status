@@ -88,6 +88,30 @@ refuse rather than leave you with something that can't work.
 | `--help`      | the same list, with detail                                         |
 | `--version`   | print the installed version                                        |
 
+> **`--configure` is two different flags**, and it is worth knowing which one
+> you are running. The table above is the **npm installer's**: it writes a
+> repo-level file and nothing under `~`. The **binary** now has a `--configure`
+> of its own that does the opposite — `claude-status --configure` wires Claude
+> Code's `~/.claude/settings.json` and seeds your user config, and writes
+> nothing in the repo. The name is reused on purpose: the installer is being
+> removed, the binary's flag is what replaces it, and `claude-status --help`
+> documents how to write a repo layer by hand.
+>
+> **While both exist, running one can undo the other.** The installer wires an
+> absolute `~/.claude/bin/claude-status --statusline`; the binary's
+> `--configure` recognises that as its own earlier work and quietly rewrites it
+> to the bare name `claude-status`, which is then resolved from `PATH`. That
+> survives a `brew upgrade`, which the absolute path does not — but **if
+> `claude-status` is not on the `PATH` Claude Code itself sees, your bar goes
+> blank straight after running the command meant to set it up.** A GUI-launched
+> app does not always inherit your shell's `PATH`. Run `claude-status --debug`
+> to see what is wired, and re-run the installer to put the absolute path back
+> if you need it.
+>
+> In the same direction: the installer's `--uninstall` restores the status line
+> that was there *before it ran*, so on a machine that has since been wired by
+> the binary it will discard that wiring rather than restore it.
+
 Add these to any of them:
 
 | Modifier    | Does                                                                         |
@@ -131,8 +155,13 @@ scalars replace wholesale, so overriding `lines` in your user config gets you
 the layout you asked for rather than yours plus the default.
 
 **Drawing the bar never writes to disk.** Whatever it needs, it reads. The only
-thing this tool writes on its own is the spend cache under
-`~/.cache/claude-status/`, and that only from a background refresh.
+thing a render writes is the spend cache under `~/.cache/claude-status/`, and
+that only from a background refresh.
+
+The one command that *does* write is `claude-status --configure`, which you run
+yourself: it wires `~/.claude/settings.json` and creates
+`~/.config/claude-status/config.json` if you have none. Nothing else this tool
+does touches either.
 
 ```jsonc
 {
@@ -159,6 +188,12 @@ npx @askviraj/claude-status --configure
 
 That writes layer 3 and names the project after its directory. An existing file
 is kept as-is and only gains `projectName` if it was missing.
+
+> **This is the npm installer's `--configure`, not the binary's.** They are
+> different commands that happen to share a name — `claude-status --configure`
+> wires Claude Code and writes nothing in the repo. See the note under
+> [the commands](#the-commands). Writing the file yourself, below, works
+> whichever you have.
 
 Or write it yourself — the whole file is two keys:
 
@@ -247,24 +282,31 @@ process the render never waits on.
 claude-status --debug
 ```
 
-One command tells you the whole story: which config layers were found and which
-won, how Claude Code is wired, the layout in effect, what git reported, a sample
-render — plus a live spend fetch naming the credential source, the HTTP status
-and each of the four gates. Your access token never appears on either stream.
+One command tells you the whole story: which config layers loaded, which are
+simply absent — that is normal, not a problem — and which are there but
+unreadable, plus how Claude Code is wired, the layout in effect, what git
+reported, a sample render — and a live spend fetch naming the credential source,
+the HTTP status and each of the four gates. Your access token never appears on
+either stream.
 
 It doubles as a modifier, too: `--statusline --debug` narrates to stderr and
 leaves stdout byte-for-byte unchanged.
 
 ### Under the hood
 
-One binary, three surfaces. Claude Code invokes these for you — you won't run
-them by hand:
+One binary, four surfaces. Claude Code invokes the first three for you — you
+won't run those by hand. The fourth is the one you type:
 
 | Flag           | What it renders                                        |
 | -------------- | ------------------------------------------------------ |
 | `--statusline` | the main bar — two powerline lines                     |
 | `--subagent`   | the subagent panel — NDJSON, one row per subagent      |
 | `--caps-hook`  | a `PostToolUse` actuator; silent unless a cap breached |
+| `--configure`  | wires the three keys above into Claude Code's settings |
+
+Add `--dry-run` to `--configure` to see every change without making one. Unlike
+the render flags, `--configure` rejects an argument it does not recognise — a
+typo in `--dry-run` must not turn a preview into a real write.
 
 And a few environment variables, if you need them:
 
