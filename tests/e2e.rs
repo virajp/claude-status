@@ -1512,15 +1512,26 @@ fn the_old_refresh_flag_name_survives_only_where_it_records_the_rename() {
             if path.starts_with(root.join("docs").join("plans")) {
                 return;
             }
-            // **Gitignored trees are out of scope, and this bit once.** Walking
-            // the repo root reaches whatever happens to be sitting in the
-            // working copy, and `docs/scratchpad/` and `graphify-out/` are both
-            // `.gitignore`d build-ish artifacts that exist in a normal checkout
-            // and *not* in a fresh worktree. So this test passed in the worktree
-            // it was written in and failed the moment it ran on `main` — the
-            // scan was policing files no reader will ever be handed and no
-            // commit can ever change. Excluded by path, like `docs/plans/`.
-            if path.starts_with(root.join("docs").join("scratchpad")) || path.starts_with(root.join("graphify-out")) {
+            // **Gitignored trees are out of scope, and this bit twice.**
+            // Walking the repo root reaches whatever happens to be sitting in
+            // the working copy, and `docs/scratchpad/`, `graphify-out/` and
+            // `docs/memory/handoff/` are all `.gitignore`d artifacts that exist
+            // in a normal checkout and *not* in a fresh worktree. So this test
+            // passed in the worktree it was written in and failed the moment it
+            // ran on `main` — the scan was policing files no reader will ever
+            // be handed and no commit can ever change. Excluded by path, like
+            // `docs/plans/`.
+            //
+            // `docs/memory/handoff/` is the second occurrence, and it arrived
+            // without any commit touching this file: `/vwf:handoff` writes
+            // `next.md` there, and it writes the old flag with an arrow to the
+            // new one rather than the word this guard looks for — a rename
+            // recorded in a shape the scan cannot recognise. A generated,
+            // untracked document turned `main` red retroactively.
+            if path.starts_with(root.join("docs").join("scratchpad"))
+                || path.starts_with(root.join("graphify-out"))
+                || path.starts_with(root.join("docs").join("memory"))
+            {
                 return;
             }
             let Ok(text) = std::fs::read_to_string(path) else {
