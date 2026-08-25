@@ -392,16 +392,45 @@ jobs:
             echo "digest=$digest"
           } >> "$GITHUB_OUTPUT"
 
+      # A GitHub App, not a deploy key and not a PAT.
+      #
+      # `GITHUB_TOKEN` cannot reach another repository at all, so pushing to the
+      # tap needs a credential of its own. The three candidates differ in what
+      # is sitting at rest in this repository's secrets:
+      #
+      #   PAT        — an account-level credential; can reach every repo the
+      #                account can, and expires on a schedule somebody has to
+      #                remember.
+      #   deploy key — scoped to the tap, but a long-lived private key that can
+      #                push to it forever.
+      #   App        — nothing at rest can push anything. The secrets below
+      #                only authorise MINTING a token, and the token itself is
+      #                installation-scoped, valid for an hour, and revoked by
+      #                the action when this job ends.
+      #
+      # `client-id` and not `app-id`: the action deprecates `app-id` and says
+      # to use `client-id`. Note the secret holds the App's **Client ID**
+      # (`Iv23…`), not the numeric App ID — same secret name, different value.
+      #
+      # `permission-contents: write` narrows the minted token below whatever
+      # the installation was granted. If the App later gains other permissions,
+      # a token minted here still cannot use them.
+      - name: Mint a token for the tap
+        id: tap-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+          owner: virajp
+          repositories: homebrew-tap
+          permission-contents: write
+
       - name: Check out the tap
         uses: actions/checkout@v7
         with:
           repository: virajp/homebrew-tap
           path: tap
-          # A deploy key scoped to the tap repository alone. `GITHUB_TOKEN`
-          # cannot reach another repository, and an account-level PAT could
-          # reach every one of them — this can push to exactly the repo it is
-          # for, and nothing else.
-          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          token: ${{ steps.tap-token.outputs.token }}
 
       - name: Rewrite the formula
         env:

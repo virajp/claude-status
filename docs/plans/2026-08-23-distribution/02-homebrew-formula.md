@@ -210,11 +210,33 @@ stays `claude-status <version>`, matching Homebrew's own convention.
 rebuilt binary lets the tap and the release ship different bytes under one
 version. Criterion 6 is this.
 
-**Credential: an SSH deploy key on `virajp/homebrew-tap`, not a PAT.** Owner's
-decision. A deploy key is scoped to that one repository and cannot reach any
-other; a PAT is an account-level credential. Only `git push` needs it — the edit
-is offline. Record it in §9, which must stop claiming the repo has no standing
-credentials.
+**Credential: a GitHub App.** Owner's decision, after research, and it
+supersedes the SSH deploy key an earlier revision of this plan recorded.
+`GITHUB_TOKEN` cannot reach another repository, so the push needs a credential
+of its own, and the three candidates differ in what sits in this repo's secrets
+between releases:
+
+| Option     | What is at rest                        | Blast radius               |
+| ---------- | -------------------------------------- | -------------------------- |
+| PAT        | an account-level token                 | every repo the account has |
+| Deploy key | a private key that can push to the tap | the tap, forever           |
+| **App**    | credentials that only *mint* a token   | one hour, one repo         |
+
+The App wins because nothing at rest can push anything. `APP_ID` and `APP_KEY`
+authorise minting; the token itself is installation-scoped, expires in an hour,
+and `actions/create-github-app-token` revokes it when the job ends.
+
+Two details that are easy to get wrong:
+
+- **`client-id`, not `app-id`.** The action deprecates `app-id`. These are
+  different values on the App's settings page — `APP_ID` holds the **Client ID**
+  (`Iv23…`), not the numeric App ID. Same secret name, different value.
+- **`permission-contents: write`** narrows the minted token below whatever the
+  installation was granted, so a later broadening of the App does not silently
+  widen this job.
+
+Record it in §9, which must stop claiming the repo has no standing credentials —
+though "standing" is now weaker than it was going to be.
 
 ### 5. Close the secret-containment asymmetry
 
@@ -229,7 +251,7 @@ run is not optional.
 
 ### 6. Docs
 
-§9 records Homebrew as the channel, the tap's location, the deploy key, and
+§9 records Homebrew as the channel, the tap's location, the App credential, and
 marks the options-table Homebrew row resolved. It must show the
 **fully-qualified** install form only — `brew install virajp/tap/claude-status`
 — and not the two-step `brew tap` + `brew install`, which Homebrew 6 broke.
@@ -269,11 +291,18 @@ header and `01-drop-npm.md` — deterministic tar landed in
 
 ## Risks / drift
 
-**The deploy key is a new long-lived credential.** Plan 1 removed the repo's
-last one by deleting OIDC's consumer; this adds one back. It can push to the
-tap, which means a compromise can ship a formula pointing anywhere. Scoping it
-to that repo is the mitigation, and it is why a deploy key was chosen over a
-PAT.
+**The App can still ship a formula pointing anywhere.** Plan 1 removed the
+repo's last standing credential by deleting OIDC's consumer; this adds something
+back. The App is the mildest of the three options — a compromise of
+`APP_ID`/`APP_KEY` yields tokens scoped to the tap and expiring hourly, not a
+key that pushes forever — but "scoped to the tap" is precisely the scope needed
+to publish a malicious formula, so the reduction is in *duration and breadth*,
+not in what a live compromise could do to a user running `brew install`.
+
+**The App's private key is the thing to protect, and it does not expire.**
+Short-lived tokens do not make the key short-lived. Rotating it is a manual step
+nobody is currently prompted to take, which is worth a note in §9 rather than a
+false sense that the App made this a solved problem.
 
 **The digest is the integrity story now.** npm's immutability used to anchor it.
 A GitHub Release asset is *mutable* — it can be deleted and re-uploaded at the

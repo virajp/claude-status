@@ -637,3 +637,73 @@ fn the_bump_job_takes_the_asset_from_the_published_release() {
         "the bump job does not declare `needs: publish`, so it could run before the release it reads from exists"
     );
 }
+
+/// **Pushing to the tap uses a minted App token, not a credential at rest.**
+///
+/// `GITHUB_TOKEN` cannot reach another repository, so this job needs a
+/// credential of its own — and the three candidates differ entirely in what is
+/// sitting in this repository's secrets between releases. A PAT is
+/// account-level and can reach every repo the account can. A deploy key is
+/// scoped to the tap but can push to it forever. A GitHub App leaves nothing at
+/// rest that can push anything: the secrets authorise *minting*, and the token
+/// is installation-scoped, short-lived, and revoked when the job ends.
+///
+/// This guard pins the choice rather than the reasoning, because the two
+/// rejected options are each one line away and both would work.
+#[test]
+fn the_tap_push_uses_a_minted_app_token() {
+    let workflow = read(".github/workflows/release.yml");
+    let bump = job(&workflow, "bump-tap");
+
+    assert!(
+        bump.contains("actions/create-github-app-token"),
+        "the tap credential is not a minted App token"
+    );
+    assert!(
+        bump.contains("steps.tap-token.outputs.token"),
+        "the tap checkout does not use the minted token, so minting it achieved nothing"
+    );
+    assert!(
+        bump.contains("permission-contents: write"),
+        "the minted token does not narrow its permissions, so it carries whatever the installation was granted"
+    );
+
+    // `app-id` is deprecated in favour of `client-id`. The secret name is the
+    // same either way, so nothing else would catch a silent swap back.
+    assert!(
+        bump.contains("client-id:"),
+        "the App is identified by the deprecated `app-id` input rather than `client-id`"
+    );
+
+    // The two rejected credentials, neither of which may creep back.
+    assert!(
+        !bump.contains("ssh-key:"),
+        "the tap checkout uses a deploy key — a long-lived private key that can push to the tap forever"
+    );
+
+    // Every secret this job touches, by name. Substring-matching for "pat"
+    // does not work here and the first draft of this test proved it: `path:
+    // tap` contains it. Enumerating the references is exact, and it also
+    // catches a credential nobody thought to ban.
+    let secrets: Vec<&str> = bump
+        .match_indices("secrets.")
+        .map(|(i, _)| {
+            let rest = &bump[i + "secrets.".len()..];
+            let end = rest
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .collect();
+
+    assert!(
+        !secrets.is_empty(),
+        "the bump job references no secrets at all — it cannot be authenticating to another repository, so this test is reading the wrong job"
+    );
+    for name in &secrets {
+        assert!(
+            matches!(*name, "APP_ID" | "APP_KEY"),
+            "the bump job uses `secrets.{name}`; the only credentials it may hold are the App's client id and private key, which mint a short-lived scoped token rather than being able to push themselves"
+        );
+    }
+}
