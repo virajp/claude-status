@@ -108,7 +108,8 @@ Both now say `03`. Without it, criterion 4 below cannot pass.
 the first published number can be chosen, and a tag that has been pushed and
 consumed is not cleanly retractable.
 
-Correct `Cargo.toml`'s comment while here — it still mentions the npm package.
+Correct `Cargo.toml`'s comment while here — **done**; it named the npm package,
+which `01-drop-npm` deleted.
 
 ### 2. Dry-run the whole chain on a throwaway tag first
 
