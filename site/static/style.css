@@ -3,7 +3,7 @@
  * stylesheet, no framework, no build step — see site/config.toml for why that
  * is a constraint rather than a preference.
  *
- * The palette is the tool's own: these are the gruvbox-ish RGB triples in
+ * The palette is the tool's own: the gruvbox-ish RGB triples in
  * assets/claude-status.defaults.json, written as hex. A page documenting a
  * status bar should look like the status bar.
  *
@@ -11,23 +11,107 @@
  * copies this file through byte for byte. It is excluded from dprint (see
  * dprint.json) only as far as `site/templates/` goes — this file IS formatted,
  * because malva understands plain CSS fine.
+ *
+ * ---------------------------------------------------------------------------
+ * TWO LAYERS OF COLOUR, and the split is the whole reason light mode is cheap.
+ *
+ *   1. A PALETTE layer — the gruvbox hues, named for what they are. It has a
+ *      dark set and a light set, and gruvbox ships both, so the brand survives
+ *      the switch rather than being approximated.
+ *   2. A SEMANTIC layer — `--surface`, `--text`, `--accent` and so on, named
+ *      for the job. Every rule below this comment uses ONLY these.
+ *
+ * So a mode is a palette swap, not a second stylesheet, and no rule can be
+ * updated for one mode and forgotten in the other. That is the failure this
+ * split exists to make impossible.
  */
 
 :root {
-  --bg: #1d2021;
-  --bg-soft: #282828;
-  --bg-line: #3c3836;
-  --fg: #fbf1c7;
-  --fg-dim: #bdae93;
-  --aqua: #689d6a;
-  --blue: #458588;
-  --green: #98971a;
-  --orange: #d65d0e;
-  --yellow: #d79921;
-  --red: #cc241d;
+  /* ---- palette: gruvbox dark (the shipped defaults) --------------------- */
+  --gb-bg-hard: #1d2021;
+  --gb-bg: #282828;
+  --gb-bg-line: #3c3836;
+  --gb-fg: #fbf1c7;
+  --gb-fg-dim: #bdae93;
+  --gb-aqua: #689d6a;
+  --gb-blue: #458588;
+  --gb-green: #98971a;
+  --gb-orange: #d65d0e;
+  --gb-yellow: #d79921;
+  --gb-red: #cc241d;
 
+  /* ---- semantic ------------------------------------------------------- */
+  --surface: var(--gb-bg-hard);
+  --surface-raised: var(--gb-bg);
+  --rule: var(--gb-bg-line);
+  --text: var(--gb-fg);
+  --text-dim: var(--gb-fg-dim);
+  --accent: var(--gb-aqua);
+  --accent-hover: var(--gb-yellow);
+  --note: var(--gb-orange);
+  --ok: var(--gb-green);
+  --danger: var(--gb-red);
+
+  /* The bar's own colours, used only where the page is quoting the product
+   * at you — the hero's rendered segments. Not part of the UI vocabulary. */
+  --seg-model: var(--gb-blue);
+  --seg-context: var(--gb-aqua);
+  --seg-limit: var(--gb-yellow);
+  --seg-cost: var(--gb-green);
+
+  /* ---- measure and rhythm --------------------------------------------- */
+  /* `--shell` is the page frame; `--measure` is how wide TEXT is allowed to
+   * get. They used to be the same value, which is why the header's six nav
+   * links wrapped onto two lines at every width — the frame was clamped to a
+   * reading measure it never needed. */
+  --shell: 68rem;
   --measure: 40rem;
   --gap: 1.5rem;
+
+  /* One radius scale, three steps, applied by role and not by eye:
+   * sm = inline chips and inputs, md = blocks and cards, lg = the hero frame. */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+
+  /* A fluid display scale. `clamp` rather than a breakpoint per size, so the
+   * headline shrinks continuously instead of stepping. The lower bounds are
+   * what a 320px phone gets and were chosen there first. */
+  --t-display: clamp(2rem, 1.35rem + 3.2vw, 3.5rem);
+  --t-h1: clamp(1.65rem, 1.3rem + 1.7vw, 2.4rem);
+  --t-h2: clamp(1.25rem, 1.1rem + 0.7vw, 1.5rem);
+  --t-h3: 1.05rem;
+  --t-lede: clamp(1.05rem, 1rem + 0.35vw, 1.2rem);
+}
+
+/*
+ * Light mode is the reader's system setting, not a toggle: a toggle needs a
+ * script to remember itself, and this site ships one script on one page.
+ *
+ * These are gruvbox LIGHT, the published counterpart of the set above, so the
+ * page is recognisably the same product rather than an inversion. The accents
+ * are the light variants — the dark ones fail contrast on a pale background,
+ * which is the whole reason gruvbox publishes two.
+ */
+@media (prefers-color-scheme: light) {
+  :root {
+    --gb-bg-hard: #f9f5d7;
+    --gb-bg: #f2e5bc;
+    --gb-bg-line: #d5c4a1;
+    --gb-fg: #3c3836;
+    --gb-fg-dim: #665c54;
+    --gb-aqua: #427b58;
+    --gb-blue: #076678;
+    --gb-green: #79740e;
+    --gb-orange: #af3a03;
+    --gb-yellow: #b57614;
+    --gb-red: #9d0006;
+
+    /* Yellow-on-cream is the one pair that does not survive the swap: it is a
+     * hover state, so it must stay legible rather than merely different. Blue
+     * carries it instead. */
+    --accent-hover: var(--gb-blue);
+  }
 }
 
 *,
@@ -44,8 +128,11 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--surface);
+  color: var(--text);
+  /* No webfont. The supported platform is Apple Silicon macOS, where the
+   * system stack IS SF Pro — self-hosting a display face would cost a request
+   * and an LCP risk to land somewhere very close to where this already is. */
   font-family:
     ui-sans-serif,
     system-ui,
@@ -55,6 +142,19 @@ body {
     sans-serif;
   font-size: 1rem;
   line-height: 1.65;
+}
+
+/* Everything that animates does so on transform/opacity/colour only, and stops
+ * entirely for a reader who has asked it to. There is no scroll-driven motion
+ * on this site and no script to run any. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* Visible only when focused — a keyboard user's way past the nav. */
@@ -68,99 +168,151 @@ body {
   top: var(--gap);
   z-index: 1;
   padding: 0.5rem 0.75rem;
-  background: var(--yellow);
-  color: var(--bg);
-  border-radius: 4px;
+  background: var(--accent-hover);
+  color: var(--surface);
+  border-radius: var(--r-sm);
+}
+
+/* One visible focus treatment for every interactive thing on the page, rather
+ * than each control inventing its own. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
 }
 
 /* ---- header / nav ------------------------------------------------------ */
 
 /*
- * The nav is a wrapping flex row of plain anchors. There is no hamburger and
- * no disclosure widget, because both need JavaScript to open and this site
- * ships none — a nav that cannot be opened without a script is a nav that is
- * broken for anyone the script fails for.
+ * The nav is a flex row of plain anchors. There is no hamburger and no
+ * disclosure widget, because both need JavaScript to open and this site ships
+ * none on this page — a nav that cannot be opened without a script is a nav
+ * that is broken for anyone the script fails for.
+ *
+ * It sits on ONE line from 48rem up, which it did not before: the header was
+ * clamped to the 40rem reading measure, so six links plus a wordmark had
+ * nowhere to go but a second row. The frame is `--shell` now and the measure
+ * applies to prose only.
  */
 .site-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem var(--gap);
-  max-width: var(--measure);
+  max-width: var(--shell);
   margin: 0 auto;
-  padding: var(--gap) var(--gap) 0;
-  border-bottom: 1px solid var(--bg-line);
+  padding: 1rem var(--gap);
+  border-bottom: 1px solid var(--rule);
 }
 
 .brand {
   font-weight: 700;
-  font-size: 1.15rem;
-  color: var(--fg);
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
   text-decoration: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.brand:hover {
+  color: var(--accent);
 }
 
 .site-header nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  padding-bottom: 0.75rem;
+  gap: 0.25rem 1.15rem;
 }
 
 .site-header nav a {
-  color: var(--fg-dim);
+  color: var(--text-dim);
   text-decoration: none;
   white-space: nowrap;
+  font-size: 0.925rem;
+  transition: color 0.15s ease;
 }
 
 .site-header nav a:hover,
 .site-header nav a:focus {
-  color: var(--fg);
-  text-decoration: underline;
+  color: var(--text);
 }
 
 /* ---- prose ------------------------------------------------------------- */
 
 main {
-  max-width: var(--measure);
+  max-width: var(--shell);
   margin: 0 auto;
-  padding: 0 var(--gap) 3rem;
+  padding: 0 var(--gap) 4rem;
+}
+
+/* Text keeps the reading measure even though the frame around it is wider.
+ * The landing overrides this per band; docs pages want the column. */
+.prose {
+  max-width: var(--measure);
 }
 
 .prose h1 {
-  font-size: 1.9rem;
-  line-height: 1.2;
-  margin: 2rem 0 0.5rem;
+  font-size: var(--t-h1);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 2.5rem 0 0.5rem;
+  text-wrap: balance;
 }
 
+/*
+ * The rule above an h2 is a hairline and NOT a border on every heading — that
+ * treatment, repeated down a long reference page, reads as a table of boxes
+ * rather than a document. Spacing carries the hierarchy; the rule marks only
+ * the top-level break.
+ */
 .prose h2 {
-  font-size: 1.3rem;
-  margin: 2.5rem 0 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--bg-line);
+  font-size: var(--t-h2);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 3rem 0 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  text-wrap: balance;
 }
 
 .prose h3 {
-  font-size: 1.05rem;
-  margin: 1.75rem 0 0.5rem;
+  font-size: var(--t-h3);
+  margin: 2rem 0 0.5rem;
+  letter-spacing: -0.005em;
 }
 
 .lede {
-  color: var(--fg-dim);
-  font-size: 1.1rem;
+  color: var(--text-dim);
+  font-size: var(--t-lede);
+  line-height: 1.55;
   margin-top: 0;
+  text-wrap: pretty;
+}
+
+.prose p,
+.prose li {
+  text-wrap: pretty;
 }
 
 .prose a {
-  color: var(--aqua);
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+  transition: color 0.15s ease;
 }
 
 .prose a:hover,
 .prose a:focus {
-  color: var(--yellow);
+  color: var(--accent-hover);
 }
 
 .prose strong {
-  color: var(--fg);
+  color: var(--text);
 }
 
 /* ---- code -------------------------------------------------------------- */
@@ -172,8 +324,8 @@ pre {
 }
 
 :not(pre) > code {
-  background: var(--bg-soft);
-  border-radius: 3px;
+  background: var(--surface-raised);
+  border-radius: var(--r-sm);
   padding: 0.1em 0.35em;
   /* Long identifiers — env var names, config paths — must be allowed to break
    * rather than push the page wider than the phone. */
@@ -181,10 +333,10 @@ pre {
 }
 
 pre {
-  background: var(--bg-soft);
-  border: 1px solid var(--bg-line);
-  border-radius: 6px;
-  padding: 0.9rem 1rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  padding: 1rem 1.15rem;
   /* Code blocks scroll on their own rather than widening the document; a
    * horizontally-scrolling *page* is the usual way a docs site fails on a
    * phone. */
@@ -194,16 +346,15 @@ pre {
 /* ---- tables ------------------------------------------------------------ */
 
 /*
- * Every table on this site is wrapped in a scroll container by the markdown
- * below it; `display: block` on the table itself is what lets a five-column
- * segment catalogue scroll sideways inside the page instead of stretching it.
+ * `display: block` on the table itself is what lets a five-column segment
+ * catalogue scroll sideways inside the page instead of stretching it.
  */
 .prose table {
   display: block;
   width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
-  margin: 1rem 0;
+  margin: 1.25rem 0;
   font-size: 0.9rem;
 }
 
@@ -211,12 +362,12 @@ pre {
 .prose td {
   text-align: left;
   vertical-align: top;
-  padding: 0.4rem 0.75rem 0.4rem 0;
-  border-bottom: 1px solid var(--bg-line);
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
 }
 
 .prose th {
-  color: var(--fg-dim);
+  color: var(--text-dim);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -224,38 +375,335 @@ pre {
 /* ---- callouts ---------------------------------------------------------- */
 
 .prose blockquote {
-  margin: 1.25rem 0;
-  padding: 0.1rem 0 0.1rem 1rem;
-  border-left: 3px solid var(--orange);
-  color: var(--fg-dim);
+  margin: 1.5rem 0;
+  padding: 0.75rem 0 0.75rem 1.15rem;
+  border-left: 3px solid var(--note);
+  color: var(--text-dim);
 }
 
 .prose blockquote strong {
-  color: var(--orange);
+  color: var(--note);
 }
 
-/* ---- the screenshot ---------------------------------------------------- */
+.prose blockquote :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- images ------------------------------------------------------------ */
 
 .prose img {
   max-width: 100%;
   height: auto;
-  border: 1px solid var(--bg-line);
-  border-radius: 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+
+/* ---- the landing page -------------------------------------------------- */
+
+/*
+ * The one page on this site with a composition rather than a column. It used
+ * to render the same `.prose` article every docs page does, which is exactly
+ * why it read as documentation: structurally it WAS documentation.
+ *
+ * Bands are full-shell; the text inside each keeps the measure.
+ */
+/*
+ * The hero STACKS rather than splitting into copy-and-asset columns, and the
+ * asset is what decided that: `statusline.png` is 2294x138, a 16.6:1 strip. In
+ * a side column at a typical desktop width it would render about thirty pixels
+ * tall — unreadable, and a screenshot nobody can read is decoration.
+ *
+ * Full width it is legible, and it happens to be the honest shape for the
+ * product: the thing being sold is a wide, short bar across the bottom of a
+ * terminal, so showing it as one is not a compromise.
+ */
+.hero {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(2.5rem, 1.5rem + 4vw, 4.5rem) 0 3rem;
+  display: grid;
+  gap: clamp(2rem, 1rem + 3vw, 3rem);
+}
+
+/* The copy keeps a reading measure even though the image beside it does not.
+ * A 68rem-wide paragraph is unreadable however good the type is. */
+.hero-copy {
+  max-width: 46rem;
+}
+
+.hero h1 {
+  font-size: var(--t-display);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+
+.hero-lede {
+  color: var(--text-dim);
+  font-size: var(--t-lede);
+  line-height: 1.55;
+  margin: 0 0 1.75rem;
+  max-width: 34rem;
+  text-wrap: pretty;
+}
+
+.hero-shot {
+  margin: 0;
+}
+
+.hero-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  /* Tinted to the surface rather than pure black: a black shadow on a warm
+   * dark background reads as a hole, and on the light palette as dirt. */
+  box-shadow: 0 1.25rem 3rem rgb(0 0 0 / 28%);
+}
+
+@media (prefers-color-scheme: light) {
+  .hero-shot img {
+    box-shadow: 0 1rem 2.5rem rgb(60 56 54 / 16%);
+  }
+}
+
+/* ---- calls to action --------------------------------------------------- */
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/*
+ * One label per intent. "Install" is the install intent everywhere on this
+ * site — the nav, the hero and the footer all use that word and no synonym.
+ */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    transform 0.12s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+/* Contrast is why the label is `--surface` and not white: on the light palette
+ * a white label on aqua fails AA, and the surface colour passes in both. */
+.cta-primary {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.cta-primary:hover,
+.cta-primary:focus {
+  background: var(--accent-hover);
+  color: var(--surface);
+}
+
+.cta-secondary {
+  border-color: var(--rule);
+  color: var(--text);
+}
+
+.cta-secondary:hover,
+.cta-secondary:focus {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A physical push, and the only motion on the page that is not a colour. */
+.cta:active {
+  transform: translateY(1px);
+}
+
+/* ---- documentation pages ----------------------------------------------- */
+
+/*
+ * Prose plus an optional contents rail. The rail is what the wider frame buys
+ * the docs: the reading measure is unchanged, so the text is exactly as it was,
+ * and the space that used to be empty margin now carries navigation.
+ *
+ * Source order is article-then-nav, so a phone gets the prose first. Only the
+ * wide layout moves the rail beside it, and `order` is not used — the grid
+ * columns do it, which keeps the DOM order and the tab order the same.
+ */
+.doc {
+  display: grid;
+  gap: 2.5rem;
+}
+
+@media (min-width: 64rem) {
+  .doc-with-toc {
+    grid-template-columns: minmax(0, var(--measure)) 1fr;
+    gap: 4rem;
+  }
+
+  .toc {
+    position: sticky;
+    top: 2rem;
+    align-self: start;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+  }
+}
+
+.toc {
+  font-size: 0.875rem;
+  padding-top: 2.75rem;
+}
+
+.toc-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--rule);
+}
+
+.toc li {
+  margin: 0;
+}
+
+.toc a {
+  display: block;
+  padding: 0.3rem 0 0.3rem 0.9rem;
+  margin-left: -1px;
+  border-left: 1px solid transparent;
+  color: var(--text-dim);
+  text-decoration: none;
+  line-height: 1.4;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.toc a:hover,
+.toc a:focus {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+/* ---- the landing's bands ----------------------------------------------- */
+
+/*
+ * Everything below the hero is still ordinary markdown. These rules style it
+ * BY ELEMENT rather than by class, because a class cannot be written from a
+ * markdown body without a shortcode — and a shortcode would put layout
+ * vocabulary into the content, which is exactly the coupling the hero's
+ * `[extra]` split exists to avoid.
+ *
+ * The consequence, stated so it is a decision rather than a surprise: adding a
+ * second `<ul>` to the landing gives it card treatment too. That is the right
+ * default here (every list on this page is a set of features), and the day it
+ * is not, the fix is a shortcode rather than a fight with `nth-of-type`.
+ */
+.landing {
+  max-width: var(--shell);
+}
+
+/* Text keeps the reading measure; only the grids use the full frame. */
+.landing > p,
+.landing > pre,
+.landing > ol,
+.landing > blockquote {
+  max-width: var(--measure);
+}
+
+/* The h2 rule spans the whole frame, which is what turns a heading into a band
+ * divider rather than an underlined word. */
+.landing > h2 {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+}
+
+/*
+ * The feature list, as cards rather than bullets.
+ *
+ * Five items in a `<ul>` with hanging dots is the lazy shape, and it is what
+ * this was. `auto-fit` with a floor means the grid has exactly as many cells
+ * as it has items at every width — no empty trailing cell, which is the usual
+ * way a hand-set column count goes wrong when the content changes.
+ */
+.landing > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+
+.landing > ul > li {
+  padding: 1.15rem 1.25rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* The bolded opener of each bullet becomes the card's title. The markdown
+ * shape it relies on — `- **Title.** body` — is what every item on this page
+ * already used. */
+.landing > ul > li > strong:first-child {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+/* The docs index. Kept as a table because it IS tabular — a destination and
+ * what it is for — and because this site's tables already scroll properly on a
+ * phone. It only needed room to breathe. */
+.landing > table {
+  max-width: var(--measure);
+  font-size: 0.95rem;
+}
+
+.landing > table td {
+  color: var(--text-dim);
 }
 
 /* ---- footer ------------------------------------------------------------ */
 
 .site-footer {
-  max-width: var(--measure);
+  max-width: var(--shell);
   margin: 0 auto;
-  padding: var(--gap);
-  border-top: 1px solid var(--bg-line);
-  color: var(--fg-dim);
+  padding: 1.5rem var(--gap) 2.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--text-dim);
   font-size: 0.875rem;
 }
 
 .site-footer a {
-  color: var(--fg-dim);
+  color: var(--text-dim);
+}
+
+.site-footer a:hover,
+.site-footer a:focus {
+  color: var(--accent);
 }
 
 /* ---- the config generator ---------------------------------------------- */
@@ -280,12 +728,12 @@ pre {
   margin: 0.75rem 0;
   padding: 0.25rem 0 0.25rem 0.85rem;
   border: 0;
-  border-left: 2px solid var(--bg-line);
+  border-left: 2px solid var(--rule);
 }
 
 .gen-group > legend {
   padding: 0;
-  color: var(--yellow);
+  color: var(--accent-hover);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 0.875rem;
 }
@@ -301,7 +749,7 @@ pre {
 
 .gen-label {
   display: block;
-  color: var(--fg-dim);
+  color: var(--text-dim);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 0.8rem;
 }
@@ -312,7 +760,7 @@ pre {
 .gen-hint {
   display: block;
   max-width: 34rem;
-  color: var(--fg-dim);
+  color: var(--text-dim);
   font-size: 0.8rem;
   line-height: 1.45;
 }
@@ -321,13 +769,21 @@ pre {
 .gen-fields select,
 .gen-fields textarea {
   max-width: 100%;
-  padding: 0.3rem 0.45rem;
-  background: var(--bg-soft);
-  color: var(--fg);
-  border: 1px solid var(--bg-line);
-  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
   font: inherit;
   font-size: 0.875rem;
+}
+
+.gen-fields input::placeholder,
+.gen-fields textarea::placeholder {
+  /* Not a lighter grey than the hint text: a placeholder that fails contrast
+   * is an unlabelled box for anyone who needs the contrast. */
+  color: var(--text-dim);
+  opacity: 1;
 }
 
 .gen-fields input[type="text"],
@@ -381,23 +837,24 @@ pre {
 
 .gen-fields button,
 .gen-actions button {
-  padding: 0.3rem 0.7rem;
-  background: var(--bg-soft);
-  color: var(--fg);
-  border: 1px solid var(--bg-line);
-  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
+  transition: border-color 0.15s ease;
 }
 
 .gen-fields button:hover,
 .gen-actions button:hover {
-  border-color: var(--yellow);
+  border-color: var(--accent);
 }
 
 .gen-remove {
-  color: var(--fg-dim) !important;
+  color: var(--text-dim) !important;
 }
 
 .gen-order {
@@ -407,7 +864,7 @@ pre {
 
 .gen-error {
   display: block;
-  color: var(--red);
+  color: var(--danger);
   font-size: 0.8rem;
 }
 
@@ -418,17 +875,17 @@ pre {
 
 .gen-path,
 .gen-provenance {
-  color: var(--fg-dim);
+  color: var(--text-dim);
   font-size: 0.875rem;
 }
 
-/* The "your list came out whole" explanation. Orange rather than red: it is
- * the merge behaving correctly, not an error. */
+/* The "your list came out whole" explanation. The note colour rather than the
+ * danger one: it is the merge behaving correctly, not an error. */
 .gen-note:not(:empty) {
   margin: 0.75rem 0;
   padding: 0.1rem 0 0.1rem 1rem;
-  border-left: 3px solid var(--orange);
-  color: var(--fg-dim);
+  border-left: 3px solid var(--note);
+  color: var(--text-dim);
   font-size: 0.875rem;
 }
 
@@ -439,34 +896,29 @@ pre {
   align-items: center;
 }
 
+/* `--surface` for the label, not white: the green passes AA against the page
+ * background in both palettes, and white does not on the light one. */
 .gen-primary {
-  background: var(--green) !important;
-  border-color: var(--green) !important;
+  background: var(--ok) !important;
+  border-color: var(--ok) !important;
+  color: var(--surface) !important;
 }
 
 .gen-copied {
-  color: var(--fg-dim);
+  color: var(--text-dim);
   font-size: 0.8rem;
 }
 
 /* ---- narrow screens ---------------------------------------------------- */
 
 /*
- * One breakpoint, at the width below which the 1.5rem gutters start eating the
- * measure. Nothing here reflows the layout — the layout is a single column at
- * every width already, which is why there is only one query.
+ * The type scale is fluid, so most of what used to need a breakpoint no longer
+ * does. What is left is the gutter, the header's stacking, and the generator's
+ * fixed-width text fields.
  */
 @media (max-width: 34rem) {
   :root {
     --gap: 1rem;
-  }
-
-  .prose h1 {
-    font-size: 1.55rem;
-  }
-
-  .prose h2 {
-    font-size: 1.2rem;
   }
 
   .site-header {

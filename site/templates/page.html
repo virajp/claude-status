@@ -1,15 +1,46 @@
 {% extends "base.html" %}
 
+{#
+  Every documentation page. The landing page has its own template.
+
+  The table of contents is built from zola's own `page.toc`, which it derives
+  from the headings it has already parsed — so it cannot drift from the page,
+  and writing a new `##` needs nothing here changed.
+
+  It is `<nav>` + `<ol>` rather than a stack of divs because it is a list of
+  links in document order, and a screen reader should be able to skip it as a
+  navigation landmark. It renders BELOW the article on a phone (source order
+  puts it after, and only the wide layout moves it), so a reader on a narrow
+  screen gets the prose first rather than a screenful of contents.
+
+  Pages with fewer than three top-level headings get none: a contents list of
+  two entries is furniture, not navigation.
+#}
+
 {% block title %}{{ page.title }} — {{ config.title }}{% endblock title %}
 
 {% block description %}{{ page.description | default(value=config.description) }}{% endblock description %}
 
 {% block content %}
-  <article class="prose">
-    <h1>{{ page.title }}</h1>
-    {% if page.description %}
-      <p class="lede">{{ page.description }}</p>
+  {% set headings = page.toc | length %}
+  <div class="doc{% if headings >= 3 %} doc-with-toc{% endif %}">
+    <article class="prose">
+      <h1>{{ page.title }}</h1>
+      {% if page.description %}
+        <p class="lede">{{ page.description }}</p>
+      {% endif %}
+      {{ page.content | safe }}
+    </article>
+
+    {% if headings >= 3 %}
+      <nav class="toc" aria-label="On this page">
+        <h2 class="toc-title">On this page</h2>
+        <ol>
+          {% for h in page.toc %}
+            <li><a href="#{{ h.id }}">{{ h.title }}</a></li>
+          {% endfor %}
+        </ol>
+      </nav>
     {% endif %}
-    {{ page.content | safe }}
-  </article>
+  </div>
 {% endblock content %}
