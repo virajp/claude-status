@@ -342,3 +342,101 @@ fn the_changelog_generator_is_declared_for_ci() {
         "the changelog generator is not in `.config/mise.toml`'s [tools], so `MISE_ENV=ci` will not install it and the release would publish empty notes"
     );
 }
+
+/// **The digest lookup is anchored to the whole asset name.**
+///
+/// `SHA256SUMS` lists the raw binary and the tarball, and the raw name is a
+/// strict *prefix* of the tarball's — `claude-status-darwin-arm64` against
+/// `claude-status-darwin-arm64.tar.gz`. `shasum` writes the shorter name first,
+/// so the obvious `grep "$asset" SHA256SUMS | head -1` hands back the **raw
+/// binary's** digest for a `url` that points at the tarball.
+///
+/// That failure is silent in every direction that matters. The bump job stays
+/// green, `brew audit` never fetches the URL, and the formula is well-formed —
+/// it just fails the checksum for every user who installs it.
+///
+/// Measured against the real published manifest, not a guess: v0.1.0's raw
+/// binary is `9d088dc5…` and its tarball is `af64e2a6…`.
+#[test]
+fn the_digest_lookup_is_anchored_to_the_whole_asset_name() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    // The exact shape `shasum -a 256 *` produces, shorter name first.
+    std::fs::write(
+        dir.path().join("SHA256SUMS"),
+        "9d088dc57367f21870ddb55dba50e7a926ff0b1b5761cae6b0059770019f2f65  claude-status-darwin-arm64\naf64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044  claude-status-darwin-arm64.tar.gz\n",
+    )
+    .expect("fixture manifest");
+
+    let out = bash(
+        r#"
+        digest_for SHA256SUMS claude-status-darwin-arm64.tar.gz
+        digest_for SHA256SUMS claude-status-darwin-arm64
+
+        # CONTROL: the naive lookup this helper exists to replace. If this does
+        # NOT return the raw binary's digest for the tarball's name, the prefix
+        # collision has gone away and the assertions above stopped testing it.
+        grep "claude-status-darwin-arm64" SHA256SUMS | head -1 | awk '{print $1}'
+        "#,
+        dir.path(),
+    );
+
+    assert!(out.status.success(), "digest_for failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let got: Vec<&str> = std::str::from_utf8(&out.stdout).expect("utf8").lines().collect();
+    assert_eq!(got.len(), 3, "expected three digests, got {got:?}");
+
+    assert_eq!(
+        got[0], "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044",
+        "the tarball's name returned the wrong digest — every `brew install` would fail the checksum"
+    );
+    assert_eq!(
+        got[1], "9d088dc57367f21870ddb55dba50e7a926ff0b1b5761cae6b0059770019f2f65",
+        "the raw binary's name returned the wrong digest"
+    );
+    assert_eq!(
+        got[2], got[1],
+        "the naive lookup no longer returns the raw binary's digest for the tarball's name, so this test's premise is stale and it is guarding nothing"
+    );
+    assert_ne!(got[0], got[1], "the two assets must not share a digest — the fixture is wrong");
+}
+
+/// **An asset that is not in the manifest fails loudly, rather than emptily.**
+///
+/// The lookup is keyed by asset name, so a *wrong* name does not return a wrong
+/// digest — it returns nothing. An empty `--sha256` is worse than a wrong one:
+/// `brew` falls back to a best-effort download instead of refusing, so the
+/// formula ships with no integrity check at all.
+///
+/// This is the compounding half of the asset-name hazard. Nothing offline
+/// catches a wrong name — `brew audit --strict` exits 0 on a URL that 404s,
+/// measured — so this guard is the only thing standing between a renamed asset
+/// and a formula with an empty digest.
+#[test]
+fn an_asset_missing_from_the_manifest_fails_instead_of_returning_empty() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::write(
+        dir.path().join("SHA256SUMS"),
+        "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044  claude-status-darwin-arm64.tar.gz\n",
+    )
+    .expect("fixture manifest");
+
+    let missing = bash("digest_for SHA256SUMS claude-status-aarch64-apple-darwin.tar.gz", dir.path());
+    assert!(
+        !missing.status.success(),
+        "a name absent from the manifest exited 0 — the bump job would commit an empty sha256 and brew would stop verifying anything"
+    );
+    assert!(
+        String::from_utf8_lossy(&missing.stdout).trim().is_empty(),
+        "a failed lookup still printed something on stdout, which the caller would capture as a digest"
+    );
+
+    // CONTROL: the same helper, same manifest, a name that IS present. Without
+    // this, the assertion above passes just as well when `digest_for` is broken
+    // for every input.
+    let present = bash("digest_for SHA256SUMS claude-status-darwin-arm64.tar.gz", dir.path());
+    assert!(
+        present.status.success(),
+        "the helper failed on a name that is present, so its failure above proves nothing: {}",
+        String::from_utf8_lossy(&present.stderr)
+    );
+}

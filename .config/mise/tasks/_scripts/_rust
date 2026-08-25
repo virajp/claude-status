@@ -147,3 +147,47 @@ reproducible_tar() {
   tar --owner=0 --group=0 --numeric-owner --format=ustar \
     -cf - -C "$dir" "$member" | gzip -n > "$out"
 }
+
+# The sha256 of one named asset, read out of a `shasum`-format manifest.
+#
+# `distribution/02`'s bump job commits this digest into a formula in another
+# repository, so a wrong answer here is not a broken build — it is a broken
+# `brew install` for every user, with the release run green behind it.
+#
+# **Matched on the whole name, never a substring.** `SHA256SUMS` carries both
+# assets for a target, and the raw binary's name is a strict PREFIX of the
+# tarball's — `claude-status-darwin-arm64` inside
+# `claude-status-darwin-arm64.tar.gz`. `shasum` writes the shorter one first,
+# so `grep "$asset" SHA256SUMS | head -1` returns the RAW BINARY's digest for a
+# url pointing at the tarball. Well-formed, plausible, and wrong. Hence awk on
+# an exact field comparison rather than a pattern.
+#
+# The `*` strip handles `shasum`'s binary-mode manifests, which prefix the name.
+#
+# **An absent asset fails rather than returning empty.** The lookup is keyed by
+# name, so a *renamed* asset yields nothing at all — and an empty `--sha256`
+# makes brew fall back to a best-effort download instead of refusing, shipping
+# a formula with no integrity check. Nothing offline catches the rename itself:
+# `brew audit --strict` exits 0 on a url that 404s, measured. This guard is the
+# only thing between that rename and a formula that verifies nothing.
+digest_for() {
+  manifest="$1"
+  asset="$2"
+
+  digest="$(awk -v want="$asset" '{ name = $NF; sub(/^\*/, "", name); if (name == want) print $1 }' "$manifest")"
+
+  # Catches empty, multi-line (two matches) and anything that is not 64 hex
+  # digits, in one test — every shape that is not exactly one digest.
+  case "$digest" in
+    *[!0-9a-f]* | "")
+      echo "no unique sha256 for '$asset' in $manifest" >&2
+      return 1
+      ;;
+  esac
+  if [ "${#digest}" -ne 64 ]; then
+    echo "sha256 for '$asset' in $manifest is ${#digest} chars, not 64" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$digest"
+}
