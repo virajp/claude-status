@@ -4,47 +4,38 @@ description = "Get the binary, then wire Claude Code to it."
 weight = 1
 +++
 
+Apple Silicon macOS. Two routes, and both end at the same wiring step.
+
 ## Homebrew
 
-Apple Silicon macOS. One command:
+Two commands, and the first is not optional:
 
 ```sh
-brew install virajp/tap/claude-status
+brew trust --formula virajp/tap/claude-status
+brew install --formula virajp/tap/claude-status
 ```
 
-**Use that fully-qualified form.** Homebrew 6 requires explicit trust for
-third-party taps, so the two-step `brew tap virajp/tap` followed by
-`brew install claude-status` fails until you also run `brew trust`. Most
-tutorials still show the two-step version; this is the one that works.
+**Homebrew 6 will not load a third-party formula it has not been told to
+trust**, so the install fails on its own. `brew trust` records the decision in
+`~/.homebrew/trust.json` and you make it once, not per upgrade. Most tutorials
+predate this and show a single `brew install`; that is why it does not work.
 
 `brew upgrade` keeps it current from then on.
 
-It used to be an npm package. That channel was retired before it shipped a real
-version, because it asked you for a Node toolchain in order to deliver a binary
-that needs none.
+## mise
 
-## From source
-
-For anything that is not Apple Silicon macOS, or if you would rather not use a
-tap. Needs a Rust toolchain and nothing else.
+If you already manage your tools with [mise](https://mise.jdx.dev), one command:
 
 ```sh
-git clone https://github.com/virajp/claude-status
-cd claude-status
-cargo build --release
+mise use --global "github:virajp/claude-status@latest"
 ```
 
-That leaves the binary at `target/release/claude-status`. Put it somewhere on
-your `PATH` — the wiring step below invokes it **by name**, so a binary that is
-not on your `PATH` will not be found by Claude Code even though it works when
-you run it yourself. Homebrew does this part for you.
-
-Linux builds natively; Windows does not compile. Neither is tested or supported
-— see the repository's `CONTRIBUTING.md` before you try.
+That pulls the released binary straight from the GitHub release and puts it on
+your `PATH`. `mise upgrade` moves it forward.
 
 ## Then wire Claude Code to it
 
-Both routes end at the same command, and it is the step people skip:
+Both routes end here, and it is the step people skip:
 
 ```sh
 claude-status --configure
@@ -101,31 +92,33 @@ the one surface that **refuses** an argument it does not recognise: every other
 flag ignores a stray token, but here a typo in `--dry-run` must not turn a
 preview into a real write.
 
-> **`--configure` used to mean the opposite.** The retired npm installer had a
-> flag of the same name that gave the repository you were standing in a config
-> layer and wrote nothing under `~`. The binary's `--configure` writes only
-> under `~`, and the per-repo layer is now written [by hand](@/repo-config.md).
-> The name was reused on purpose: the installer is gone and this is what
-> replaces it.
-
 ## The surfaces
 
-One binary, several surfaces, each selected by an explicit flag. Claude Code
-invokes the first three for you — you will not run those by hand.
+One binary, several surfaces, each selected by an explicit flag. They split by
+who does the calling.
+
+### Claude Code calls these
+
+Wired by `--configure`, and you will not type them yourself.
 
 | Flag           | Does                                                   |
 | -------------- | ------------------------------------------------------ |
 | `--statusline` | render the main bar from a payload on stdin            |
 | `--subagent`   | render the subagent panel from stdin (NDJSON)          |
 | `--caps-hook`  | the `PostToolUse` cap actuator; silent unless breached |
-| `--configure`  | wire Claude Code to this binary                        |
-| `--refresh`    | refresh the spend cache and exit                       |
-| `--debug`      | report configuration, wiring and a sample render       |
-| `--version`    | print the version and exit                             |
-| `--help`       | the full list, with detail                             |
 
-Two modifiers pair with them: `--debug` works on any of the above and narrates
-to stderr without changing a byte of stdout, and `--dry-run` pairs with
+### You call these
+
+| Flag          | Does                                             |
+| ------------- | ------------------------------------------------ |
+| `--configure` | wire Claude Code to this binary                  |
+| `--refresh`   | refresh the spend cache and exit                 |
+| `--debug`     | report configuration, wiring and a sample render |
+| `--version`   | print the version and exit                       |
+| `--help`      | the full list, with detail                       |
+
+Two modifiers pair with them: `--debug` works on any surface and narrates to
+stderr without changing a byte of stdout, and `--dry-run` pairs with
 `--configure`.
 
 **Every surface but `--configure` ignores an argument it does not recognise**,
@@ -149,15 +142,7 @@ refuses anything else — it declares an `arm64` and a macOS requirement, so an
 Intel Mac is told *"The arm64 architecture is required for this software"*
 rather than installing something that cannot run.
 
-Building from source has no such gate, and nothing stops you trying.
-`cargo build --release` may well work on your platform; it is simply not
-something anyone checks.
-
 ## Removing it
 
 Delete the binary, then remove the `statusLine`, `subagentStatusLine` and
 `PostToolUse` hook entries from `~/.claude/settings.json`.
-
-There is no `--unconfigure` and no receipt of what was there before. That is
-deliberate rather than missing, but it does mean a status line that
-`--configure` replaced is not recoverable from anything this tool kept.

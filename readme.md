@@ -17,38 +17,32 @@ marker.](https://cdn.virajp.dev/claude-status/statusline.png)
 
 ## Install
 
-Apple Silicon macOS:
+Apple Silicon macOS, with Homebrew:
 
 ```sh
-brew install virajp/tap/claude-status
-```
-
-Use that fully-qualified form — Homebrew 6 requires explicit trust for
-third-party taps, so the two-step `brew tap` then `brew install` needs a
-`brew trust` in between.
-
-> `claude-status` used to be an npm package; that channel was retired before it
-> ever shipped a real version, because it asked you for a Node toolchain to
-> deliver a binary that needs none.
-
-For any other platform, build from source — needs only a Rust toolchain:
-
-```sh
-git clone https://github.com/virajp/claude-status
-cd claude-status
-cargo build --release
-# put target/release/claude-status somewhere on your PATH, then:
+brew trust --formula virajp/tap/claude-status
+brew install --formula virajp/tap/claude-status
 claude-status --configure
 ```
 
-`--configure` is the second step, not a formality — it's what wires Claude
-Code's `~/.claude/settings.json` to the binary. Restart Claude Code and the bar
-is there.
+`brew trust` is not optional — Homebrew 6 will not load a third-party formula it
+has not been told to trust, so the install fails without it. You do it once, not
+per upgrade.
+
+Or with [mise](https://mise.jdx.dev):
+
+```sh
+mise use --global "github:virajp/claude-status@latest"
+claude-status --configure
+```
+
+`--configure` is the last step, not a formality — it's what wires Claude Code's
+`~/.claude/settings.json` to the binary. Restart Claude Code and the bar is
+there.
 
 **[claude-status.virajp.dev](https://claude-status.virajp.dev)** has the rest:
-the [Homebrew route](https://claude-status.virajp.dev/install/) for when the tap
-exists, what `--configure` writes and what it replaces, and the platforms that
-are and aren't served.
+both routes in full, what `--configure` writes and what it replaces, and the
+platforms that are and aren't served.
 
 ## Documentation
 

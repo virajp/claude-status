@@ -159,16 +159,22 @@ the numeric App ID, which is the one thing about the setup that catches people
 out. The minted token is scoped to the tap, narrowed to `contents: write`, and
 revoked when the job ends.
 
-**Only the fully-qualified install works:**
+**The install is two commands, and neither is avoidable:**
 
 ```sh
-brew install virajp/tap/claude-status
+brew trust --formula virajp/tap/claude-status
+brew install --formula virajp/tap/claude-status
 ```
 
-Homebrew 6 requires explicit trust for non-official taps, so the two-step
-`brew tap virajp/tap` followed by `brew install claude-status` fails until
-`brew trust`. Do not document the two-step form even though most tutorials still
-show it.
+Homebrew 6 requires explicit trust for the **formula**, not merely for the tap,
+so qualifying the name fully does not avoid it — there is no one-command
+install. This file previously claimed there was; see contract §9's correction of
+2026-08-26 for how that got through, which is worth reading before writing any
+other "this is the command" line here.
+
+Trust is recorded in `~/.homebrew/trust.json` and is a one-time step per
+machine, not per upgrade. That is also why it is easy to get wrong: once you
+have trusted the formula, the broken instructions work for you.
 
 #### Bumping the formula by hand
 

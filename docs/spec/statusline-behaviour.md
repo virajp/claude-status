@@ -1706,12 +1706,36 @@ costs until the tap lands.
 > on a manual step somebody has to get right once. Neither cost is worth a patch
 > over a render.
 >
-> **Only the fully-qualified form works.** Homebrew 6.0.0 (2026-06-11) requires
-> explicit trust for non-official taps, so `brew tap virajp/tap` followed by
-> `brew install claude-status` **fails** until `brew trust`, and `brew doctor`
-> warns about a tapped-but-untrusted tap. That two-step form is what most
-> READMEs and nearly every tutorial still show. Documentation must give the one
-> fully-qualified command and not the pair.
+> ~~**Only the fully-qualified form works.** Homebrew 6.0.0 (2026-06-11)
+> requires explicit trust for non-official taps, so `brew tap virajp/tap`
+> followed by `brew install claude-status` **fails** until `brew trust`.
+> Documentation must give the one fully-qualified command and not the pair.~~
+>
+> **Corrected 2026-08-26 — the install is TWO commands, and neither is
+> avoidable:**
+>
+> ```sh
+> brew trust --formula virajp/tap/claude-status
+> brew install --formula virajp/tap/claude-status
+> ```
+>
+> The paragraph above had the shape of the problem right and the conclusion
+> wrong. Homebrew 6 does require explicit trust — but trust is required for the
+> **formula**, not merely for the tap, so qualifying the name fully does not
+> avoid it. There is no one-command install.
+>
+> This was found by the owner installing it, not by anything here. The evidence
+> is `~/.homebrew/trust.json`, which lists `virajp/tap/claude-status` under
+> `trustedformulae` — an entry only `brew trust --formula` writes.
+> `brew trust
+> --help` documents the flag. The original claim came from a recon
+> agent that reasoned about tap trust without running the install, and nothing
+> since checked it, because the person who could check it had already trusted
+> the formula and never saw the failure.
+>
+> **The generalisation worth keeping:** a claim about a first-run experience
+> cannot be verified by anyone who has already had it. The state that makes the
+> install work is the state that hides the bug.
 >
 > **The formula's url and digest are read out of the published release**, never
 > reconstructed from a version string. A formula naming an asset that does not
