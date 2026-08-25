@@ -707,3 +707,94 @@ fn the_tap_push_uses_a_minted_app_token() {
         );
     }
 }
+
+/// Splits a workflow into everything before `jobs:` and each job under it.
+///
+/// A job opens at exactly two spaces of indent and runs to the next line at
+/// that indent, or EOF. The same shape `tests/site.rs` uses, and duplicated
+/// rather than shared because each `tests/*.rs` is its own crate.
+fn split_jobs(workflow: &str) -> (String, Vec<(&str, String)>) {
+    let jobs_at = workflow.find("\njobs:").expect("release.yml has no `jobs:` block");
+    let preamble = workflow[..jobs_at].to_string();
+
+    let mut jobs: Vec<(&str, String)> = Vec::new();
+    let mut current: Option<(&str, Vec<&str>)> = None;
+    for line in workflow[jobs_at..].lines() {
+        let is_header = line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+            && !line.trim_start().starts_with('#');
+        if is_header {
+            if let Some((name, body)) = current.take() {
+                jobs.push((name, body.join("\n")));
+            }
+            current = Some((line.trim().trim_end_matches(':'), vec![line]));
+        } else if let Some((_, body)) = current.as_mut() {
+            body.push(line);
+        }
+    }
+    if let Some((name, body)) = current.take() {
+        jobs.push((name, body.join("\n")));
+    }
+    (preamble, jobs)
+}
+
+/// **The tap credential is reachable from exactly one job.**
+///
+/// `site.yml` has had a containment test since it gained a deploy secret;
+/// `release.yml` had none, because until this cycle it had no secret worth
+/// containing. It does now.
+///
+/// The threat is not a pull request — this workflow does not run on one. It is
+/// that `verify`, `test`, `build` and `publish` all run `cargo`, and a cargo
+/// build executes **build scripts from every dependency in the tree**. A
+/// credential in one of those jobs' environments is a credential offered to
+/// arbitrary third-party code on every release. `bump-tap` compiles nothing, so
+/// keeping the App there is what makes the supply-chain surface not overlap the
+/// credential surface.
+///
+/// Asserted for every job that is not `bump-tap` rather than for the four by
+/// name, so adding a fifth cannot quietly open a path.
+#[test]
+fn only_the_bump_job_can_reach_the_tap_credential() {
+    let workflow = read(".github/workflows/release.yml");
+    let (preamble, jobs) = split_jobs(&workflow);
+
+    // A workflow-level `env:` sits above `jobs:` and reaches every job in the
+    // file, so a secret there defeats every per-job assertion below.
+    assert!(
+        !preamble.contains("secrets."),
+        "a secret is referenced above `jobs:`; a workflow-level `env` reaches every job, including the ones that run cargo:\n{preamble}"
+    );
+
+    let names: Vec<&str> = jobs.iter().map(|(n, _)| *n).collect();
+    assert!(names.contains(&"bump-tap"), "release.yml lost its `bump-tap` job; found {names:?}");
+    assert!(
+        names.iter().any(|n| *n == "publish"),
+        "release.yml lost its `publish` job; found {names:?}"
+    );
+
+    for (name, body) in &jobs {
+        if *name == "bump-tap" {
+            continue;
+        }
+        assert!(
+            !body.contains("secrets."),
+            "job `{name}` names a secret. Only `bump-tap` may, because it is the only job that does not run cargo — every other job executes dependency build scripts:\n{body}"
+        );
+    }
+
+    // Every `secrets.` in the file is inside `bump-tap`, wherever it was
+    // written. Counting closes the gap the per-job loop leaves if a reference
+    // ends up somewhere `split_jobs` does not attribute to a job at all.
+    let bump = jobs
+        .iter()
+        .find(|(n, _)| *n == "bump-tap")
+        .map(|(_, b)| b.as_str())
+        .expect("checked above");
+    assert_eq!(
+        workflow.matches("secrets.").count(),
+        bump.matches("secrets.").count(),
+        "a `secrets.` reference lives outside the `bump-tap` job"
+    );
+}
