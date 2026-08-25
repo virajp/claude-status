@@ -84,14 +84,13 @@ for source in schemas/claude-status.schema.json assets/claude-status.defaults.js
   command cp "${MISE_PROJECT_ROOT}/${source}" "${SITE_STATIC}/$(basename "${source}")"
 done
 
-# The copy is only worth anything if it is identical. `cmp` rather than a
-# checksum: the failure this guards is a formatter or an editor having touched
-# the destination between runs, and the whole point is byte equality.
-for source in schemas/claude-status.schema.json assets/claude-status.defaults.json; do
-  if ! cmp -s "${MISE_PROJECT_ROOT}/${source}" "${SITE_STATIC}/$(basename "${source}")"; then
-    print_error "site/static/$(basename "${source}") is not byte-identical to ${source}"
-    exit 1
-  fi
-done
+# No `cmp` pass here. There was one, and it could not fail: it ran immediately
+# after the unconditional `cp` above, so the drift it claimed to catch ("a
+# formatter or an editor having touched the destination between runs") had just
+# been overwritten, and a `cp` that genuinely fails already exits non-zero under
+# `set -e`. A guard that reads as protection and provides none is worse than no
+# guard. The real byte check lives in
+# `tests/site.rs::the_schema_and_the_shipped_defaults_are_staged_rather_than_committed`,
+# which compares source against staged copy at a point where they can differ.
 
 print_header "Schema and defaults staged in site/static/"

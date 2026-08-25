@@ -25,7 +25,7 @@ That is the **user** layer, the middle of the three. See
 [Per-repo](@/repo-config.md) for the one key that belongs somewhere else.
 
 Nothing creates this file for you except `claude-status --configure`, which
-writes exactly the same thing the button above does.
+writes exactly the same file the generator produces.
 
 ## Three rules decide what comes out
 
@@ -90,7 +90,7 @@ undo a shipped colour.
 ## The keys
 
 Every key, its shape, and what it does is on the [Configure](@/configure.md)
-page, and the form above is built from the
+page, and the generator is built from the
 [published schema](https://github.com/virajp/claude-status/blob/main/schemas/claude-status.schema.json)
 rather than from a list written here — so the two cannot drift. Each field shows
 the schema's own description beside it.
@@ -129,7 +129,7 @@ The repo layer is not a form, because it takes one key. Write this at
 a repo layer may set, and every other key in that file is ignored and named by
 `--debug`. [Per-repo](@/repo-config.md) has the rest.
 
-`projectName` appears in the form above because it is in the schema. Setting it
+`projectName` appears in the generator because it is in the schema. Setting it
 there puts it in your **user** config, where it does nothing — the field's own
 description says so, and this is the one key worth ignoring.
 

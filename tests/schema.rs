@@ -43,12 +43,12 @@ use claude_status::config::write;
 /// eleventh and stays bare — it is a pointer rather than a setting, it is
 /// excluded from the form, and `every_top_level_property_is_described` already
 /// names it as the one allowed exception.
-const PARENT_DESCRIPTION_COUNT: usize = 49;
+const DESCRIPTION_COUNT: usize = 49;
 
 /// FNV-1a of every `(pointer, description)` pair in the committed schema.
 ///
-/// Pins the **text**, which [`PARENT_DESCRIPTION_COUNT`] alone does not: all 39
-/// strings can be replaced with `"x"` and the count still reads 39. Update it
+/// Pins the **text**, which [`DESCRIPTION_COUNT`] alone does not: all 49
+/// strings can be replaced with `"x"` and the count still reads 49. Update it
 /// only when you meant to change prose, and say so in review.
 ///
 /// Moved from `0x5c72_2dcb_8d80_c664` by the `website/01-site` cycle. `spend`'s
@@ -60,7 +60,7 @@ const PARENT_DESCRIPTION_COUNT: usize = 49;
 /// guard working: the prose changed on purpose.
 ///
 /// Moved again from `0x719a_9e0f_1460_dac6` by `website/02-config-generator`,
-/// for the ten added descriptions [`PARENT_DESCRIPTION_COUNT`] records. Only
+/// for the ten added descriptions [`DESCRIPTION_COUNT`] records. Only
 /// additions: every one of the 39 existing strings is byte-identical, which is
 /// what makes the count and the digest moving together the expected result
 /// rather than a swap hiding inside a rewrite.
@@ -298,15 +298,15 @@ fn the_schema_carries_every_description_it_was_written_with() {
 
     assert_eq!(
         described.len(),
-        PARENT_DESCRIPTION_COUNT,
-        "the schema went from {PARENT_DESCRIPTION_COUNT} descriptions to {} — criterion 3 forbids losing one; at {:?}",
+        DESCRIPTION_COUNT,
+        "the schema went from {DESCRIPTION_COUNT} descriptions to {} — criterion 3 forbids losing one; at {:?}",
         described.len(),
         described.iter().map(|(p, _)| p).collect::<Vec<_>>(),
     );
     assert!(described.iter().all(|(_, d)| !d.trim().is_empty()), "an empty description is a lost one wearing a key");
 
-    // The count alone does not hold the *prose*. Replacing all 39 strings with
-    // `"x"` keeps the count at 39 and every one non-empty, and the drift test
+    // The count alone does not hold the *prose*. Replacing all 49 strings with
+    // `"x"` keeps the count at 49 and every one non-empty, and the drift test
     // cannot help: editing the `#[schemars(description = …)]` attributes and
     // regenerating moves the committed file and the generator together. This
     // digest is the only anchor that does not move with them.

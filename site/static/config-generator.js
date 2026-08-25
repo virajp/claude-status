@@ -864,6 +864,7 @@ function start(schema, defaults, mount) {
     const value = Array.isArray(valueAt(current, path))
       ? valueAt(current, path)
       : [0, 0, 0];
+    const CHANNELS = ["red", "green", "blue"];
     const inputs = [0, 1, 2].map(i =>
       element("input", {
         type: "number",
@@ -872,6 +873,7 @@ function start(schema, defaults, mount) {
         step: "1",
         value: String(value[i] ?? 0),
         class: "gen-rgb",
+        "aria-label": `${label} ${CHANNELS[i]}`,
       })
     );
     const hex = triple =>
@@ -884,7 +886,11 @@ function start(schema, defaults, mount) {
           )
         )
         .join("");
-    const picker = element("input", { type: "color", value: hex(value) });
+    const picker = element("input", {
+      type: "color",
+      value: hex(value),
+      "aria-label": `${label} colour picker`,
+    });
 
     const push = () => {
       const triple = inputs.map(input => Number(input.value) || 0);
@@ -907,7 +913,11 @@ function start(schema, defaults, mount) {
       refreshOutput();
     });
 
-    return element("label", { class: "gen-row" }, [
+    return element("div", {
+      class: "gen-row",
+      role: "group",
+      "aria-label": label,
+    }, [
       element("span", { class: "gen-label", text: label }),
       element("span", { class: "gen-rgb-group" }, [...inputs, picker]),
       hint(field.description),
@@ -965,7 +975,8 @@ function start(schema, defaults, mount) {
     ]);
 
     for (const key of Object.keys(table)) {
-      const isShipped = isPlainObject(shippedTable) && key in shippedTable;
+      const isShipped = isPlainObject(shippedTable)
+        && Object.hasOwn(shippedTable, key);
       const button = element("button", {
         type: "button",
         class: "gen-remove",
@@ -1013,7 +1024,7 @@ function start(schema, defaults, mount) {
           `\`${key}\` is dropped by the config merge at every depth, so it can never take effect.`;
         return;
       }
-      if (key in table) {
+      if (Object.hasOwn(table, key)) {
         error.textContent = `\`${key}\` is already here.`;
         return;
       }

@@ -557,3 +557,167 @@ once a `v*` tag exists.
 551 → **556** under `mise x -- cargo test --features schema` (549 → 554 bare),
 plus 60 JavaScript checks inside
 `the_generators_pure_core_holds_against_the_real_schema`.
+[38;2;131;148;150m─────┬──────────────────────────────────────────────────────────────────────────[0m
+[38;2;131;148;150m│ [0m[1mSTDIN[0m
+[38;2;131;148;150m─────┼──────────────────────────────────────────────────────────────────────────[0m
+[38;2;131;148;150m 1[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 2[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m### Gaps from the Phase 3 review
+(recorded in Phase 4)[0m [38;2;131;148;150m 3[0m [38;2;131;148;150m│[0m
+[38;2;131;148;150m 4[0m [38;2;131;148;150m│[0m [38;2;248;248;242mThree
+reviewers ran across four reports; two runs stalled mid-work and were[0m
+[38;2;131;148;150m 5[0m [38;2;131;148;150m│[0m [38;2;248;248;242mrecovered
+from context. One blocker and eleven should-fix/nit findings came back.[0m
+[38;2;131;148;150m 6[0m [38;2;131;148;150m│[0m [38;2;248;248;242mNine
+should-fixes plus the blocker and two of the late findings were fixed in[0m
+[38;2;131;148;150m 7[0m [38;2;131;148;150m│[0m [38;2;248;248;242mthis
+cycle. What follows is what was **not** fixed, and why.[0m [38;2;131;148;150m
+8[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 9[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m#### Why criteria 4 and 5 are
+vacuous rather than deferred[0m [38;2;131;148;150m 10[0m
+[38;2;131;148;150m│[0m [38;2;131;148;150m 11[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mThe preview was scoped out of this cycle and will be
+**WebAssembly, not a[0m [38;2;131;148;150m 12[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mJavaScript port**. That is not merely a postponement — it
+changes what criteria[0m [38;2;131;148;150m 13[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m4 and 5 can ever mean.[0m [38;2;131;148;150m 14[0m
+[38;2;131;148;150m│[0m [38;2;131;148;150m 15[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mBoth criteria are drift guards: they assume a *second
+implementation* of the[0m [38;2;131;148;150m 16[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mrender path, in another language, that could disagree with
+the Rust one. A recon[0m [38;2;131;148;150m 17[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242magent built the WASM path rather than estimating it —
+`wasm32-unknown-unknown`,[0m [38;2;131;148;150m 18[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242mraw ABI, no `wasm-bindgen` and no JS
+toolchain — and reproduced[0m [38;2;131;148;150m 19[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m`tests/golden/fixture.txt` byte for
+byte (669 == 669) at 247 KB raw / 86 KB[0m [38;2;131;148;150m 20[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242mgzipped. The render path is already
+pure[0m [38;2;131;148;150m 21[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m(`render_main(&MainFacts, &GitFacts, &Config, Option<&str>) -> String`,[0m
+[38;2;131;148;150m 22[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m`src/modules/render/main_bar.rs:18`), and the only `std::fs`
+under[0m [38;2;131;148;150m 23[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m`src/modules/render/` is inside `#[cfg(test)]`.[0m
+[38;2;131;148;150m 24[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 25[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242mSo the preview will run **the same
+compiled Rust** the binary runs. There is no[0m [38;2;131;148;150m 26[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242msecond implementation, and therefore
+nothing to drift: criteria 4 and 5 have no[0m [38;2;131;148;150m 27[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242mreferent, rather than an unmet one.
+The follow-up cycle needs a[0m [38;2;131;148;150m 28[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m**build-reproducibility check on the
+`.wasm`** in their place — that the shipped[0m [38;2;131;148;150m 29[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242martifact is the one the current
+source produces. Rewriting those two criteria is[0m [38;2;131;148;150m 30[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242ma plan edit for that cycle, not a
+footnote here.[0m [38;2;131;148;150m 31[0m [38;2;131;148;150m│[0m
+[38;2;131;148;150m 32[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m`rustup target add wasm32-unknown-unknown` was left installed
+on the 1.98.0[0m [38;2;131;148;150m 33[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mtoolchain (additive; `rustup target remove` reverses it).[0m
+[38;2;131;148;150m 34[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 35[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m#### Not fixed — carried forward[0m
+[38;2;131;148;150m 36[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 37[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m- **The built-page assertion is
+developer-only, knowingly.**[0m [38;2;131;148;150m 38[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m `tests/site.rs`'s built-page check
+needs `site/public/`, which only a full[0m [38;2;131;148;150m 39[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m `zola` build produces. `code:test`
+now stages the two JSON assets (through a[0m [38;2;131;148;150m 40[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m `site:assets` dependency) but
+deliberately does not pull `zola` into the Rust[0m [38;2;131;148;150m 41[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m test path, and `site.yml` — the one
+workflow that builds the site — never runs[0m [38;2;131;148;150m 42[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m this suite. Making it CI-strict
+would couple the two. The comment now says so[0m [38;2;131;148;150m 43[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m instead of implying a gate. **The
+byte comparison beside it *was* fixed** and[0m [38;2;131;148;150m 44[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m now fails under CI.[0m
+[38;2;131;148;150m 45[0m [38;2;131;148;150m│[0m [38;2;248;248;242m-
+**`node` is still an ambient dependency.** It is declared in none of the
+three[0m [38;2;131;148;150m 46[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m mise configs and works because the runner images preinstall
+it. The guard now[0m [38;2;131;148;150m 47[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m **fails under CI** when `node` is absent instead of skipping
+silently, so the[0m [38;2;131;148;150m 48[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m suite can no longer report green with the 458-line JS
+harness unrun — but[0m [38;2;131;148;150m 49[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m pinning `node` in `mise.toml` remains the real fix and was
+left out as[0m [38;2;131;148;150m 50[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m out-of-scope tooling work.[0m [38;2;131;148;150m 51[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m- **The wholesale-array warning only
+scans top-level keys**[0m [38;2;131;148;150m 52[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m (`config-generator.js:687`), while its comment claims it
+"fires for any array[0m [38;2;131;148;150m 53[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m the user touched". No live impact: the only non-leaf array
+is `lines`[0m [38;2;131;148;150m 54[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m (top-level, caught); every other array is a palette RGB
+triple, which is a[0m [38;2;131;148;150m 55[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m leaf. Left as a latent trap for whoever adds a nested
+list.[0m [38;2;131;148;150m 56[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m- **The `file:` claim in `config-generator.js`'s comment is
+false.** Browsers[0m [38;2;131;148;150m 57[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m block `fetch()` on `file://`, so opening
+`site/public/generate/index.html`[0m [38;2;131;148;150m 58[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m directly takes the error branch.
+Comment defect only, and the error branch is[0m [38;2;131;148;150m 59[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m correct and loud. Argued from the
+fetch spec, never measured — no browser was[0m [38;2;131;148;150m 60[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m drivable.[0m [38;2;131;148;150m
+61[0m [38;2;131;148;150m│[0m [38;2;248;248;242m- **A theoretical Rust/JS
+divergence, unresolved.** Rust's `diff`[0m [38;2;131;148;150m 62[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m (`write.rs:195-205`) emits a key
+wholesale when `shipped.get(key)` is `None`;[0m [38;2;131;148;150m 63[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m the JS calls
+`deepEqual(current[key], undefined)` first and reads it as[0m
+[38;2;131;148;150m 64[0m [38;2;131;148;150m│[0m [38;2;248;248;242m
+UNCHANGED. A user-added open-map entry whose value is `null` would be
+emitted[0m [38;2;131;148;150m 65[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m by Rust and dropped by the JS. No reachable case was
+constructed, and[0m [38;2;131;148;150m 66[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m `blankValue` never produces `null` for a colour entry.[0m
+[38;2;131;148;150m 67[0m [38;2;131;148;150m│[0m [38;2;248;248;242m-
+**`code:sec`'s grype scoping was fixed here but is not this cycle's bug.**
+It[0m [38;2;131;148;150m 68[0m [38;2;131;148;150m│[0m [38;2;248;248;242m
+had neither `#MISE dir` nor a `cd`, so `grype .` resolved against the
+caller's[0m [38;2;131;148;150m 69[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m cwd and picked up sibling worktrees — reporting an
+`esbuild`/npm finding that[0m [38;2;131;148;150m 70[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m reads exactly like this repo
+reacquiring a JavaScript toolchain. It had not.[0m [38;2;131;148;150m 71[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m Both scanners now take an absolute
+path. The two real findings[0m [38;2;131;148;150m 72[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m (`actions/download-artifact v4`,
+`release.yml:175` and `site.yml:160`) predate[0m [38;2;131;148;150m 73[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m this cycle and are still open.[0m
+[38;2;131;148;150m 74[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 75[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m#### Never verified by anyone — the
+human gate covers these[0m [38;2;131;148;150m 76[0m [38;2;131;148;150m│[0m
+[38;2;131;148;150m 77[0m [38;2;131;148;150m│[0m [38;2;248;248;242m- **No
+real browser was ever driven, by any of the three reviewers.** Only[0m
+[38;2;131;148;150m 78[0m [38;2;131;148;150m│[0m [38;2;248;248;242m Safari
+is installed; Computer Use is denied on Accessibility. Every DOM,[0m
+[38;2;131;148;150m 79[0m [38;2;131;148;150m│[0m [38;2;248;248;242m layout,
+wrapping and accessibility statement in this cycle is a static reading[0m
+[38;2;131;148;150m 80[0m [38;2;131;148;150m│[0m [38;2;248;248;242m of
+markup and CSS, or a hand-written stub — never an observation.[0m
+[38;2;131;148;150m 81[0m [38;2;131;148;150m│[0m [38;2;248;248;242m
+**Unverified:** layout, focus order, keyboard access, screen-reader output,[0m
+[38;2;131;148;150m 82[0m [38;2;131;148;150m│[0m [38;2;248;248;242m and the
+rendering of `<datalist>` and `<input type="color">`.[0m [38;2;131;148;150m
+83[0m [38;2;131;148;150m│[0m [38;2;248;248;242m- **Criterion 8's
+JavaScript-off reading** was checked only as a static reading[0m
+[38;2;131;148;150m 84[0m [38;2;131;148;150m│[0m [38;2;248;248;242m of the
+built HTML. The three "the form above" sentences it turned up were[0m
+[38;2;131;148;150m 85[0m [38;2;131;148;150m│[0m [38;2;248;248;242m fixed;
+the lived experience was not observed.[0m [38;2;131;148;150m 86[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m- **The RGB widget's accessible
+names** were fixed (three of four controls had[0m [38;2;131;148;150m 87[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m none) but the fix is unconfirmed
+against a real accessibility tree.[0m [38;2;131;148;150m 88[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m- **`config-generator.js` was never
+reviewed end to end.** Reviewer A covered[0m [38;2;131;148;150m 89[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m the emitter and the widget region;
+nobody read the download path or the[0m [38;2;131;148;150m 90[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m sanitising in full.[0m
+[38;2;131;148;150m─────┴──────────────────────────────────────────────────────────────────────────[0m

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Run the test suite (cargo test, with the schema feature)"
 #MISE dir="{{ config_root }}"
+#MISE depends=["site:assets"]
 
 #USAGE flag "--debug" help="emit debug logs"
 

@@ -95,6 +95,11 @@ fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
 /// this is what holds it.
 #[test]
 fn no_javascript_lockfile_or_node_modules_is_tracked() {
+    // A manifest, not just a lockfile. `the_generators_pure_core_holds_against_the_real_schema`
+    // cites this test for "no `package.json`", and a `package.json` is the
+    // first thing anyone would add to run `generator.test.mjs` under a test
+    // runner — which is precisely how the npm ecosystem comes back.
+    const JS_MANIFESTS: &[&str] = &["package.json"];
     const JS_LOCKFILES: &[&str] = &[
         "package-lock.json",
         "npm-shrinkwrap.json",
@@ -110,6 +115,9 @@ fn no_javascript_lockfile_or_node_modules_is_tracked() {
         let name = rel.rsplit('/').next().unwrap_or(&rel);
         if JS_LOCKFILES.contains(&name) {
             offenders.push(format!("{rel} (JS lockfile)"));
+        }
+        if JS_MANIFESTS.contains(&name) {
+            offenders.push(format!("{rel} (JS manifest)"));
         }
         if rel.split('/').any(|c| c == "node_modules") {
             offenders.push(format!("{rel} (under node_modules/)"));
@@ -599,6 +607,28 @@ fn the_landing_page_screenshot_exists_and_is_a_png() {
 // website/02-config-generator — the schema-driven form
 // ---------------------------------------------------------------------------
 
+/// The word list from `site:assets`'s `for source in …; do` line.
+///
+/// Parsed, not substring-matched. The assert below used to ask whether the task
+/// file *contained* each source path anywhere, and the task's own explanatory
+/// header names both paths — so it passed no matter what the staging loop did.
+/// Narrowing the loop while leaving that comment intact (the normal thing to
+/// do: it is prose about why two files exist, not a manifest) left a green
+/// suite and a generator page fetching a 404.
+fn staged_sources(assets: &str) -> Vec<String> {
+    let line = assets
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("for source in "))
+        .expect("site:assets still stages its inputs from a `for source in …; do` loop");
+
+    line.trim_start_matches("for source in ")
+        .trim_end_matches("; do")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
 /// Both files the config generator loads, and where `site:assets` stages them.
 const STAGED: [(&str, &str); 2] = [
     ("schemas/claude-status.schema.json", "site/static/claude-status.schema.json"),
@@ -645,7 +675,7 @@ fn the_schema_and_the_shipped_defaults_are_staged_rather_than_committed() {
             "dprint.json no longer excludes {staged} — the formatter would rewrite a file that has to stay byte-identical to {source}"
         );
         assert!(
-            assets.contains(source),
+            staged_sources(&assets).iter().any(|s| s == source),
             "the site:assets task no longer stages {source}, so the generator page would load a 404"
         );
 
@@ -660,10 +690,28 @@ fn the_schema_and_the_shipped_defaults_are_staged_rather_than_committed() {
                 std::fs::read(&staged_path).expect("the staged copy is readable"),
                 "{staged} has drifted from {source} — re-run `mise run site:assets`"
             );
+        } else if std::env::var_os("CI").is_some() {
+            panic!(
+                "{staged} is missing under CI. `code:test` stages it through its `site:assets` dependency, so an absence here means that dependency is gone and this byte comparison has been passing without comparing anything."
+            );
         } else {
             eprintln!("skipped the byte comparison for {staged}: no build has run in this checkout");
         }
     }
+
+    // Neither list may grow without the other. `.gitignore` and `dprint.json`
+    // name the staged copies by exact path, so a third file staged by the task
+    // alone would be neither ignored nor dprint-excluded — exactly the
+    // formatter-versus-generator trap this test exists to prevent — and every
+    // assert above iterates STAGED, so it would never be looked at.
+    let mut by_task = staged_sources(&assets);
+    by_task.sort();
+    let mut by_test: Vec<String> = STAGED.iter().map(|(source, _)| (*source).to_string()).collect();
+    by_test.sort();
+    assert_eq!(
+        by_task, by_test,
+        "site:assets and STAGED have drifted apart; a file staged by the task but not named in STAGED is neither gitignored nor dprint-excluded"
+    );
 
     // The staging has to be part of a build rather than a step somebody
     // remembers. Both entry points, because `site:serve` is how the page is
@@ -852,9 +900,15 @@ fn the_generator_page_reads_as_documentation_without_its_script() {
         assert!(page.contains(fact), "the generator page no longer explains {fact:?} — with the script off, nothing else does");
     }
 
-    // And it survives the build, outside any script. Conditional on a build
-    // having run, and loud when one has not, for the same reason the byte
-    // comparison above is.
+    // And it survives the build, outside any script.
+    //
+    // This one is **developer-only, and knowingly so**: it needs `site/public/`,
+    // which only a full `zola` build produces. `code:test` stages the two JSON
+    // assets (via `site:assets`) but deliberately does not pull `zola` into the
+    // Rust test path, and the one workflow that builds the site (`site.yml`)
+    // never runs this suite. So unlike the byte comparison above, this cannot
+    // be made CI-strict without coupling the two — it is a local convenience,
+    // not a gate. Recorded as a gap in the cycle plan rather than dressed up.
     let built = root().join("site/public/generate/index.html");
     if built.exists() {
         let html = std::fs::read_to_string(&built).expect("the built page is readable");
@@ -879,10 +933,17 @@ fn the_generator_page_reads_as_documentation_without_its_script() {
 ///
 /// **No toolchain is added by this.** No `package.json`, no lockfile, no
 /// `node_modules` — `no_javascript_lockfile_or_node_modules_is_tracked` still
-/// holds, and `code:sec`'s grype scan still sees no npm ecosystem. `node` is
-/// invoked as a bare binary the way this suite already invokes `git`, `mise`
-/// and `dprint`, and skips loudly when it is absent, following
+/// holds (it scans for a manifest as well as a lockfile), and `code:sec`'s
+/// grype scan still sees no npm ecosystem. `node` is invoked as a bare binary
+/// the way this suite already invokes `git`, `mise` and `dprint`, following
 /// `tests/schema.rs::the_generated_schema_is_already_dprint_formatted`.
+///
+/// When `node` is absent this **fails under CI and skips locally**. The skip is
+/// not loud — `cargo test` captures a passing test's stdout, so the `eprintln!`
+/// below is invisible without `--nocapture`. That is exactly why the CI branch
+/// asserts instead: this test is the only thing that runs the 458-line JS
+/// harness, and a silent skip would retire criteria 2 and 3 without a single
+/// red line anywhere.
 ///
 /// The copy-and-rename is not a flourish. Node decides a file's module system
 /// from its extension, and the browser file has to stay `.js` so a static host
@@ -890,6 +951,10 @@ fn the_generator_page_reads_as_documentation_without_its_script() {
 #[test]
 fn the_generators_pure_core_holds_against_the_real_schema() {
     let Some(node) = node_on_path() else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "no `node` on PATH under CI. This test is the only thing that runs tests/js/generator.test.mjs, so skipping it leaves the generator's emitter entirely unguarded while the suite still reports green."
+        );
         eprintln!("skipped: no `node` on PATH — the generator's core was not exercised");
         return;
     };
