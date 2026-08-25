@@ -67,6 +67,18 @@ dprint = { version = "latest" }
 # against, so the notes and the rules that shape them cannot drift apart.
 "npm:git-conventional-commits" = { version = "latest" }
 
+# The other half of the lint gate: clippy covers the Rust, these two cover
+# everything else this repo actually ships logic in — the release workflow and
+# the bash task library. In the BASE for the same reason dprint is: `code:lint`
+# runs on a CI runner under `MISE_ENV=ci`, which never loads the dev file.
+#
+# They earn their place. actionlint found `shasum -a 256 *` in the collect step
+# (an asset named `-x` would have been read as an option) and shellcheck found
+# that every optional-flag variable in the task library relied on word-splitting
+# to disappear.
+actionlint = { version = "latest" }
+shellcheck = { version = "latest" }
+
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.
 # Lives in the BASE (not dev) so tasks are runnable in every env, CI included.

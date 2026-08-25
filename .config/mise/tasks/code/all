@@ -8,20 +8,23 @@
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
 
-[[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG="--debug" || DEBUG_FLAG=""
-[[ "${usage_fix:-false}" == "true" ]] && FIX_FLAG="--fix" || FIX_FLAG=""
+# Arrays, not strings. An empty string is still an argument when quoted, and
+# unquoted it depends on word-splitting; an empty array expands to nothing,
+# which is what "flag not passed" means.
+DEBUG_FLAG=(); [[ "${usage_debug:-false}" == "true" ]] && DEBUG_FLAG=(--debug)
+FIX_FLAG=(); [[ "${usage_fix:-false}" == "true" ]] && FIX_FLAG=(--fix)
 
 # Compiled stacks (e.g. a TS monorepo) prepend a typecheck here:
 #   line_sep "-"; mise run code:check
 
 line_sep "-"
-mise run code:format ${DEBUG_FLAG} ${FIX_FLAG}
+mise run code:format "${DEBUG_FLAG[@]}" "${FIX_FLAG[@]}"
 
 line_sep "-"
-mise run code:lint ${DEBUG_FLAG} ${FIX_FLAG}
+mise run code:lint "${DEBUG_FLAG[@]}" "${FIX_FLAG[@]}"
 
 line_sep "-"
-mise run code:test ${DEBUG_FLAG}
+mise run code:test "${DEBUG_FLAG[@]}"
 
 line_sep "-"
-mise run code:sec ${DEBUG_FLAG}
+mise run code:sec "${DEBUG_FLAG[@]}"

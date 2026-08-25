@@ -12,7 +12,10 @@ source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_rust"
 
 cd "$MISE_PROJECT_ROOT"
 
-[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+# An array: quoted, an empty string is still an argument cargo must reject;
+# unquoted, it only vanishes because of word-splitting.
+VERBOSE=()
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE=(--verbose)
 
 # One task, both published targets. There used to be two — a `native` that built
 # the host slice and smoke-tested it, and a `cross` that built the whole table
@@ -59,7 +62,7 @@ build_one() {
     # Apple ships both slices of the system libraries.
     print_wait "  ${target} (apple cross) ... "
   fi
-  cargo build --release --target "${target}" ${VERBOSE} >/dev/null
+  cargo build --release --target "${target}" "${VERBOSE[@]}" >/dev/null
 
   local bin="target/${target}/release/${BINARY_NAME}"
   if [[ ! -f "${bin}" ]]; then

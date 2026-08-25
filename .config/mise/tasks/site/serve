@@ -34,8 +34,10 @@ cd "$MISE_PROJECT_ROOT"
 
 PORT="${usage_port:-1111}"
 
-[[ "${usage_open:-false}" == "true" ]] && OPEN_FLAG="--open" || OPEN_FLAG=""
-[[ "${usage_drafts:-false}" == "true" ]] && DRAFT_FLAG="--drafts" || DRAFT_FLAG=""
+# Arrays: quoted, an empty string is still an argument zola must reject;
+# unquoted, it only vanishes because of word-splitting.
+OPEN_FLAG=(); [[ "${usage_open:-false}" == "true" ]] && OPEN_FLAG=(--open)
+DRAFT_FLAG=(); [[ "${usage_drafts:-false}" == "true" ]] && DRAFT_FLAG=(--drafts)
 
 SITE_DIR="${MISE_PROJECT_ROOT}/site"
 
@@ -51,4 +53,4 @@ zola --root "${SITE_DIR}" serve \
   --interface 127.0.0.1 \
   --port "${PORT}" \
   --base-url 127.0.0.1 \
-  ${OPEN_FLAG} ${DRAFT_FLAG}
+  "${OPEN_FLAG[@]}" "${DRAFT_FLAG[@]}"

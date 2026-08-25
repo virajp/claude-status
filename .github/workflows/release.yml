@@ -279,7 +279,12 @@ jobs:
               "release-assets/$(asset_name "$os" "$cpu").tar.gz" \
               "target/$target/release" "$BINARY_NAME"
           done < <(supported_targets)
-          ( cd release-assets && shasum -a 256 * > SHA256SUMS )
+          # `--` and not `./*`: an asset whose name began with a dash would
+          # otherwise be read as an option, but `./*` would write `./name` into
+          # the manifest — and the formula's digest lookup matches the asset
+          # name EXACTLY, so that would break `brew install` while the run
+          # stayed green. `--` fixes the glob without touching the names.
+          ( cd release-assets && shasum -a 256 -- * > SHA256SUMS )
           count="$(find release-assets -type f -not -name SHA256SUMS | wc -l | tr -d ' ')"
           expected="$(( $(target_count) * 2 ))"
           if [ "$count" != "$expected" ]; then

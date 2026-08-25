@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Lint Rust code (clippy)"
+#MISE description="Lint code (clippy, actionlint, shellcheck)"
 
 #USAGE flag "--debug" help="emit debug logs"
 #USAGE flag "--fix" help="apply fixes"
@@ -7,11 +7,15 @@
 set -e
 source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
 
-[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+# An array, not a string: quoted, an empty string is still an argument cargo
+# has to reject; unquoted, it relies on word-splitting. An empty array expands
+# to nothing, which is what "no flag" actually means.
+VERBOSE=()
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE=(--verbose)
 
 if [[ "${usage_fix:-false}" == "true" ]]; then
   print_header "Linting (clippy --fix) ..."
-  cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --fix --allow-dirty --allow-staged ${VERBOSE}
+  cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --fix --allow-dirty --allow-staged "${VERBOSE[@]}"
 fi
 
 print_header "Linting (clippy) ..."
@@ -23,9 +27,29 @@ print_header "Linting (clippy) ..."
 # anywhere in it. The `--features schema` pass is the author-time generator,
 # which `--all-targets` alone would never reach: `required-features` skips the
 # `schema` bin and `#[cfg(feature = "schema")]` skips the module.
-cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets ${VERBOSE} -- -D warnings
+cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets "${VERBOSE[@]}" -- -D warnings
 
 print_header "Linting (clippy --features schema) ..."
-cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --features schema ${VERBOSE} -- -D warnings
+cargo clippy --manifest-path "${MISE_PROJECT_ROOT}/Cargo.toml" --all-targets --features schema "${VERBOSE[@]}" -- -D warnings
+
+# The release workflow is the least-tested code in the repo — it runs on a tag,
+# so a mistake is found by cutting a release. actionlint reads it statically,
+# and shells out to shellcheck for every `run:` block.
+#
+# Suppressions live in `.github/actionlint.yaml` rather than as flags here, so
+# the pre-commit hook and this task cannot drift apart. That file explains the
+# two it carries and when to delete them.
+print_header "Linting (actionlint) ..."
+actionlint
+
+# `-x` follows sourced files, so the `_scripts/` libraries are analysed as the
+# task scripts actually see them rather than as orphans full of undefined names.
+print_header "Linting (shellcheck) ..."
+shellcheck -x \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/_scripts/* \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/build/* \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/code/* \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/setup/* \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/site/*
 
 print_header "Linting done"
