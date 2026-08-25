@@ -54,6 +54,11 @@ status.missing_tools = "always"
 "core:rust"    = { profile = "default", version = "latest" }
 "npm:wrangler" = { version = "latest" }
 zola           = { version = "latest" }
+# In the BASE and not `mise.dev.toml`, for the same reason zola is: the test
+# suite shells out to it (`tests/schema.rs`'s formatting check) and that suite
+# runs under `MISE_ENV=ci`, which never loads the dev file. It was declared in
+# dev until the first release attempt failed on a runner that did not have it.
+dprint = { version = "latest" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.

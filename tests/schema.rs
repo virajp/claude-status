@@ -181,8 +181,20 @@ fn the_generated_schema_is_already_dprint_formatted() {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output();
 
-    // A machine without the toolchain is not a failing schema. CI always has
-    // it, which is where this assertion has to hold.
+    // A machine without the toolchain is not a failing schema.
+    //
+    // This used to read "CI always has it, which is where this assertion has to
+    // hold." CI did not have it: `dprint` was declared in `mise.dev.toml`,
+    // which `MISE_ENV=ci` never loads, and the claim survived unchallenged
+    // because the release workflow had never reached this step. The first tag
+    // that got this far failed right here.
+    //
+    // Note what this skip actually catches: `mise` missing, not the tool
+    // missing. With mise present and dprint absent the call succeeds and exits
+    // non-zero, so it falls through to the assertion below and reports a
+    // tool-not-found error dressed as a formatting complaint.
+    // `tests/site.rs::every_tool_the_suite_shells_out_to_is_declared_for_ci`
+    // is what now keeps the tool present.
     let Ok(out) = out else {
         eprintln!("skipped: no `mise` on PATH");
         return;

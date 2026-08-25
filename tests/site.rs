@@ -166,6 +166,81 @@ fn every_generated_control_asks_for_an_accessible_name() {
     }
 }
 
+/// **Every tool the suite shells out to is declared where CI can see it.**
+///
+/// `MISE_ENV=ci` loads `.config/mise.toml` and `.config/mise.ci.toml` and
+/// **not** `mise.dev.toml`. A tool declared only in the dev file resolves fine
+/// on a maintainer's machine and is simply absent on a runner.
+///
+/// That is not hypothetical. `dprint` lived in the dev file, and
+/// `tests/schema.rs::the_generated_schema_is_already_dprint_formatted` shells
+/// out to it with a comment reading "CI always has it, which is where this
+/// assertion has to hold." CI did not have it. The claim went unchallenged for
+/// three cycles because the release workflow had never reached the Test step —
+/// the first tag that got that far failed here, on the first release attempt.
+///
+/// The skip in that test guards the wrong thing: it fires when `mise` itself is
+/// missing, not when the tool is. With mise present and the tool absent, it
+/// falls through to the assertion and fails with a tool-not-found message
+/// dressed up as a formatting complaint.
+#[test]
+fn every_tool_the_suite_shells_out_to_is_declared_for_ci() {
+    let base = read(".config/mise.toml");
+    // Declarations only, defensively. No comment in the block names a tool
+    // today, so this is not load-bearing yet — a control confirmed the guard
+    // goes red on a removed declaration either way. It is here because the
+    // block's comments explain tools by name as a matter of style, and three
+    // other guards in this suite have already been caught reading prose as
+    // code. Cheaper to exclude comments now than to discover it later.
+    let base_tools: String = base
+        .split("[tools]")
+        .nth(1)
+        .unwrap_or("")
+        .split("\n[")
+        .next()
+        .unwrap_or("")
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| l.contains('='))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for file in ["tests/schema.rs", "tests/site.rs", "tests/e2e.rs", "tests/release.rs"] {
+        // Comments stripped first. This guard's own doc comment spells the
+        // pattern it hunts for, so a raw scan matches itself — the third time
+        // in this suite that a guard read prose instead of code.
+        let src: String = read(file)
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for (idx, _) in src.match_indices(r#""x", "--", ""#) {
+            let rest = &src[idx + r#""x", "--", ""#.len()..];
+            if let Some(end) = rest.find('"') {
+                wanted.push((file.to_string(), rest[..end].to_string()));
+            }
+        }
+    }
+
+    assert!(
+        !wanted.is_empty(),
+        "found no `mise x -- <tool>` call anywhere; this guard is scanning for a spelling the suite no longer uses"
+    );
+
+    let missing: Vec<String> = wanted
+        .iter()
+        .filter(|(_, tool)| !base_tools.contains(tool.as_str()))
+        .map(|(file, tool)| format!("{tool} (used by {file})"))
+        .collect();
+
+    assert_eq!(
+        missing,
+        Vec::<String>::new(),
+        "a tool the suite runs is not in `.config/mise.toml`'s [tools], so `MISE_ENV=ci` will not install it and the test that uses it fails on a runner and nowhere else"
+    );
+}
+
 /// The build output is not tracked either, and cannot become tracked by
 /// accident. `zola build` writes `site/public/`; committing it would put a
 /// generated tree in review diffs forever.
