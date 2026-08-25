@@ -73,6 +73,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
+          # The changelog is walked over the commit history, and `checkout` is
+          # shallow by default — depth 1 yields an empty changelog rather than
+          # an error, which is the worst way for this to fail.
+          fetch-depth: 0
 
       - uses: jdx/mise-action@v4
 
@@ -89,6 +93,29 @@ jobs:
             fi
           fi
           echo "Releasing claude-status $pkg"
+
+      # Built here, not in `publish`. `publish` installs no tools and is worth
+      # keeping that way, and this runs before anything is compiled — a broken
+      # generator costs a few seconds rather than a wasted build.
+      #
+      # `--generate-notes` used to do this and produced 74 characters for
+      # `v0.1.0`: it diffs against a previous tag and reads pull requests, and
+      # this repository had neither.
+      - name: Generate the release notes
+        run: |
+          set -e
+          mkdir -p notes
+          git-conventional-commits changelog \
+            --config .config/git-conventional-commits.yaml \
+            --release "${{ steps.version.outputs.version }}" \
+            > notes/RELEASE_NOTES.md
+          echo "--- generated notes ---"
+          cat notes/RELEASE_NOTES.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes/RELEASE_NOTES.md
 
   # The full suite once per **published architecture**, not once per OS. One
   # runner per row of `supported_targets` keeps every artifact that reaches a
@@ -201,6 +228,11 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: release-notes
+          path: notes
+
+      - uses: actions/download-artifact@v4
+        with:
           pattern: binary-*
           path: artifacts
 
@@ -290,5 +322,5 @@ jobs:
           else
             gh release create "$tag" release-assets/* \
               --title "$tag" \
-              --generate-notes
+              --notes-file notes/RELEASE_NOTES.md
           fi
