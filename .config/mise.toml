@@ -30,8 +30,18 @@ status.missing_tools = "always"
 # a tree that just finished removing one. Pinned exactly, not `latest`: 0.23
 # renamed the `[markdown]` highlighting keys, so a floating version would break
 # the build on an upgrade nobody asked for.
+#
+# **Rust is pinned for the same reason**, which this file argued for zola and
+# not for the toolchain. `code:lint` is clippy with `-D warnings` and it gates
+# the release path, so against a floating `latest` a stable rustc landing
+# between two runs is picked up silently and any new lint fails a release whose
+# code did not change. That is the shape of the failure that already cost one
+# release, where CI's toolchain was not the one anyone had run against.
+#
+# Bumping it is a deliberate edit, and `code:lint` is what tells you whether the
+# new toolchain is clean before a tag depends on it.
 [tools]
-"core:rust" = { profile = "default", version = "latest" }
+"core:rust" = { profile = "default", version = "1.98.0" }
 zola        = { version = "0.23.4" }
 
 [tasks.init]

@@ -75,6 +75,11 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
+        with:
+          # rust only. Nothing on the release path builds the site, and every
+          # tool installed here is another way for a release to fail for a
+          # reason unrelated to it.
+          install_args: rust
 
       - name: Verify the tag matches Cargo.toml
         id: version
@@ -111,6 +116,11 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
+        with:
+          # rust only. Nothing on the release path builds the site, and every
+          # tool installed here is another way for a release to fail for a
+          # reason unrelated to it.
+          install_args: rust
 
       # Cheap, and it guards the config that decides whether the lint below
       # even has a linter — which is how the first release failed.
@@ -141,6 +151,11 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
+        with:
+          # rust only. Nothing on the release path builds the site, and every
+          # tool installed here is another way for a release to fail for a
+          # reason unrelated to it.
+          install_args: rust
 
       - name: Build ${{ matrix.target }}
         run: mise run build:statusline --target ${{ matrix.target }}
@@ -175,7 +190,17 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      # `install: false` — this job installs nothing, because it uses nothing.
+      # `_rust_reassemble` is bash, the collect step is bash plus `shasum` and
+      # `tar`, and the release step is `gh`, which the runner image ships.
+      #
+      # This matters because `publish` runs AFTER `test` and `build` have spent
+      # their minutes and produced an artifact. A tool download failing here is
+      # a green build with no release — and that is precisely how 2026-08-22
+      # failed, with `mise-action` dying on `pnpm` before any repo command ran.
       - uses: jdx/mise-action@v4
+        with:
+          install: false
 
       - uses: actions/download-artifact@v4
         with:
@@ -243,6 +268,25 @@ jobs:
         run: |
           set -e
           tag="v${{ needs.verify.outputs.version }}"
+
+          # A release is only ever cut from a tag somebody pushed.
+          #
+          # The tag/crate agreement gate in `verify` is wrapped in
+          # `if ref_type = tag`, and a `workflow_dispatch` runs against a
+          # branch — so on a dispatch that gate is skipped entirely, and the
+          # tag below is computed from Cargo.toml rather than read from the
+          # ref. `gh release create` would then CREATE a tag nobody pushed,
+          # pointing at whatever was dispatched. Worse once a formula pins the
+          # digest: a dispatch from `main` would replace a live release's
+          # assets with a fresh build.
+          #
+          # Re-running a real release is still supported — dispatch against the
+          # tag ref itself, which is what this workflow's header describes.
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::refusing to publish from a ${{ github.ref_type }} ref (${{ github.ref_name }}). A release is cut from a pushed tag; dispatch against the tag ref to re-run one."
+            exit 1
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag already exists — uploading assets to it."
             gh release upload "$tag" release-assets/* --clobber

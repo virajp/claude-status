@@ -222,25 +222,29 @@ was one of two left open, and restated for Homebrew — the other was
 
 ## Risks / drift
 
-**`core:rust` is `latest`, so criterion 4 has a horizon.** There is no
-`rust-toolchain.toml`. `reproducible_tar` makes the *archive* deterministic
-given the same binary, and the Rust build is itself reproducible on a fixed
-toolchain — both verified. But a `workflow_dispatch` re-run weeks later can
-resolve a different rustc, producing a different binary and therefore different
-digests for all three assets. Criterion 4 is reliably true for a re-run close in
-time. Pinning rust for the release path would close it; that is a decision this
-cycle records rather than takes.
+**`core:rust` was `latest` — fixed.** Pinned to `1.98.0`, the version it already
+resolved to, so criterion 4 no longer has a silent horizon. `mise.toml` had
+argued exactly this for zola and not for the toolchain. Original finding: There
+is no `rust-toolchain.toml`. `reproducible_tar` makes the *archive*
+deterministic given the same binary, and the Rust build is itself reproducible
+on a fixed toolchain — both verified. But a `workflow_dispatch` re-run weeks
+later can resolve a different rustc, producing a different binary and therefore
+different digests for all three assets. Criterion 4 is reliably true for a
+re-run close in time. Pinning rust for the release path would close it; that is
+a decision this cycle records rather than takes.
 
-**`publish` installs a toolchain it never uses, and that is where the last
-release died.** `publish` runs `jdx/mise-action@v4` and then touches no
-mise-provided tool — `_rust_reassemble` is bash, the collect step is bash plus
-`shasum` and `tar`, the release step is `gh`. It nonetheless installs rust with
-`profile = default` **and zola** on `ubuntu-24.04`. That is a failure surface
-added *after* `test` and `build` have spent their runner minutes and produced an
-artifact: a death there means a green build and no release. It is also the exact
-shape of the 2026-08-22 failure, where `mise-action` died installing `pnpm`
-before any repo command ran. `verify` genuinely needs cargo; neither job needs
-zola.
+**`publish` installed a toolchain it never used — fixed.** `install: false`; the
+three jobs that genuinely need cargo now pass `install_args: rust`, so nothing
+on the release path installs zola. `tests/release.rs` holds both, and each was
+proven able to fail. Original finding, kept because it explains why: `publish`
+runs `jdx/mise-action@v4` and then touches no mise-provided tool —
+`_rust_reassemble` is bash, the collect step is bash plus `shasum` and `tar`,
+the release step is `gh`. It nonetheless installs rust with `profile = default`
+**and zola** on `ubuntu-24.04`. That is a failure surface added *after* `test`
+and `build` have spent their runner minutes and produced an artifact: a death
+there means a green build and no release. It is also the exact shape of the
+2026-08-22 failure, where `mise-action` died installing `pnpm` before any repo
+command ran. `verify` genuinely needs cargo; neither job needs zola.
 
 **Cheapest de-risk, and it costs nothing extra:** prove `mise install` with the
 current tool set on `ubuntu-24.04` *before* the release tag depends on it — open
@@ -249,12 +253,14 @@ doing anyway, and it exercises the same install on the same runner image. Doing
 that first turns the largest unexercised risk on the release path into a known
 quantity.
 
-**`workflow_dispatch` can create a tag out of thin air.** The tag/crate gate is
-wrapped in `if [ "$ref_type" = "tag" ]`, and a dispatch runs against a branch,
-so it is skipped. `publish` then computes the tag from `Cargo.toml` and
-`gh release create` **creates a tag that was never pushed**. Dispatching from
-`main` today would publish `v0.1.0` with no human having tagged it. Not on the
-intended path; a loaded footgun beside it.
+**`workflow_dispatch` could create a tag out of thin air — fixed.** `publish`
+now refuses to run against a non-tag ref, naming the ref it refused. Re-running
+a real release still works: dispatch against the tag itself. Original finding:
+The tag/crate gate is wrapped in `if [ "$ref_type" = "tag" ]`, and a dispatch
+runs against a branch, so it is skipped. `publish` then computes the tag from
+`Cargo.toml` and `gh release create` **creates a tag that was never pushed**.
+Dispatching from `main` today would publish `v0.1.0` with no human having tagged
+it. Not on the intended path; a loaded footgun beside it.
 
 **Step 2 is the whole cycle and it is the step most likely to be skipped.**
 Everything here has been written against a workflow nobody has run. Going

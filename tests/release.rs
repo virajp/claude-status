@@ -189,3 +189,125 @@ fn the_reproducible_helper_lives_beside_the_other_release_shell() {
         "`reproducible_tar` is not defined in _scripts/_rust — the workflow and a local review would drift apart"
     );
 }
+
+/// Return one job's YAML body from `release.yml`.
+fn job(workflow: &str, name: &str) -> String {
+    let after = workflow
+        .split(&format!("\n  {name}:\n"))
+        .nth(1)
+        .unwrap_or_else(|| panic!("no `{name}` job in release.yml"));
+    // A job ends at the next top-level (two-space) key.
+    let mut body = String::new();
+    for line in after.lines() {
+        let is_next_job = !line.starts_with("    ") && line.starts_with("  ") && line.trim_end().ends_with(':');
+        if is_next_job {
+            break;
+        }
+        // Comments stripped. These steps explain what they stopped doing and
+        // name the construct to do it, so a scan that read the prose would pass
+        // on a comment alone — which is exactly what happened when this was
+        // first written: deleting `install: false` left the guard green,
+        // because the comment above it still said the words.
+        body.push_str(line.split('#').next().unwrap_or(""));
+        body.push('\n');
+    }
+    body
+}
+
+/// **`publish` installs nothing, because it uses nothing.**
+///
+/// It runs `_rust_reassemble` (plain bash), the collect step (bash, `shasum`,
+/// `tar`) and `gh`. It nonetheless used to install rust — with clippy and
+/// rustfmt — and zola, on a runner that needs neither.
+///
+/// That is a failure surface placed *after* `test` and `build` have spent their
+/// minutes and produced an artifact: a death there is a green build with no
+/// release. It is also the exact shape of the 2026-08-22 failure, where
+/// `mise-action` died installing `pnpm` before any repo command ran.
+#[test]
+fn the_publish_job_installs_no_tools() {
+    let workflow = read(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    assert!(
+        publish.contains("mise-action"),
+        "the publish job no longer pins a mise version at all — this test assumes the action is present with install disabled"
+    );
+    assert!(
+        publish.contains("install: false"),
+        "the publish job installs tools it never uses; every one is a way for a finished build to fail before it is released"
+    );
+}
+
+/// **No release job installs zola.**
+///
+/// `verify`, `test` and `build` genuinely need cargo. None of them builds the
+/// site. Installing zola on the release path adds a download that can fail for
+/// reasons entirely unrelated to the release.
+#[test]
+fn no_release_job_installs_the_site_generator() {
+    let workflow = read(".github/workflows/release.yml");
+
+    for name in ["verify", "test", "build"] {
+        let body = job(&workflow, name);
+        assert!(
+            body.contains("install_args:"),
+            "the `{name}` job installs every tool in mise.toml, zola included; scope it with install_args"
+        );
+        assert!(
+            body.contains("rust"),
+            "the `{name}` job's install_args does not name rust, which it needs"
+        );
+        assert!(
+            !body.contains("zola"),
+            "the `{name}` job still installs zola, which nothing on the release path uses"
+        );
+    }
+}
+
+/// **The toolchain is pinned, like every other tool here.**
+///
+/// `code:lint` runs clippy with `-D warnings` and gates the release. Against a
+/// floating `latest`, a stable rustc landing between two runs is picked up
+/// silently, and any new lint fails a release whose code did not change. That is
+/// the class of failure that already cost one release, when CI's toolchain was
+/// not what anyone had run against.
+///
+/// `mise.toml` already argues this for zola in its own words — pinned exactly
+/// "so a floating version would break the build on an upgrade nobody asked
+/// for". The same reasoning had not been applied to rust.
+#[test]
+fn every_tool_on_the_release_path_is_pinned_to_a_version() {
+    let mise = read(".config/mise.toml");
+    let tools = mise.split("[tools]").nth(1).expect("a [tools] table");
+
+    for line in tools.lines().filter(|l| l.contains('=') && !l.trim_start().starts_with('#')) {
+        assert!(
+            !line.contains("\"latest\""),
+            "a tool on the release path floats: {} — pin it, or a release fails on an upgrade nobody asked for",
+            line.trim()
+        );
+    }
+}
+
+/// **A manual dispatch cannot invent a tag.**
+///
+/// The tag/crate agreement gate is wrapped in `if ref_type = tag`, and a
+/// `workflow_dispatch` runs against a *branch*, so the gate is skipped
+/// entirely. `publish` then computes the tag from `Cargo.toml` and
+/// `gh release create` **creates a tag that nobody pushed**, pointing at the
+/// dispatched ref.
+///
+/// Dispatching from `main` today would therefore publish `v0.1.0` with no human
+/// having tagged it — and, once a formula pins the digest, replace a live
+/// release's assets with a fresh build.
+#[test]
+fn a_manual_dispatch_cannot_publish_a_release() {
+    let workflow = read(".github/workflows/release.yml");
+    let publish = job(&workflow, "publish");
+
+    assert!(
+        publish.contains("github.ref_type") || publish.contains("REF_TYPE"),
+        "the publish job does not check what kind of ref it is running against, so a workflow_dispatch can create a tag out of thin air"
+    );
+}
