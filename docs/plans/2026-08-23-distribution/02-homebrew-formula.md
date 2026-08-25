@@ -94,9 +94,10 @@ it.
 ## Target state (per contract)
 
 §9's channel is Homebrew. A tag produces the release and a formula bump from one
-workflow, with the formula's `url` **derived from the same `asset_name()` the
-release used** and its digest **read** out of `SHA256SUMS` rather than
-recomputed. A user runs one command and has a working bar.
+workflow, with the formula's `url` **read back out of the release GitHub
+published** and its digest **read** out of that release's `SHA256SUMS` rather
+than recomputed. Nothing about the asset is reconstructed, so there is nothing
+to drift. A user runs one command and has a working bar.
 
 ## Delta — ordered steps
 
@@ -154,13 +155,19 @@ drags the site's availability into the release path. Plain `audit` does not.
 
 A job in `release.yml` after `publish`. Four things it must get right:
 
-**Derive the URL from `asset_name()`.** Do not hardcode a literal in workflow
-YAML. The `publish` job already does this — `release.yml:254` is
-`source .config/mise/tasks/_scripts/_rust` — so the bump job follows the
-established pattern rather than inventing one. It is a *separate* job, so it
-needs its own `actions/checkout` before it can source anything. Reading the name
-from the same function that produced the asset leaves one source of truth and no
-assertion to keep in sync.
+**Read the URL back out of the published release.** Not from `asset_name()`, and
+certainly not from a literal in workflow YAML. The job runs after `publish` and
+asks GitHub what the release actually carries —
+`gh release view "$tag" --json assets` — taking both the asset's name and its
+`url` from the response.
+
+**This supersedes an earlier revision of this step, which said to derive the URL
+from `asset_name()`.** That would have been one source of truth for the *name*,
+but still a reconstruction: it assumes the asset that got uploaded is the one
+that function describes. Reading the release removes the assumption instead of
+relocating it — you cannot pin a URL that 404s if the URL came from the thing
+serving it. The `count != 1` guard is what makes it safe when a second target is
+added.
 
 This is the cycle's sharpest hazard, because **a wrong asset name is clean at
 every gate that exists.** Plain `brew audit` does not fetch the URL; only
@@ -181,11 +188,23 @@ name makes it return **empty**, not wrong — and an empty `--sha256` lets brew
 fall back to a best-effort download instead of failing. Fail the job explicitly
 if the digest does not match `^[0-9a-f]{64}$`.
 
-**Use `brew bump-formula-pr --write-only --commit --no-audit`.** Verified in
-recon: it does the edit offline, with no GitHub token, no fork and no PR, and it
-**deletes the redundant `version` line itself**. The original plan's hand-rolled
-rewrite is unnecessary. Gotcha: the tap checkout must have a remote configured.
-Commit message is conventionally `claude-status 0.2.0`.
+**Rewrite the two fields directly; do not put Homebrew on the runner.** Recon
+verified `brew bump-formula-pr --write-only --commit --no-audit` works offline
+and deletes a redundant `version` line itself, and an earlier revision of this
+plan chose it for that reason. **That reason is spent** — the seeded formula
+carries no `version` line, so there is nothing for it to delete, and the tool
+would drag a Homebrew installation onto a runner for a two-field substitution.
+
+That cuts against `publish`'s installs-nothing doctrine, which exists because a
+tool download failing *after* the build has spent its minutes is a green release
+with no artifact — the exact shape of the 2026-08-22 failure. A bump job has the
+same shape one step later: a green release whose tap silently did not move.
+
+So `rewrite_formula` in `_scripts/_rust` does it, and the suite runs it. It
+refuses a formula where `url` or `sha256` is absent or doubled, because `awk`
+exits 0 whether or not a pattern matched — without that check a formula that
+changed shape would sail through a rewrite that did nothing. Commit message
+stays `claude-status <version>`, matching Homebrew's own convention.
 
 **The digest is read from `SHA256SUMS`, never recomputed.** Recomputing from a
 rebuilt binary lets the tap and the release ship different bytes under one
