@@ -239,32 +239,18 @@ fn the_publish_job_installs_no_tools() {
     );
 }
 
-/// **No release job installs zola.**
+/// **`publish` still installs nothing.**
 ///
-/// `verify`, `test` and `build` genuinely need cargo. None of them builds the
-/// site. Installing zola on the release path adds a download that can fail for
-/// reasons entirely unrelated to the release.
-#[test]
-fn no_release_job_installs_the_site_generator() {
-    let workflow = read(".github/workflows/release.yml");
-
-    for name in ["verify", "test", "build"] {
-        let body = job(&workflow, name);
-        assert!(
-            body.contains("install_args:"),
-            "the `{name}` job installs every tool in mise.toml, zola included; scope it with install_args"
-        );
-        assert!(
-            body.contains("rust"),
-            "the `{name}` job's install_args does not name rust, which it needs"
-        );
-        assert!(
-            !body.contains("zola"),
-            "the `{name}` job still installs zola, which nothing on the release path uses"
-        );
-    }
-}
-
+/// The sibling guard that required `install_args` on the cargo jobs is gone.
+/// Scoping those installs looked like a cheap risk reduction and was not: three
+/// runs of the same commit, minutes apart, produced clippy twice and not the
+/// third, with rustup resyncing a `minimal` toolchain at lint time. A release
+/// gate that fails at random is worse than an extra tool download, so the
+/// declared set is installed again.
+///
+/// `publish` is different and keeps its `install: false`: it genuinely runs no
+/// mise-provided tool — bash, `shasum`, `tar`, `gh` — and it has now succeeded
+/// that way on a real release.
 /// **A manual dispatch cannot invent a tag.**
 ///
 /// The tag/crate agreement gate is wrapped in `if ref_type = tag`, and a

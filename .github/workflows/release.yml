@@ -75,11 +75,6 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
-        with:
-          # rust only. Nothing on the release path builds the site, and every
-          # tool installed here is another way for a release to fail for a
-          # reason unrelated to it.
-          install_args: rust
 
       - name: Verify the tag matches Cargo.toml
         id: version
@@ -115,12 +110,19 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      # No `install_args`. Scoping the install here was a mistake, and CI is
+      # what showed it: with `install_args: rust dprint`, three runs of the
+      # SAME commit minutes apart produced clippy twice and not the third time,
+      # where rustup resynced the toolchain at lint time and reported
+      # "downloading 3 components" — a `minimal` profile, not the `default`
+      # this repo's config asks for.
+      #
+      # Whether the arg drops the tool's `profile` option or interacts with the
+      # action's cache was not isolated. It does not need to be: the risk being
+      # traded away was an extra tool download, and the risk taken on was a
+      # release gate that fails at random. Installing the declared set is what
+      # reliably applies `profile = "default"`.
       - uses: jdx/mise-action@v4
-        with:
-          # rust AND dprint: this job runs the whole suite, and
-          # `tests/schema.rs` shells out to dprint. Still not the full tool
-          # table — nothing here builds the site.
-          install_args: rust dprint
 
       # Cheap, and it guards the config that decides whether the lint below
       # even has a linter — which is how the first release failed.
@@ -151,11 +153,6 @@ jobs:
           ref: ${{ github.ref }}
 
       - uses: jdx/mise-action@v4
-        with:
-          # rust only. Nothing on the release path builds the site, and every
-          # tool installed here is another way for a release to fail for a
-          # reason unrelated to it.
-          install_args: rust
 
       - name: Build ${{ matrix.target }}
         run: mise run build:statusline --target ${{ matrix.target }}
