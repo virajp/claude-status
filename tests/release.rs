@@ -440,3 +440,200 @@ fn an_asset_missing_from_the_manifest_fails_instead_of_returning_empty() {
         String::from_utf8_lossy(&present.stderr)
     );
 }
+
+/// A formula in the shape the tap actually carries.
+///
+/// Deliberately not a minimal stub: the rewrite has to leave `desc`, `license`,
+/// the `depends_on` pair, `caveats` and `test` untouched, and a stub with only
+/// the two rewritten fields would not notice if it did not.
+fn formula_fixture() -> &'static str {
+    // `r##` and not `r#`: the `test do` block below contains `"#{bin}`, and the
+    // `"#` in that sequence would close an `r#"…"#` literal.
+    r##"class ClaudeStatus < Formula
+  desc "Status line for Claude Code"
+  homepage "https://claude-status-site.pages.dev"
+  url "https://github.com/virajp/claude-status/releases/download/v0.1.0/claude-status-darwin-arm64.tar.gz"
+  sha256 "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044"
+  license "MIT"
+
+  depends_on arch: :arm64
+  depends_on :macos
+
+  def install
+    bin.install "claude-status"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/claude-status --version")
+  end
+end
+"##
+}
+
+/// **The bump rewrites exactly two fields and disturbs nothing else.**
+///
+/// `version` is deliberately not one of them. A `version` line beside a
+/// version-bearing url is a hard `brew audit` failure — brew scans the version
+/// out of the url — measured this cycle against a scratch tap, where adding one
+/// took `brew audit` from exit 0 to exit 1 with "redundant with version scanned
+/// from URL".
+#[test]
+fn the_formula_rewrite_moves_the_url_and_digest_and_leaves_the_rest_alone() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::write(dir.path().join("claude-status.rb"), formula_fixture()).expect("fixture formula");
+
+    let new_url = "https://github.com/virajp/claude-status/releases/download/v1.0.0/claude-status-darwin-arm64.tar.gz";
+    let new_digest = "1111111111111111111111111111111111111111111111111111111111111111";
+
+    let out = bash(
+        &format!("rewrite_formula claude-status.rb '{new_url}' '{new_digest}'"),
+        dir.path(),
+    );
+    assert!(
+        out.status.success(),
+        "rewrite_formula failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let after = std::fs::read_to_string(dir.path().join("claude-status.rb")).expect("rewritten formula");
+
+    assert!(after.contains(new_url), "the new url is not in the formula");
+    assert!(after.contains(new_digest), "the new digest is not in the formula");
+    assert!(
+        !after.contains("v0.1.0"),
+        "the old url survived the rewrite — the tap would keep serving the previous release"
+    );
+    assert!(
+        !after.contains("af64e2a6"),
+        "the old digest survived the rewrite — brew would fail the checksum on the new tarball"
+    );
+
+    // A `version` line is never introduced. Nothing adds one today; this pins
+    // that, because the failure is invisible until `brew audit` runs.
+    assert!(
+        !after.lines().any(|l| l.trim_start().starts_with("version ")),
+        "the rewrite introduced a `version` line, which is a hard `brew audit` failure beside a version-bearing url"
+    );
+
+    // Everything that is not those two fields is untouched.
+    for kept in [
+        "desc \"Status line for Claude Code\"",
+        "license \"MIT\"",
+        "depends_on arch: :arm64",
+        "depends_on :macos",
+        "bin.install \"claude-status\"",
+    ] {
+        assert!(after.contains(kept), "the rewrite lost `{kept}`");
+    }
+    assert_eq!(
+        after.lines().count(),
+        formula_fixture().lines().count(),
+        "the rewrite changed the formula's line count, so it did more than replace two values"
+    );
+}
+
+/// **An ambiguous or unrecognisable formula stops the bump.**
+///
+/// `awk` exits 0 whether or not a pattern ever matched, so a formula that
+/// changed shape would sail through a rewrite that silently did nothing, and
+/// the tap would keep pinning the previous release with the run green — the
+/// quiet failure mode this job was always most likely to have.
+#[test]
+fn the_formula_rewrite_refuses_a_formula_it_cannot_place() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    let url = "https://example.com/x.tar.gz";
+    let digest = "2222222222222222222222222222222222222222222222222222222222222222";
+
+    // No `url` line at all — nothing to rewrite.
+    std::fs::write(dir.path().join("no-url.rb"), "class ClaudeStatus < Formula\n  sha256 \"abc\"\nend\n")
+        .expect("fixture");
+    let no_url = bash(&format!("rewrite_formula no-url.rb '{url}' '{digest}'"), dir.path());
+    assert!(
+        !no_url.status.success(),
+        "a formula with no `url` line was rewritten successfully — the bump would report success having changed nothing"
+    );
+
+    // Two `url` lines — the rewrite would be ambiguous.
+    std::fs::write(
+        dir.path().join("two-urls.rb"),
+        "class ClaudeStatus < Formula\n  url \"a\"\n  url \"b\"\n  sha256 \"abc\"\nend\n",
+    )
+    .expect("fixture");
+    let two_urls = bash(&format!("rewrite_formula two-urls.rb '{url}' '{digest}'"), dir.path());
+    assert!(
+        !two_urls.status.success(),
+        "a formula with two `url` lines was accepted — the bump cannot know which one the tarball is"
+    );
+
+    // CONTROL: the well-formed fixture must succeed with the same helper and
+    // the same arguments. Without it, both assertions above pass just as well
+    // when `rewrite_formula` rejects everything it is given.
+    std::fs::write(dir.path().join("good.rb"), formula_fixture()).expect("fixture");
+    let good = bash(&format!("rewrite_formula good.rb '{url}' '{digest}'"), dir.path());
+    assert!(
+        good.status.success(),
+        "the helper rejected a well-formed formula, so its refusals above prove nothing: {}",
+        String::from_utf8_lossy(&good.stderr)
+    );
+}
+
+/// **The bump job never spells an asset name — it reads the published release.**
+///
+/// A formula whose `url` names an asset that does not exist is clean at every
+/// gate that exists. Plain `brew audit` does not fetch the URL, and
+/// `brew audit --strict` was measured this cycle exiting 0 against a URL
+/// returning 404. `brew bump-formula-pr` treats the url as an opaque string
+/// too. So a mistyped or drifted asset name surfaces first as a failed
+/// `brew install`, after the tag is cut, in front of the first user — with no
+/// CI signal anywhere behind it.
+///
+/// The fix is structural rather than another assertion: if the job takes both
+/// the name and the url from what GitHub actually published, there is no name
+/// to get wrong. This guard pins that it keeps doing so.
+///
+/// Note `job()` strips comments before matching. The prose above and in the
+/// workflow names every construct being banned, so a scan that read comments
+/// would pass on the comment alone.
+#[test]
+fn the_bump_job_takes_the_asset_from_the_published_release() {
+    let workflow = read(".github/workflows/release.yml");
+    let bump = job(&workflow, "bump-tap");
+
+    assert!(
+        bump.contains("gh release view"),
+        "the bump job does not query the release, so it must be reconstructing the asset name locally"
+    );
+    assert!(
+        bump.contains(".assets[]"),
+        "the bump job does not read the release's asset list"
+    );
+
+    // The two shapes that would mean a name was written down rather than read.
+    assert!(
+        !bump.contains("releases/download"),
+        "the bump job builds a download URL itself; it must use the `url` the release reports, which cannot 404"
+    );
+    assert!(
+        !bump.contains("claude-status-"),
+        "the bump job spells an asset name literally; nothing offline catches a wrong one, so it must come from the published release"
+    );
+
+    // The digest and the rewrite go through the tested helpers rather than
+    // being re-implemented in YAML, where no test could reach them.
+    assert!(
+        bump.contains("digest_for"),
+        "the bump job does not use `digest_for`, so its digest lookup is unanchored and untested"
+    );
+    assert!(
+        bump.contains("rewrite_formula"),
+        "the bump job does not use `rewrite_formula`, so its rewrite is untested"
+    );
+
+    // Ordering is load-bearing: reading a release that does not exist yet
+    // cannot give ground truth.
+    let header = bump.lines().take(4).collect::<String>();
+    assert!(
+        header.contains("publish"),
+        "the bump job does not declare `needs: publish`, so it could run before the release it reads from exists"
+    );
+}

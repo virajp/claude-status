@@ -191,3 +191,48 @@ digest_for() {
 
   printf '%s\n' "$digest"
 }
+
+# Point a Homebrew formula at a new tarball: rewrite `url` and `sha256`.
+#
+# **Two fields, not three.** A `version` line beside a version-bearing url is a
+# hard `brew audit` failure — brew scans the version out of the url — so the
+# formula carries none and this never adds one. Measured: adding one took
+# `brew audit` from exit 0 to exit 1, "redundant with version scanned from URL".
+#
+# **Both fields must be found exactly once, or nothing is written.** `awk` exits
+# 0 whether or not a pattern ever matched, so a formula that changed shape would
+# sail through a rewrite that silently did nothing — leaving the tap pinned to
+# the previous release with the release run green behind it. That is the quiet
+# failure this whole job was always most likely to have, so the arity check is
+# the point of the function rather than a nicety.
+rewrite_formula() {
+  formula="$1"
+  url="$2"
+  digest="$3"
+
+  for field in url sha256; do
+    n="$(grep -c "^[[:space:]]*$field " "$formula" || true)"
+    if [ "$n" != "1" ]; then
+      echo "expected exactly one \`$field\` line in $formula, found $n" >&2
+      return 1
+    fi
+  done
+
+  awk -v url="$url" -v digest="$digest" '
+    /^[[:space:]]*url / { printf "  url \"%s\"\n", url; next }
+    /^[[:space:]]*sha256 / { printf "  sha256 \"%s\"\n", digest; next }
+    { print }
+  ' "$formula" > "$formula.new"
+  mv "$formula.new" "$formula"
+
+  # Belt and braces: the arity check above proves the lines existed, this
+  # proves the new values actually landed in the file on disk.
+  grep -qF "$url" "$formula" || {
+    echo "url was not written into $formula" >&2
+    return 1
+  }
+  grep -qF "$digest" "$formula" || {
+    echo "sha256 was not written into $formula" >&2
+    return 1
+  }
+}
