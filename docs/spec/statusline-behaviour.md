@@ -1686,6 +1686,61 @@ costs until the tap lands.
 > either. Deprecating the name to point at the tap is `distribution/02`'s, since
 > until the tap exists there is nowhere to point.
 
+> **Amended 2026-08-25** (`distribution/02`, the Homebrew tap). The channel is
+> resolved: **`brew install virajp/tap/claude-status`**, a formula in
+> `virajp/homebrew-tap` pinning the release's `.tar.gz`. The options table's
+> Homebrew row is the answer, and its one argument against — "Linux users still
+> need another" — stopped applying on 2026-08-21.
+>
+> **Only the fully-qualified form works.** Homebrew 6.0.0 (2026-06-11) requires
+> explicit trust for non-official taps, so `brew tap virajp/tap` followed by
+> `brew install claude-status` **fails** until `brew trust`, and `brew doctor`
+> warns about a tapped-but-untrusted tap. That two-step form is what most
+> READMEs and nearly every tutorial still show. Documentation must give the one
+> fully-qualified command and not the pair.
+>
+> **The formula's url and digest are read out of the published release**, never
+> reconstructed from a version string. A formula naming an asset that does not
+> exist passes every gate there is — plain `brew audit` does not fetch the url,
+> and `brew audit --strict` was measured exiting 0 against a url returning 404 —
+> so it would surface first as a failed `brew install` in front of the first
+> user. The bump job asks GitHub what the release actually carries and takes
+> both values from the answer, which is why there is no assertion guarding the
+> asset name: there is no name to get wrong. The digest is read from that
+> release's `SHA256SUMS`, matched on the whole asset name, and a miss is fatal
+> rather than empty.
+>
+> **The repository has a standing credential again, and this section should stop
+> implying otherwise.** `distribution/01` removed the last one by deleting
+> OIDC's consumer. Pushing a formula into another repository needs one, because
+> `GITHUB_TOKEN` cannot reach outside this repo. It is a **GitHub App** —
+> `APP_ID` (the App's *Client ID*, not the numeric App ID) and `APP_KEY` — and
+> what is at rest only authorises *minting*: the token itself is scoped to
+> `virajp/homebrew-tap`, narrowed to `contents: write`, valid for an hour, and
+> revoked when the job ends. A PAT would have been account-wide and a deploy key
+> would have pushed to the tap forever.
+>
+> **That is a reduction in duration and breadth, not immunity.** The App's
+> private key does not expire and nothing prompts a rotation; and a live
+> compromise has exactly the scope needed to publish a malicious formula, which
+> is the scope that matters to someone running `brew install`. The formula's
+> `sha256` is the only thing standing between a user and substituted bytes,
+> because a GitHub Release asset is mutable — it can be deleted and re-uploaded
+> at the same url. `reproducible_tar` is what makes re-running a tag safe.
+>
+> **The npm name needs nothing.** The previous amendment left it open whether
+> `@askviraj/claude-status` was a placeholder never published or one since
+> removed. An authenticated fetch was made this cycle and returns 404, so there
+> is **nothing on the registry to deprecate** and the `npm deprecate` step this
+> section assigned to `distribution/02` is cut rather than deferred. Whether it
+> ever existed is still not decidable from outside — an unpublished package 404s
+> the same way — and nothing turns on the difference. The name is unreserved;
+> claiming it is a separate decision nobody has made.
+>
+> **Still unowned:** code signing and notarisation. A brew-installed binary is
+> downloaded rather than built, exactly as npm's would have been, but "Homebrew
+> installed it" makes people assume it is signed. It is not.
+
 ~~Whatever the channel, **the installer must keep the receipt discipline** the
 current one has: record what was there before, so an uninstall *restores* the
 `settings.json` keys it overwrote — the user's previous bar comes back rather

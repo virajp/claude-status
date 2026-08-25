@@ -769,10 +769,7 @@ fn only_the_bump_job_can_reach_the_tap_credential() {
 
     let names: Vec<&str> = jobs.iter().map(|(n, _)| *n).collect();
     assert!(names.contains(&"bump-tap"), "release.yml lost its `bump-tap` job; found {names:?}");
-    assert!(
-        names.iter().any(|n| *n == "publish"),
-        "release.yml lost its `publish` job; found {names:?}"
-    );
+    assert!(names.contains(&"publish"), "release.yml lost its `publish` job; found {names:?}");
 
     for (name, body) in &jobs {
         if *name == "bump-tap" {

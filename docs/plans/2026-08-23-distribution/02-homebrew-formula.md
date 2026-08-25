@@ -60,9 +60,11 @@ easiest thing in this cycle to get wrong — see step 4.
 **The archive is already reproducible.** `reproducible_tar()` landed with
 [plan 3](./03-release.md): fixed mtime, zeroed numeric owner/group, `gzip -n`.
 The deterministic-tar work that `release.yml`'s header and
-[plan 1](./01-drop-npm.md) both assign to "`distribution/02` by name" is **done
-and not part of this cycle** — those two comments are now stale and step 6
-corrects them.
+[plan 1](./01-drop-npm.md) once assigned to "`distribution/02` by name" is
+**done and not part of this cycle**. Both comments were re-read during execution
+and both had already been updated by the cycle that moved the work —
+`release.yml` now says "this cycle owns that fix, not `distribution/02`" and
+plan 1 says "Owned by `distribution/03`". Nothing to correct.
 
 **Homebrew 6.0.0 requires explicit trust for non-official taps.** Local brew is
 6.0.19. `brew tap virajp/tap` followed by `brew install claude-status` — the
@@ -85,11 +87,15 @@ one output shape a formula's `test do` block can safely match on.
 **not resolve** — `dig +short` returns nothing, with a control proving DNS works
 from here. Both website plans landed; the domain was never pointed.
 
-**The npm placeholder was never published.** `@askviraj/claude-status` returns
-404 from the registry. The original step 5 (`npm deprecate`) and criterion 8 had
-nothing to act on and are **cut**, not deferred. The folder [index](./index.md)
-says a `0.0.1` placeholder holds the name; that is false and this cycle corrects
-it.
+**Nothing is on the npm registry under the placeholder's name.**
+`@askviraj/claude-status` 404s to an authenticated fetch. The original step 5
+(`npm deprecate`) and criterion 8 have nothing to act on and are **cut**, not
+deferred. The folder [index](./index.md) says a `0.0.1` placeholder holds the
+name; that is not true today and this cycle corrects it.
+
+Whether it was *ever* published is not decidable from outside — an unpublished
+package 404s exactly like one that never existed — so this records what was
+measured, not the stronger claim. Nothing depends on which it was.
 
 ## Target state (per contract)
 
@@ -258,10 +264,18 @@ marks the options-table Homebrew row resolved. It must show the
 
 `CONTRIBUTING.md` gains how to bump the formula by hand if CI cannot.
 
-Correct the two stale "Owned by `distribution/02`" comments in `release.yml`'s
+Correct the folder [index](./index.md)'s claim that a `0.0.1` npm placeholder
+exists.
+
+~~Correct the two stale "Owned by `distribution/02`" comments in `release.yml`'s
 header and `01-drop-npm.md` — deterministic tar landed in
-[plan 3](./03-release.md). Correct the folder [index](./index.md)'s claim that a
-`0.0.1` npm placeholder exists.
+[plan 3](./03-release.md).~~ **Already done.** Checked during execution:
+`release.yml`'s header reads "**This cycle owns that fix, not
+`distribution/02`**" and `01-drop-npm.md` reads "**Owned by
+`distribution/03`**". The cycle that moved the work moved the comments with it.
+The instruction was written from the recon's snapshot at `f6b22c4` and was stale
+by the time this plan was revised — the same failure mode the revision existed
+to fix, one level up.
 
 ## Acceptance criteria (from contract)
 
@@ -349,12 +363,58 @@ drive `brew`.
   neither.
 - **Linux and Linuxbrew.** Deferred; see the folder [index](./index.md).
 - **Code signing and notarisation.** Still deferred, still unowned.
-- **Deprecating the npm placeholder.** It was never published — nothing to
-  deprecate.
+- **Deprecating the npm placeholder.** Nothing is on the registry under that
+  name — nothing to deprecate.
 - **An uninstall path for the `settings.json` keys.** Decided against in
   `config-and-cli/03`.
 - **Fixing the `workflow_dispatch` gate gap.** Recorded above; its own cycle.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+**Blocker 6 was confirmed, not inherited.** A scratch tap was built and
+`brew audit --strict` run against a formula whose url named
+`claude-status-aarch64-apple-darwin.tar.gz`. It **exited 0**; the url returns
+HTTP 404. That is the whole justification for reading the asset from the
+release, and it is now measured rather than quoted. Blocker 5 was confirmed the
+same way — adding a `version` line took `brew audit` from exit 0 to exit 1,
+"redundant with version scanned from URL" — which doubles as proof the audit
+gate is live rather than passing vacuously. The scratch tap was removed and
+`/opt/homebrew/Library/Taps/` restored to its baseline of `macpaw` and
+`stablyai`.
+
+**Blocker 3 reproduced against the real published manifest.** v0.1.0's
+`SHA256SUMS`: the naive `grep … | head -1` returns `9d088dc5…`, the raw binary's
+digest, for a url pointing at the tarball, whose digest is `af64e2a6…`.
+
+**`brew style` on a bare file path is misleading.** It applies generic RuboCop
+cops — Sorbet sigils, `Style/Documentation`, frozen string literals — that do
+not apply to a formula in a tap, and it reported 5 offences on text that is
+clean inside a tap. Only `FormulaAudit/DependencyOrder` was real (`arch` before
+`macos`). Verify formulae in a tap, not as loose files.
+
+**The step-6 instruction to fix two stale comments was itself stale.** Both had
+already been corrected by the cycles that moved the work. Recorded in step 6
+rather than silently dropped.
+
+**The npm claim was weakened.** An earlier draft of this revision said the
+placeholder "was never published". An authenticated fetch proves only that
+nothing is there **now** — an unpublished package 404s identically. Corrected
+here and in the folder index.
+
+**A guard's first draft had a false positive that the suite caught.** The
+credential test substring-matched `"pat"` and failed against `path: tap`. It now
+enumerates the job's `secrets.` references and requires exactly `APP_ID` and
+`APP_KEY`, which is both precise and catches a credential nobody thought to ban.
+
+**Not done in this cycle, and blocking the acceptance criteria:**
+
+- **The tap has no `Formula/`.** A formula pinning v0.1.0's real digest is
+  verified clean at `brew style`, `brew audit` and `brew audit --strict`, but
+  seeding it is outward-facing and needs the owner.
+- **The GitHub App does not exist.** `bump-tap` fails at the tap checkout until
+  `APP_ID` and `APP_KEY` are set.
+- **`bump-tap` has never run.** Every guard on it is static analysis of the
+  workflow text; nothing has exercised the job itself. The `v1.0.0` tag is its
+  first real run, by the seeding decision recorded above.
+- **Criteria 1, 2, 3 and 7 are unverifiable** until the tap serves a formula —
+  they all require a real `brew install`.

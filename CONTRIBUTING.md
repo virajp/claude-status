@@ -118,6 +118,60 @@ Both asset names come from `asset_name()` in
 `.config/mise/tasks/_scripts/_rust`, driven by `supported_targets`, so adding a
 target adds both shapes with no edit to the workflow.
 
+### The Homebrew tap
+
+The formula lives in
+[`virajp/homebrew-tap`](https://github.com/virajp/homebrew-tap) and the
+`bump-tap` job moves it automatically after every release. It takes the asset's
+url and name from the release GitHub just published rather than rebuilding them
+from the version, so there is nothing to keep in step.
+
+It authenticates with a GitHub App — `APP_ID` holds the App's **Client ID**, not
+the numeric App ID, which is the one thing about the setup that catches people
+out. The minted token is scoped to the tap, narrowed to `contents: write`, and
+revoked when the job ends.
+
+**Only the fully-qualified install works:**
+
+```sh
+brew install virajp/tap/claude-status
+```
+
+Homebrew 6 requires explicit trust for non-official taps, so the two-step
+`brew tap virajp/tap` followed by `brew install claude-status` fails until
+`brew trust`. Do not document the two-step form even though most tutorials still
+show it.
+
+#### Bumping the formula by hand
+
+Only needed if the job fails. Two fields move, and **never** add a `version`
+line — a `version` beside a version-bearing url is a hard `brew audit` failure.
+
+```sh
+tag=v1.2.3
+gh release view "$tag" --json assets \
+  --jq '.assets[] | select(.name | endswith(".tar.gz")) | [.name, .url] | @tsv'
+gh release download "$tag" -p SHA256SUMS -O SHA256SUMS
+
+source .config/mise/tasks/_scripts/_rust
+digest_for SHA256SUMS "<the name printed above>"
+```
+
+Put that url and digest into `Formula/claude-status.rb`, then verify before
+pushing:
+
+```sh
+brew style virajp/tap
+brew audit --strict --formula virajp/tap/claude-status
+```
+
+**Do not use `brew audit --online`** — it requires the homepage to resolve,
+which drags the site's availability into the release path.
+
+Note that neither check will catch a wrong asset name: `audit` does not fetch
+the url, and `--strict` exits 0 against one returning 404. Copy the url from the
+release rather than typing it.
+
 ## Conventions
 
 - **Commits** follow `.config/git-conventional-commits.yaml`. The scope list
