@@ -7,7 +7,10 @@ status.missing_tools = "always"
 # bug this file used to carry. node and pnpm were shared too until
 # `distribution/01` deleted the npm installer and the toolchain with it.
 [tools]
-dprint     = { version = "latest" }
+# `dprint` is NOT here. It moved to the base config: `tests/schema.rs` shells
+# out to it, that test runs in CI, and `MISE_ENV=ci` does not load this file.
+# Declaring it here meant it resolved on a maintainer's machine and was absent
+# on a runner — which is how the first release attempt failed.
 gitleaks   = { version = "latest" }
 grype      = { version = "latest" }
 pre-commit = { version = "latest" }

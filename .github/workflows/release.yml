@@ -117,10 +117,10 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          # rust only. Nothing on the release path builds the site, and every
-          # tool installed here is another way for a release to fail for a
-          # reason unrelated to it.
-          install_args: rust
+          # rust AND dprint: this job runs the whole suite, and
+          # `tests/schema.rs` shells out to dprint. Still not the full tool
+          # table — nothing here builds the site.
+          install_args: rust dprint
 
       # Cheap, and it guards the config that decides whether the lint below
       # even has a linter — which is how the first release failed.
