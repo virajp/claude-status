@@ -343,8 +343,11 @@ fn description_digest(described: &[(String, &str)]) -> u64 {
 ///
 /// The count above catches *loss*; this catches the other direction — a field
 /// added to `Config` that generates a property nobody wrote prose for. The
-/// allowlist is the four the hand-written schema also left bare, and naming
-/// them is what makes a fifth fail.
+/// allowlist is `$schema` alone — a pointer rather than a setting — and naming
+/// it is what makes a second bare property fail.
+///
+/// Top-level only. Nested coverage is [`DESCRIPTION_COUNT`]'s job, so the
+/// heading above is about the pair, not about this test on its own.
 #[test]
 fn every_top_level_property_is_described() {
     let schema = schema();

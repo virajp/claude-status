@@ -1,7 +1,7 @@
 {# The config generator, and the ONLY page on this site that loads a script.
 
-   `tests/site.rs::the_layout_carries_the_static_marks_of_a_readable_phone_page`
-   allowlists this one path by name. Every other tracked `.html`, `.css` and
+   `tests/site.rs::exactly_one_tracked_path_under_site_may_carry_a_script`
+   allowlists this one path by name, and fails if the entry ever goes stale. Every other tracked `.html`, `.css` and
    `.md` under `site/` must still be script-free, so a second `<script>`
    anywhere — including in markdown, which the scan did not used to read —
    fails the suite.

@@ -129,9 +129,12 @@ The repo layer is not a form, because it takes one key. Write this at
 a repo layer may set, and every other key in that file is ignored and named by
 `--debug`. [Per-repo](@/repo-config.md) has the rest.
 
-`projectName` appears in the generator because it is in the schema. Setting it
-there puts it in your **user** config, where it does nothing — the field's own
-description says so, and this is the one key worth ignoring.
+`projectName` appears in the generator because it is in the schema, and the
+generator writes your **user** config — so this is the one field to leave alone
+here. A `projectName` in the user config is *not* inert: the user layer merges
+whole, so the name applies to **every repository you open** that has not set one
+of its own. Put it in `<repo-root>/.config/claude-status.json` instead, which is
+the only layer narrowed to this key. [Per-repo](@/repo-config.md) shows how.
 
 ## No preview yet
 

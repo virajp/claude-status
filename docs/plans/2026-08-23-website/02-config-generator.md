@@ -533,14 +533,20 @@ once a `v*` tag exists.
 ### Smaller corrections
 
 - **Step 6's repo-config example is three lines, not two.** It carries `$schema`
-  (`layers.rs:61-63`), matching what `site/content/configure.md:33` already
-  teaches.
+  (`layers.rs`'s `SCHEMA_KEY`), matching the worked example in
+  `site/content/configure.md`. Cited by symbol rather than by line: the two line
+  numbers this entry originally carried were both wrong by the time anyone read
+  them, one of them because this very cycle moved the line.
 - **`projectName` appears in the form** because it is in the schema, and setting
-  it there writes it into the *user* config where it does nothing. Excluding it
-  would have meant naming a key in the page — the coupling criterion 1 forbids.
-  The schema's own description already says "**Repo-level only**", the form
-  shows that description, and the page says it again in prose. This is the right
-  trade but it is a real rough edge.
+  it there writes it into the *user* config where it applies to **every repo
+  that has not named itself** — the user layer merges whole, and only the repo
+  layer is narrowed to this key (`layers.rs:220` calls `narrow`, the user layer
+  at `:198` does not). The trade below still stands, but it was first accepted
+  on the false premise that a user-set value was inert. Excluding it would have
+  meant naming a key in the page — the coupling criterion 1 forbids. The
+  schema's own description already says "**Repo-level only**", the form shows
+  that description, and the page says it again in prose. This is the right trade
+  but it is a real rough edge.
 - **An unrecognised schema shape becomes a raw JSON box**, not nothing. This is
   what makes criterion 1 true for *shapes* rather than only for names: a
   construct nobody anticipated stays editable — badly, but honestly — instead of
@@ -554,8 +560,10 @@ once a `v*` tag exists.
 
 ### Test count
 
-551 → **556** under `mise x -- cargo test --features schema` (549 → 554 bare),
-plus 60 JavaScript checks inside
+551 → **557** under `mise x -- cargo test --features schema` (549 → 555 bare),
+556 from the generator work itself, plus one added in the Phase 4 fix round
+pinning that a user-layer `projectName` reaches every unnamed repo, plus 60
+JavaScript checks inside
 `the_generators_pure_core_holds_against_the_real_schema`.
 [38;2;131;148;150m─────┬──────────────────────────────────────────────────────────────────────────[0m
 [38;2;131;148;150m│ [0m[1mSTDIN[0m

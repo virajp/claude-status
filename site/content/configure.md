@@ -77,7 +77,7 @@ run yourself.
 | `spend`           | `refreshMinutes` and `show` for the monthly-budget segment                  |
 | `subagent`        | styling and the description budget for the subagent panel                   |
 | `worktreePattern` | the regex that decides a checkout is a worktree                             |
-| `projectName`     | **repo layer only** — see [Per-repo](@/repo-config.md)                      |
+| `projectName`     | belongs in the repo layer — a user-layer value names every repo             |
 
 ### Colours
 
