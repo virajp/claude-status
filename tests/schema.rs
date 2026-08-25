@@ -21,8 +21,7 @@ use claude_status::caps;
 use claude_status::config::Config;
 use claude_status::config::write;
 
-/// How many `description` strings the schema carried at this cycle's parent
-/// commit (`fca2aa2`), where it was hand-written.
+/// How many `description` strings the schema carries.
 ///
 /// Criterion 3 is "none is lost", and a count is the cheapest form of that
 /// which cannot be satisfied by accident. It was checked by pointer *and* text
@@ -33,12 +32,23 @@ use claude_status::config::write;
 /// text.
 /// A schema that grows a key and describes it makes this go up, which is a
 /// deliberate edit rather than a silent loss.
-const PARENT_DESCRIPTION_COUNT: usize = 39;
+///
+/// **Moved 39 → 49 by `website/02-config-generator`.** That cycle builds the
+/// site's config form out of this file, and a form built from a schema with no
+/// descriptions is a form of unlabelled boxes — so the ten named properties
+/// that had no prose got some, at the source, in the Rust types. They were
+/// exactly the ones the form's own widgets render from: the four unlabelled
+/// `subagent.segments` rows, and `bg`/`fg`/`bold` in both `$defs/style` and
+/// `$defs/segmentEntry`'s object branch. `/properties/$schema` is the
+/// eleventh and stays bare — it is a pointer rather than a setting, it is
+/// excluded from the form, and `every_top_level_property_is_described` already
+/// names it as the one allowed exception.
+const DESCRIPTION_COUNT: usize = 49;
 
 /// FNV-1a of every `(pointer, description)` pair in the committed schema.
 ///
-/// Pins the **text**, which [`PARENT_DESCRIPTION_COUNT`] alone does not: all 39
-/// strings can be replaced with `"x"` and the count still reads 39. Update it
+/// Pins the **text**, which [`DESCRIPTION_COUNT`] alone does not: all 49
+/// strings can be replaced with `"x"` and the count still reads 49. Update it
 /// only when you meant to change prose, and say so in review.
 ///
 /// Moved from `0x5c72_2dcb_8d80_c664` by the `website/01-site` cycle. `spend`'s
@@ -48,7 +58,13 @@ const PARENT_DESCRIPTION_COUNT: usize = 39;
 /// `~/.cache/claude-status/spend.json`. The site documents that path, so the
 /// published schema had to stop contradicting it. This guard firing is the
 /// guard working: the prose changed on purpose.
-const DESCRIPTION_DIGEST: u64 = 0x719a_9e0f_1460_dac6;
+///
+/// Moved again from `0x719a_9e0f_1460_dac6` by `website/02-config-generator`,
+/// for the ten added descriptions [`DESCRIPTION_COUNT`] records. Only
+/// additions: every one of the 39 existing strings is byte-identical, which is
+/// what makes the count and the digest moving together the expected result
+/// rather than a swap hiding inside a rewrite.
+const DESCRIPTION_DIGEST: u64 = 0x1c21_9713_1913_d7d3;
 
 /// The only four `default` values the published schema has ever carried.
 ///
@@ -282,15 +298,15 @@ fn the_schema_carries_every_description_it_was_written_with() {
 
     assert_eq!(
         described.len(),
-        PARENT_DESCRIPTION_COUNT,
-        "the schema went from {PARENT_DESCRIPTION_COUNT} descriptions to {} — criterion 3 forbids losing one; at {:?}",
+        DESCRIPTION_COUNT,
+        "the schema went from {DESCRIPTION_COUNT} descriptions to {} — criterion 3 forbids losing one; at {:?}",
         described.len(),
         described.iter().map(|(p, _)| p).collect::<Vec<_>>(),
     );
     assert!(described.iter().all(|(_, d)| !d.trim().is_empty()), "an empty description is a lost one wearing a key");
 
-    // The count alone does not hold the *prose*. Replacing all 39 strings with
-    // `"x"` keeps the count at 39 and every one non-empty, and the drift test
+    // The count alone does not hold the *prose*. Replacing all 49 strings with
+    // `"x"` keeps the count at 49 and every one non-empty, and the drift test
     // cannot help: editing the `#[schemars(description = …)]` attributes and
     // regenerating moves the committed file and the generator together. This
     // digest is the only anchor that does not move with them.
@@ -327,8 +343,11 @@ fn description_digest(described: &[(String, &str)]) -> u64 {
 ///
 /// The count above catches *loss*; this catches the other direction — a field
 /// added to `Config` that generates a property nobody wrote prose for. The
-/// allowlist is the four the hand-written schema also left bare, and naming
-/// them is what makes a fifth fail.
+/// allowlist is `$schema` alone — a pointer rather than a setting — and naming
+/// it is what makes a second bare property fail.
+///
+/// Top-level only. Nested coverage is [`DESCRIPTION_COUNT`]'s job, so the
+/// heading above is about the pair, not about this test on its own.
 #[test]
 fn every_top_level_property_is_described() {
     let schema = schema();

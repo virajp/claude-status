@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+#MISE description="Copy the schema and the shipped defaults into the site's static tree"
+#MISE dir="{{ config_root }}"
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+cd "$MISE_PROJECT_ROOT"
+
+# The config generator's two inputs, put where a browser can fetch them.
+#
+# ---------------------------------------------------------------------------
+# WHY TWO FILES AND NOT ONE
+# ---------------------------------------------------------------------------
+#
+# The page needs the *shape* and the *values*, and they live apart:
+#
+#   schemas/claude-status.schema.json   fields, types, bounds, enums, prose
+#   assets/claude-status.defaults.json  what every one of those fields is set to
+#
+# The instinct is to read the defaults out of the schema's `default` keys. The
+# schema has exactly FOUR of them — the `caps` thresholds — against a tree of
+# roughly a hundred leaves, and that is deliberate: `config::schema::strip`
+# removes every other one so the palette, the twenty symbols and the two layout
+# rows (which carry Nerd Font private-use codepoints) stay out of a file dprint
+# formats. `tests/schema.rs::the_only_defaults_in_the_schema_are_the_four_caps`
+# pins it. A generator built on the schema's defaults would therefore show the
+# user a config that is empty everywhere except `caps`, and would emit every
+# key they touched as a change against nothing.
+#
+# ---------------------------------------------------------------------------
+# WHY COPIED HERE RATHER THAN COMMITTED UNDER site/static/
+# ---------------------------------------------------------------------------
+#
+# dprint's `includes` is `**/*.json`, and `assets/claude-status.defaults.json`
+# is in its `excludes` at THAT PATH ONLY. A tracked second copy under
+# `site/static/` would be matched, reformatted on commit, and would then differ
+# byte for byte from the file it is a copy of — with nothing to say so. The
+# same trap the schema already has a test for
+# (`the_generated_schema_is_already_dprint_formatted`, whose comment explains
+# how a formatter and a generator get into a loop).
+#
+# So the copies are build output: written here, gitignored, and excluded from
+# dprint as a second line of defence. `tests/site.rs` asserts both, because a
+# gitignore entry someone deletes is a tracked copy nobody notices.
+#
+# ---------------------------------------------------------------------------
+# WHY A COPY AND NOT A RUNTIME FETCH FROM raw.githubusercontent.com
+# ---------------------------------------------------------------------------
+#
+# The schema's `$id` is a raw.githubusercontent.com URL that serves the current
+# file from `main` and does send `access-control-allow-origin: *`, so fetching
+# it from the page would work. It was rejected for two reasons:
+#
+#   1. It makes a static documentation page stop working when GitHub is down,
+#      when a corporate proxy blocks raw.githubusercontent.com, or on a plane.
+#      Every other page on this site is readable offline once loaded.
+#   2. It would make the FORM newer than the PROSE around it. This site deploys
+#      on a `site-v*` tag, so all of its content is pinned at the last tag; a
+#      form fetched from `main` would describe keys the surrounding page does
+#      not document. Being uniformly one tag behind is a smaller lie than being
+#      internally inconsistent.
+#
+# The trade is real and goes the other way: a schema change does not reach the
+# deployed page until the next `site-v*` tag. That is the same trade every
+# other sentence on this site already takes.
+#
+# `.github/workflows/site.yml` was widened to rebuild on a change to either
+# source path, so a pull request that edits the schema still proves the page
+# builds against it.
+
+SITE_STATIC="${MISE_PROJECT_ROOT}/site/static"
+
+print_header "Copying the schema and defaults into site/static/ ..."
+
+for source in schemas/claude-status.schema.json assets/claude-status.defaults.json; do
+  [ -f "${MISE_PROJECT_ROOT}/${source}" ] || {
+    print_error "${source} is missing — the config generator has nothing to build a form from"
+    exit 1
+  }
+  # `cp` and not a symlink: zola copies `static/` into `public/` and a symlink
+  # would land in the deploy artifact as a link to a path the Pages host has
+  # no idea about.
+  command cp "${MISE_PROJECT_ROOT}/${source}" "${SITE_STATIC}/$(basename "${source}")"
+done
+
+# No `cmp` pass here. There was one, and it could not fail: it ran immediately
+# after the unconditional `cp` above, so the drift it claimed to catch ("a
+# formatter or an editor having touched the destination between runs") had just
+# been overwritten, and a `cp` that genuinely fails already exits non-zero under
+# `set -e`. A guard that reads as protection and provides none is worse than no
+# guard. The real byte check lives in
+# `tests/site.rs::the_schema_and_the_shipped_defaults_are_staged_rather_than_committed`,
+# which compares source against staged copy at a point where they can differ.
+
+print_header "Schema and defaults staged in site/static/"

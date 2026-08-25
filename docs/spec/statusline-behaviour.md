@@ -31,9 +31,10 @@ match it. Where it describes structure, use your judgement.
 
 > **This document is not user documentation, and is not where users are sent.**
 > [claude-status.virajp.dev](https://claude-status.virajp.dev) is the
-> user-facing documentation — install, configuration, the per-repo layer, the
-> segment catalogue, and `--debug`. Its sources are in [`site/`](../../site/).
-> `readme.md` is a pointer at that site and carries nothing the site does not.
+> user-facing documentation — install, configuration, the config generator, the
+> per-repo layer, the segment catalogue, and `--debug`. Its sources are in
+> [`site/`](../../site/). `readme.md` is a pointer at that site and carries
+> nothing the site does not.
 >
 > The split is deliberate and it has a direction: **a user-facing fact belongs
 > on the site, and this document is where the behaviour it describes is

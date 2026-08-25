@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Serve the documentation site locally with live reload"
 #MISE dir="{{ config_root }}"
+#MISE depends=["site:assets"]
 
 #USAGE flag "--port <port>" help="port to bind (default 1111)"
 #USAGE flag "--open" help="open the site in the default browser"
@@ -13,6 +14,12 @@ cd "$MISE_PROJECT_ROOT"
 
 # Development only. `site:build` is what CI and the deploy run; nothing
 # automated ever calls this.
+#
+# `depends=["site:assets"]` for the same reason `site:build` has it: `zola
+# serve` serves `static/` straight off disk, and without the staged schema and
+# defaults the config generator page would load and then fetch two 404s. The
+# copies are refreshed on every run, so editing the schema and restarting the
+# server is enough — live reload does not watch `schemas/`.
 #
 # Deliberately NOT `--store-html`. By default `zola serve` keeps the rendered
 # HTML in memory and only writes assets to `site/public/`, so a preview cannot

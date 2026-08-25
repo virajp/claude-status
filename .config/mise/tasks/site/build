@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Build the documentation site (zola) and check its internal links"
 #MISE dir="{{ config_root }}"
+#MISE depends=["site:assets"]
 
 #USAGE flag "--drafts" help="include pages marked draft"
 #USAGE flag "--minify" help="minify the generated HTML"
@@ -15,7 +16,14 @@ cd "$MISE_PROJECT_ROOT"
 # lie in the usage output. `--drafts` and `--minify` are the two knobs it does
 # have that anyone would reach for.
 #
-# This task chains into NOTHING, and that is deliberate.
+# It `depends` on ONE thing — `site:assets`, which stages the JSON schema and
+# the shipped defaults into `site/static/` for the config generator to fetch.
+# That is a step of this build rather than a chain into another gate: without
+# it `zola build` copies a `static/` tree missing two files the generator page
+# needs, and the failure would be a page that loads and then does nothing.
+# `site:serve` depends on it for the same reason.
+#
+# Beyond that it chains into NOTHING, and that is deliberate.
 #
 # It is not in `code:all`. `code:all` is the code-quality gate — format, lint,
 # test, security scan — and it is what the pre-commit hook and the release

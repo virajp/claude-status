@@ -14,6 +14,8 @@
     "site/public/",
     "site/templates/",
     "assets/claude-status.defaults.json",
+    "site/static/claude-status.schema.json",
+    "site/static/claude-status.defaults.json",
     "**/.claude/skills/flutter-interoperating-with-native-apis"
   ],
   "exec": {

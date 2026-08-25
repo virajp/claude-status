@@ -91,6 +91,15 @@ on:
       - "site/**"
       - ".github/workflows/site.yml"
       - ".config/mise.toml"
+      # The config generator builds its form from these two files, staged into
+      # `site/static/` by `site:assets`. Without them here, a pull request that
+      # renamed a config key or changed a shipped default would never rebuild
+      # the page that renders it — the first sign would be a deployed form
+      # describing a schema the binary no longer has.
+      # `tests/site.rs` asserts on this list, so it cannot narrow quietly.
+      - "schemas/**"
+      - "assets/claude-status.defaults.json"
+      - ".config/mise/tasks/site/**"
   workflow_dispatch: {}
 
 permissions:

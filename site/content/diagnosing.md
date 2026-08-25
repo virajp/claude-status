@@ -1,7 +1,7 @@
 +++
 title = "Diagnosing"
 description = "One command answers every question about why the bar looks the way it does."
-weight = 5
+weight = 6
 +++
 
 ```sh

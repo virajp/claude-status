@@ -47,13 +47,14 @@ Everything user-facing lives on the site. This file is a pointer at it, on
 purpose — a complete readme mirrored by a complete site is two documents that
 disagree within a month, and the disagreement gets found by a user.
 
-| Page                                                       | For                                                   |
-| ---------------------------------------------------------- | ----------------------------------------------------- |
-| [Install](https://claude-status.virajp.dev/install/)       | getting the binary, and wiring Claude Code to it      |
-| [Configure](https://claude-status.virajp.dev/configure/)   | the three config layers, and what you can change      |
-| [Per-repo](https://claude-status.virajp.dev/repo-config/)  | naming one repository in the bar                      |
-| [Segments](https://claude-status.virajp.dev/segments/)     | every segment, what it draws, and when it sits out    |
-| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --debug`, and the questions it answers |
+| Page                                                       | For                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| [Install](https://claude-status.virajp.dev/install/)       | getting the binary, and wiring Claude Code to it       |
+| [Configure](https://claude-status.virajp.dev/configure/)   | the three config layers, and what you can change       |
+| [Generate](https://claude-status.virajp.dev/generate/)     | building a config file in the browser, from the schema |
+| [Per-repo](https://claude-status.virajp.dev/repo-config/)  | naming one repository in the bar                       |
+| [Segments](https://claude-status.virajp.dev/segments/)     | every segment, what it draws, and when it sits out     |
+| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --debug`, and the questions it answers  |
 
 The [behaviour contract](docs/spec/statusline-behaviour.md) is the source of
 truth for implementers, and is not user documentation.

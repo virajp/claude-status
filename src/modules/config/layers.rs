@@ -355,6 +355,42 @@ mod tests {
         assert!(layers.sources.iter().all(|s| s.state == LayerState::Loaded));
     }
 
+    /// **A user-layer `projectName` is not inert — it names every repo.**
+    ///
+    /// Only the repo layer is narrowed ([`narrow`], called at one site); the
+    /// user layer merges whole. So a `projectName` written into the user config
+    /// reaches every repository that has not named itself.
+    ///
+    /// Pinned as a test because the opposite belief reached three documents at
+    /// once — the generator page, `configure.md`, and the cycle plan — each
+    /// telling users the key was safe to set here. Prose can be wrong quietly;
+    /// this cannot.
+    #[test]
+    fn a_user_layer_project_name_reaches_a_repo_that_has_not_named_itself() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = seed_user(&dir.path().join("home"), r#"{ "projectName": "from-user" }"#);
+        let repo = dir.path().join("repo-with-no-config");
+        std::fs::create_dir_all(&repo).unwrap();
+
+        let layers = load(Some(&home), Some(&repo));
+        assert_eq!(
+            layers.config.project_name.as_deref(),
+            Some("from-user"),
+            "the user layer is not narrowed, so its projectName applies to a repo that set none"
+        );
+
+        // The control: without the user config the segment has no name at all,
+        // which is what proves the assertion above observed the user layer
+        // rather than some default.
+        let empty = dir.path().join("empty-home");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(
+            load(Some(&empty), Some(&repo)).config.project_name,
+            None,
+            "with no user config there is no project name to inherit"
+        );
+    }
+
     #[test]
     fn a_malformed_layer_is_ignored_rather_than_fatal() {
         let dir = tempfile::TempDir::new().unwrap();

@@ -170,9 +170,12 @@ impl JsonSchema for SegmentEntrySchema {
                     "properties": {
                         "name": { "type": "string", "description": "Segment id." },
                         "id": { "type": "string", "description": "Alias for `name`." },
-                        "bg": color,
-                        "fg": color,
-                        "bold": { "type": [ "boolean", "null" ] },
+                        "bg": with_description(color.clone(), "Background colour, for this position only — overrides `segments.<id>`."),
+                        "fg": with_description(color, "Foreground colour, for this position only — overrides `segments.<id>`."),
+                        "bold": {
+                            "type": [ "boolean", "null" ],
+                            "description": "Draw this entry bold, for this position only. `null` clears a `bold` `segments.<id>` sets.",
+                        },
                     },
                 },
             ],

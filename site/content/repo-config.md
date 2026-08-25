@@ -1,7 +1,7 @@
 +++
 title = "Per-repo settings"
 description = "One key, one file, written by hand — and nothing creates it for you."
-weight = 3
+weight = 4
 +++
 
 ## The file

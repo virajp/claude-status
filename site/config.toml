@@ -16,13 +16,24 @@
 # `catppuccin-mocha`, `everforest-dark`, `rose-pine`. Omitting `theme` while
 # highlighting is on is an error, not a default.
 #
-# NO THEME, NO CSS FRAMEWORK, NO JAVASCRIPT. The templates and the one
-# stylesheet in `static/` are the whole front end. That is not taste: the repo
-# spent `distribution/01` removing its only non-Rust toolchain, and a generator
-# that wants npm to build a stylesheet would put it straight back. Zola is a
-# single static Rust binary and keeps the tree single-language.
+# NO THEME, NO CSS FRAMEWORK, NO JAVASCRIPT TOOLCHAIN. The templates, the one
+# stylesheet in `static/` and one hand-written ES module are the whole front
+# end. That is not taste: the repo spent `distribution/01` removing its only
+# non-Rust toolchain, and a generator that wants npm to build a stylesheet
+# would put it straight back. Zola is a single static Rust binary and keeps the
+# tree single-language.
 #
-# `search` is off and there is no taxonomy. Six pages do not need an index.
+# This block used to read "NO JAVASCRIPT", flatly, and `website/02-config-
+# generator` made that false. What it was protecting was never the absence of a
+# `<script>` tag — it was the absence of a BUILD, and that line has not moved:
+# `site/static/config-generator.js` is vanilla ES modules with no bundler, no
+# dependency, no package.json and no lockfile, formatted by dprint's pinned
+# wasm plugin with no npm anywhere. `tests/site.rs` holds three things in its
+# place: no JS lockfile or `node_modules` is tracked; the nav is still plain
+# anchors with no script inside it; and exactly ONE tracked path under `site/`
+# may carry a `<script>`, so a second one anywhere fails.
+#
+# `search` is off and there is no taxonomy. Seven pages do not need an index.
 #
 # Key order here is not meaningful — dprint runs taplo with `reorder_keys` on,
 # so this file is re-sorted on every commit. Do not encode intent in ordering.

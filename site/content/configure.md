@@ -30,6 +30,10 @@ its own page — see [Per-repo](@/repo-config.md).
 Put only what you changed in it. Anything you leave alone follows the binary
 forward when you upgrade.
 
+[Generate a config](@/generate.md) builds this file from the published schema,
+with every key's description beside it — or write it by hand from the reference
+below.
+
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
@@ -73,7 +77,7 @@ run yourself.
 | `spend`           | `refreshMinutes` and `show` for the monthly-budget segment                  |
 | `subagent`        | styling and the description budget for the subagent panel                   |
 | `worktreePattern` | the regex that decides a checkout is a worktree                             |
-| `projectName`     | **repo layer only** — see [Per-repo](@/repo-config.md)                      |
+| `projectName`     | belongs in the repo layer — a user-layer value names every repo             |
 
 ### Colours
 

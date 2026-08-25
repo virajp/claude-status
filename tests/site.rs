@@ -58,6 +58,15 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} is missing or unreadable: {e}", path.display()))
 }
 
+/// A tracked file's contents with its Tera comments blanked out, for the scans
+/// that look for a construct this repository also *documents*.
+///
+/// Only `.html` files carry Tera comments; everything else is returned as-is.
+fn code(rel: &str) -> String {
+    let text = read(rel);
+    if rel.ends_with(".html") { strip_tera_comments(&text) } else { text }
+}
+
 /// Every tracked file under `dir` whose name ends in `ext`.
 fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
     let found: Vec<String> = tracked_files()
@@ -86,6 +95,11 @@ fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
 /// this is what holds it.
 #[test]
 fn no_javascript_lockfile_or_node_modules_is_tracked() {
+    // A manifest, not just a lockfile. `the_generators_pure_core_holds_against_the_real_schema`
+    // cites this test for "no `package.json`", and a `package.json` is the
+    // first thing anyone would add to run `generator.test.mjs` under a test
+    // runner — which is precisely how the npm ecosystem comes back.
+    const JS_MANIFESTS: &[&str] = &["package.json"];
     const JS_LOCKFILES: &[&str] = &[
         "package-lock.json",
         "npm-shrinkwrap.json",
@@ -101,6 +115,9 @@ fn no_javascript_lockfile_or_node_modules_is_tracked() {
         let name = rel.rsplit('/').next().unwrap_or(&rel);
         if JS_LOCKFILES.contains(&name) {
             offenders.push(format!("{rel} (JS lockfile)"));
+        }
+        if JS_MANIFESTS.contains(&name) {
+            offenders.push(format!("{rel} (JS manifest)"));
         }
         if rel.split('/').any(|c| c == "node_modules") {
             offenders.push(format!("{rel} (under node_modules/)"));
@@ -351,7 +368,21 @@ fn the_pull_request_path_builds_and_cannot_reach_a_deploy_secret() {
     );
 
     assert!(workflow.contains("pull_request:"), "site.yml has no pull_request trigger");
-    assert!(workflow.contains("- \"site/**\""), "the pull_request path filter no longer covers site/");
+
+    // **The path filter, widened by `website/02-config-generator`.** The
+    // generator page builds its form from the committed schema and the shipped
+    // defaults, staged into `site/static/` by `site:assets` — so a pull
+    // request renaming a config key or changing a shipped default changes what
+    // that page renders while touching nothing under `site/`. With the filter
+    // as it was, the build that would have caught it never ran; the first sign
+    // would have been a deployed form describing a schema the binary no longer
+    // has. The task that does the staging is in the list for the same reason.
+    for path in ["site/**", "schemas/**", "assets/claude-status.defaults.json", ".config/mise/tasks/site/**"] {
+        assert!(
+            workflow.contains(&format!("- \"{path}\"")),
+            "the pull_request path filter no longer covers {path}, so a change to it would not rebuild the site"
+        );
+    }
 }
 
 /// Splits a workflow into everything before `jobs:` and each job under it.
@@ -476,17 +507,81 @@ fn the_layout_carries_the_static_marks_of_a_readable_phone_page() {
     let css = read("site/static/style.css");
     assert!(css.contains("@media"), "style.css has no breakpoint at all");
 
-    // The nav is anchors, and nothing on this site is a script.
+    // The nav is anchors.
     let nav_at = base.find("<nav").expect("base.html has a nav");
     let nav = &base[nav_at..base[nav_at..].find("</nav>").map(|i| nav_at + i).expect("the nav closes")];
     assert!(nav.matches("<a ").count() >= 4, "the nav is no longer a set of plain links: {nav}");
 
-    let mut markup: Vec<String> = tracked_under("site/", ".html");
-    markup.extend(tracked_under("site/", ".css"));
-    for rel in markup {
+    // The nav is anchors, and NOTHING INSIDE IT is a script. Narrower than the
+    // scan this used to be, and deliberately so: `website/02-config-generator`
+    // added the site's first JavaScript, so "no script anywhere" stopped being
+    // true. What the criterion was ever about is right here — the usual mobile
+    // nav failure is a hamburger behind a script, and a nav that cannot be
+    // opened without one is broken for everybody the script fails for.
+    // `exactly_one_tracked_path_under_site_may_carry_a_script` holds the rest.
+    assert!(
+        !nav.contains("<script"),
+        "the nav has grown a script — a hamburger behind JavaScript is the failure this criterion names: {nav}"
+    );
+}
+
+/// **The `<script>` guard, after the site grew a script.**
+///
+/// This test replaced a blanket "no `<script>` in any tracked `site/` HTML or
+/// CSS" assertion, which `website/02-config-generator` made impossible to keep:
+/// the config generator is a form, and a form is a script. Deleting the guard
+/// would have been the easy move and the wrong one — it is what stops a second
+/// script arriving without anyone deciding to allow it.
+///
+/// So it is stronger than what it replaced, in three ways:
+///
+/// 1. **One allowlisted path**, named below. Every other tracked file fails.
+/// 2. **Markdown is scanned too.** The old version read `.html` and `.css`
+///    only, so a `<script>` written into a content page — which zola passes
+///    through verbatim — went straight past it. That hole is closed here.
+/// 3. **The allowlisted file must actually carry one.** An allowlist entry
+///    that has gone stale is a permission nobody is using and nobody will
+///    notice widening.
+#[test]
+fn exactly_one_tracked_path_under_site_may_carry_a_script() {
+    /// The config generator's module tag, and nothing else. It lives in a
+    /// template rather than in markdown so the content stays script-free and
+    /// the exception is one file a reviewer can read in full.
+    const ALLOWED: &[&str] = &["site/templates/generate.html"];
+
+    let mut sources: Vec<String> = tracked_under("site/", ".html");
+    sources.extend(tracked_under("site/", ".css"));
+    sources.extend(tracked_under("site/", ".md"));
+
+    let mut offenders = Vec::new();
+    for rel in &sources {
+        // Tera comments stripped first, for the reason
+        // `no_template_hardcodes_an_internal_url_behind_the_builds_back`
+        // already records: `base.html`'s header comment explains this rule by
+        // quoting the bad form, and a test that cannot tell a rule from its
+        // counter-example punishes documenting the rule.
+        if code(rel).contains("<script") && !ALLOWED.contains(&rel.as_str()) {
+            offenders.push(rel.clone());
+        }
+    }
+    assert_eq!(
+        offenders,
+        Vec::<String>::new(),
+        "a second script arrived under site/. The layout, the nav and every page's content are supposed \
+         to work without JavaScript; exactly one path is allowed to load any, and it is {ALLOWED:?}"
+    );
+
+    // The other direction. Without this the allowlist could name a file that
+    // stopped having a script — or that stopped existing — and the guard would
+    // read as passing while protecting nothing.
+    for allowed in ALLOWED {
         assert!(
-            !read(&rel).contains("<script"),
-            "{rel} ships JavaScript — the nav and the layout are supposed to work without any"
+            sources.iter().any(|rel| rel == allowed),
+            "{allowed} is allowlisted for a script but is not a tracked file under site/"
+        );
+        assert!(
+            code(allowed).contains("<script"),
+            "{allowed} is allowlisted for a script and no longer has one — remove the entry rather than leaving a spare permission"
         );
     }
 }
@@ -506,4 +601,403 @@ fn the_landing_page_screenshot_exists_and_is_a_png() {
         read("site/content/_index.md").contains("statusline.png"),
         "the landing page no longer shows the screenshot"
     );
+}
+
+// ---------------------------------------------------------------------------
+// website/02-config-generator — the schema-driven form
+// ---------------------------------------------------------------------------
+
+/// The word list from `site:assets`'s `for source in …; do` line.
+///
+/// Parsed, not substring-matched. The assert below used to ask whether the task
+/// file *contained* each source path anywhere, and the task's own explanatory
+/// header names both paths — so it passed no matter what the staging loop did.
+/// Narrowing the loop while leaving that comment intact (the normal thing to
+/// do: it is prose about why two files exist, not a manifest) left a green
+/// suite and a generator page fetching a 404.
+fn staged_sources(assets: &str) -> Vec<String> {
+    let line = assets
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("for source in "))
+        .expect("site:assets still stages its inputs from a `for source in …; do` loop");
+
+    line.trim_start_matches("for source in ")
+        .trim_end_matches("; do")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Both files the config generator loads, and where `site:assets` stages them.
+const STAGED: [(&str, &str); 2] = [
+    ("schemas/claude-status.schema.json", "site/static/claude-status.schema.json"),
+    ("assets/claude-status.defaults.json", "site/static/claude-status.defaults.json"),
+];
+
+/// **The two documents reach the browser without a tracked second copy.**
+///
+/// The page needs the schema (the shape) *and* `assets/claude-status.defaults.json`
+/// (the values), because the schema deliberately carries four `default` values
+/// against a tree of about a hundred leaves — see
+/// `tests/schema.rs::the_only_defaults_in_the_schema_are_the_four_caps`, which
+/// is what keeps it that way.
+///
+/// Committing copies under `site/static/` would have been the obvious way to
+/// serve them and is the one that breaks. dprint's `includes` is `**/*.json`
+/// and its exclusion of the defaults asset is written at **that path only**, so
+/// a tracked copy would be reformatted on commit and would then differ, byte
+/// for byte, from the file it is a copy of — with nothing to say so. It is the
+/// same formatter-versus-generator loop
+/// `the_generated_schema_is_already_dprint_formatted` exists for.
+///
+/// So they are build output: staged by `site:assets`, gitignored, and excluded
+/// from dprint as a second line of defence. This test is what stops any of
+/// those three quietly coming undone.
+#[test]
+fn the_schema_and_the_shipped_defaults_are_staged_rather_than_committed() {
+    let ignore = read(".gitignore");
+    let dprint = read("dprint.json");
+    let assets = read(".config/mise/tasks/site/assets");
+    let tracked = tracked_files();
+
+    for (source, staged) in STAGED {
+        assert!(
+            !tracked.iter().any(|p| p == staged),
+            "{staged} has been committed — dprint will reformat it into something that no longer matches {source}"
+        );
+        assert!(
+            ignore.lines().any(|l| l.trim() == staged),
+            ".gitignore no longer ignores {staged}, so the next build leaves it ready to be committed by accident"
+        );
+        assert!(
+            dprint.contains(&format!("\"{staged}\"")),
+            "dprint.json no longer excludes {staged} — the formatter would rewrite a file that has to stay byte-identical to {source}"
+        );
+        assert!(
+            staged_sources(&assets).iter().any(|s| s == source),
+            "the site:assets task no longer stages {source}, so the generator page would load a 404"
+        );
+
+        // Byte equality, when a build has actually run. Conditional and loud
+        // about it: a fresh checkout has no `site/static/` copy at all, and an
+        // assertion that silently passes in that state would be the vacuous
+        // guard this file already has two comments about.
+        let staged_path = root().join(staged);
+        if staged_path.exists() {
+            assert_eq!(
+                std::fs::read(root().join(source)).expect("the source exists"),
+                std::fs::read(&staged_path).expect("the staged copy is readable"),
+                "{staged} has drifted from {source} — re-run `mise run site:assets`"
+            );
+        } else if std::env::var_os("CI").is_some() {
+            panic!(
+                "{staged} is missing under CI. `code:test` stages it through its `site:assets` dependency, so an absence here means that dependency is gone and this byte comparison has been passing without comparing anything."
+            );
+        } else {
+            eprintln!("skipped the byte comparison for {staged}: no build has run in this checkout");
+        }
+    }
+
+    // Neither list may grow without the other. `.gitignore` and `dprint.json`
+    // name the staged copies by exact path, so a third file staged by the task
+    // alone would be neither ignored nor dprint-excluded — exactly the
+    // formatter-versus-generator trap this test exists to prevent — and every
+    // assert above iterates STAGED, so it would never be looked at.
+    let mut by_task = staged_sources(&assets);
+    by_task.sort();
+    let mut by_test: Vec<String> = STAGED.iter().map(|(source, _)| (*source).to_string()).collect();
+    by_test.sort();
+    assert_eq!(
+        by_task, by_test,
+        "site:assets and STAGED have drifted apart; a file staged by the task but not named in STAGED is neither gitignored nor dprint-excluded"
+    );
+
+    // The staging has to be part of a build rather than a step somebody
+    // remembers. Both entry points, because `site:serve` is how the page is
+    // ever looked at during development and a preview missing both documents
+    // renders an error where the form should be.
+    for task in ["build", "serve"] {
+        assert!(
+            read(&format!(".config/mise/tasks/site/{task}")).contains(r#"depends=["site:assets"]"#),
+            "site:{task} no longer depends on site:assets"
+        );
+    }
+}
+
+/// **Acceptance criterion 1, in the only form that can gate a regression.**
+///
+/// The criterion is "a key added to the schema shows in the form with no
+/// hand-edit to the page". It cannot be tested forwards here: a key cannot be
+/// added to the committed schema, because the drift check and the `always_run`
+/// pre-commit hook both regenerate it from the Rust types. The *forwards*
+/// direction is proved in `tests/js/generator.test.mjs`, which feeds the form
+/// builder a synthetic schema carrying an invented key.
+///
+/// This is the negative half, and it is the one that actually catches a
+/// regression: **no config key name may appear as a string literal in the
+/// site's executable surface**. The moment somebody writes
+/// `if (key === "palette")` to make one field look nicer, the form stops being
+/// a function of the schema and criterion 1 is gone — with every existing test
+/// still green, because the page would still work.
+///
+/// **Scope, stated rather than assumed.** String literals only, in tracked
+/// `site/templates/` and `site/static/`, with comments stripped. Not prose:
+/// `site/content/` is documentation and naming the keys is its job. Not bare
+/// identifiers: `width`, `name`, `id`, `match`, `head` and `bold` are all
+/// config keys *and* ordinary words in CSS and JavaScript, so a word scan would
+/// need an allowlist longer than the schema and would still fail on
+/// `input[type="number"]`. A literal is where the coupling would actually be
+/// written.
+#[test]
+fn no_config_key_is_hard_coded_into_the_pages_that_build_the_form() {
+    let names = schema_property_names();
+    assert!(names.len() > 30, "found only {} schema property names — this scan would be weak", names.len());
+
+    let mut sources: Vec<String> = tracked_under("site/templates/", ".html");
+    sources.extend(tracked_under("site/static/", ".js"));
+    sources.extend(tracked_under("site/static/", ".css"));
+
+    let mut offenders = Vec::new();
+    for rel in &sources {
+        for literal in string_literals(&code(rel)) {
+            if names.contains(literal.as_str()) {
+                offenders.push(format!("{rel} -> {literal:?}"));
+            }
+        }
+    }
+    assert_eq!(
+        offenders,
+        Vec::<String>::new(),
+        "a config key is written into the page. The form is supposed to be a pure function of the schema, \
+         so a key added to the Rust types appears with no edit here — that is acceptance criterion 1, and \
+         naming one key is how it stops being true."
+    );
+
+    // **The control.** A scan that cannot fail looks exactly like a clean one,
+    // and this file already carries two comments about guards that could not.
+    // Both halves: a real key in code is caught, and the same word inside a
+    // comment is not — every doc block in this repository would trip a scanner
+    // that could not tell the difference.
+    let probe = "const x = \"palette\"; // and a comment saying \"palette\"";
+    let found = string_literals(probe);
+    assert_eq!(found, vec!["palette".to_string()], "the literal scanner is not reading what it claims to");
+    assert!(names.contains("palette"), "the schema no longer has the key this control is built on");
+    assert!(!names.contains("paletteProperty"), "the control's lookalike is a real key now; pick another");
+}
+
+/// Every `properties` key anywhere in the committed schema.
+fn schema_property_names() -> BTreeSet<String> {
+    fn walk(node: &serde_json::Value, out: &mut BTreeSet<String>) {
+        match node {
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    if key == "properties"
+                        && let Some(properties) = value.as_object()
+                    {
+                        out.extend(properties.keys().cloned());
+                    }
+                    walk(value, out);
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+            _ => {}
+        }
+    }
+
+    let schema: serde_json::Value =
+        serde_json::from_str(&read("schemas/claude-status.schema.json")).expect("the committed schema parses");
+    let mut out = BTreeSet::new();
+    walk(&schema, &mut out);
+    out
+}
+
+/// Every quoted string in a source file, with comments skipped.
+///
+/// Small on purpose — it reads the three languages this site is written in
+/// (JavaScript, CSS, HTML), not every construct they allow. Template literals
+/// are taken whole, so a key interpolated into one would be missed; nothing
+/// here does that, and the alternative is parsing JavaScript.
+fn string_literals(source: &str) -> Vec<String> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '/' if chars.get(i + 1) == Some(&'/') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i += 2;
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                let mut literal = String::new();
+                while i < chars.len() && chars[i] != quote {
+                    if chars[i] == '\\' {
+                        i += 1; // an escaped quote does not close the string
+                    }
+                    if i < chars.len() {
+                        literal.push(chars[i]);
+                    }
+                    i += 1;
+                }
+                i += 1;
+                out.push(literal);
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// **Criterion 8, restated.** "Degrades to readable documentation rather than a
+/// blank area" needs a browser with JavaScript switched off, and there is no
+/// headless browser here — adding one is the toolchain `website/01-site`'s
+/// criterion 1 forbids, and the same trade is recorded above
+/// `the_layout_carries_the_static_marks_of_a_readable_phone_page`.
+///
+/// So the page is built the way that makes the criterion true by construction,
+/// and this asserts the construction: **the reference is real static content**
+/// and the script replaces exactly one element. A `<noscript>` block would not
+/// do — it is a second copy of the documentation that nothing checks, and the
+/// copy that rots is always the one nobody reads.
+///
+/// The real check is a human one at the gate: open the page with JavaScript
+/// disabled and read it.
+#[test]
+fn the_generator_page_reads_as_documentation_without_its_script() {
+    let page = read("site/content/generate.md");
+
+    assert!(
+        page.contains(r#"<div id="config-generator">"#),
+        "the generator page lost the element the script mounts into"
+    );
+    assert!(!page.contains("<script"), "the generator's markdown grew a script — the module belongs in the template");
+    assert!(!page.contains("<noscript"), "a <noscript> block is a second copy of the docs that nothing checks");
+
+    // The facts a user needs in order to write this file by hand, which is
+    // what "readable documentation" has to mean here. Each is a rule the form
+    // enforces silently and the prose has to say out loud.
+    for fact in [
+        "~/.config/claude-status/config.json", // where the file goes
+        "$schema",                             // what is always emitted
+        "follows the binary forward",          // why only non-defaults
+        "wholesale",                           // why a touched list comes out whole
+        "revert to shipped",                   // why "remove" is not a delete
+        "palette name",                        // the four colour forms
+        "hex string",
+        "RGB triple",
+        "projectName", // the one key that belongs in the other file
+        "__proto__",   // the key names that can never take effect
+    ] {
+        assert!(page.contains(fact), "the generator page no longer explains {fact:?} — with the script off, nothing else does");
+    }
+
+    // And it survives the build, outside any script.
+    //
+    // This one is **developer-only, and knowingly so**: it needs `site/public/`,
+    // which only a full `zola` build produces. `code:test` stages the two JSON
+    // assets (via `site:assets`) but deliberately does not pull `zola` into the
+    // Rust test path, and the one workflow that builds the site (`site.yml`)
+    // never runs this suite. So unlike the byte comparison above, this cannot
+    // be made CI-strict without coupling the two — it is a local convenience,
+    // not a gate. Recorded as a gap in the cycle plan rather than dressed up.
+    let built = root().join("site/public/generate/index.html");
+    if built.exists() {
+        let html = std::fs::read_to_string(&built).expect("the built page is readable");
+        let before_script = html.split("<script").next().expect("split yields at least one part");
+        assert!(
+            before_script.contains("~/.config/claude-status/config.json"),
+            "the built page's reference is not present ahead of its script"
+        );
+        assert!(before_script.contains(r#"id="config-generator""#), "the built page lost the mount element");
+    } else {
+        eprintln!("skipped the built-page check: run `mise run site:build` in this checkout");
+    }
+}
+
+/// **The generator's emitter and form builder, run.**
+///
+/// `tests/js/generator.test.mjs` is the real assertion set — criteria 2 and 3,
+/// the five open maps, the prototype keys, the `null`-versus-absent rule, and
+/// criterion 1's forward direction against a synthetic schema. It runs against
+/// the **real** committed schema and the **real** shipped defaults, so it fails
+/// when either moves in a way the page cannot render.
+///
+/// **No toolchain is added by this.** No `package.json`, no lockfile, no
+/// `node_modules` — `no_javascript_lockfile_or_node_modules_is_tracked` still
+/// holds (it scans for a manifest as well as a lockfile), and `code:sec`'s
+/// grype scan still sees no npm ecosystem. `node` is invoked as a bare binary
+/// the way this suite already invokes `git`, `mise` and `dprint`, following
+/// `tests/schema.rs::the_generated_schema_is_already_dprint_formatted`.
+///
+/// When `node` is absent this **fails under CI and skips locally**. The skip is
+/// not loud — `cargo test` captures a passing test's stdout, so the `eprintln!`
+/// below is invisible without `--nocapture`. That is exactly why the CI branch
+/// asserts instead: this test is the only thing that runs the 458-line JS
+/// harness, and a silent skip would retire criteria 2 and 3 without a single
+/// red line anywhere.
+///
+/// The copy-and-rename is not a flourish. Node decides a file's module system
+/// from its extension, and the browser file has to stay `.js` so a static host
+/// serves it as `text/javascript`.
+#[test]
+fn the_generators_pure_core_holds_against_the_real_schema() {
+    let Some(node) = node_on_path() else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "no `node` on PATH under CI. This test is the only thing that runs tests/js/generator.test.mjs, so skipping it leaves the generator's emitter entirely unguarded while the suite still reports green."
+        );
+        eprintln!("skipped: no `node` on PATH — the generator's core was not exercised");
+        return;
+    };
+
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    std::fs::copy(root().join("site/static/config-generator.js"), dir.path().join("generator.mjs")).expect("the module copies");
+    std::fs::copy(root().join("tests/js/generator.test.mjs"), dir.path().join("generator.test.mjs")).expect("the harness copies");
+
+    let run = |extra: &[&str]| {
+        std::process::Command::new(&node)
+            .arg(dir.path().join("generator.test.mjs"))
+            .arg(root().join("schemas/claude-status.schema.json"))
+            .arg(root().join("assets/claude-status.defaults.json"))
+            .args(extra)
+            .output()
+            .expect("node runs")
+    };
+
+    let out = run(&[]);
+    assert!(
+        out.status.success(),
+        "the config generator's core no longer matches the binary's writer:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // **The control**, and it is not optional. A harness invoked wrongly — bad
+    // path, wrong flag, a `node` that refuses the module — exits non-zero and
+    // the assertion above catches that; but a harness whose assertions never
+    // run exits **zero**, and looks exactly like a clean pass. `--self-check`
+    // asserts something false on purpose, so this proves the run reached the
+    // assertions at all.
+    let control = run(&["--self-check"]);
+    assert!(
+        !control.status.success(),
+        "the harness passed with a deliberately false assertion in it — it is not running its checks:\n{}{}",
+        String::from_utf8_lossy(&control.stdout),
+        String::from_utf8_lossy(&control.stderr),
+    );
+}
+
+/// `node` if it is on PATH, resolved the way a shell would.
+fn node_on_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).map(|dir| dir.join("node")).find(|candidate| candidate.is_file())
 }
