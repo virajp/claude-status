@@ -33,10 +33,13 @@ non-defaults, `--configure` and the reshaped flag set, then a generated schema.
 | # | Plan                                                                 | Requires         |
 | - | -------------------------------------------------------------------- | ---------------- |
 | 1 | [drop-npm](./2026-08-23-distribution/01-drop-npm.md)                 | config-and-cli 3 |
-| 2 | [homebrew-formula](./2026-08-23-distribution/02-homebrew-formula.md) | 1                |
-| 3 | [release](./2026-08-23-distribution/03-release.md)                   | 2                |
+| 3 | [release](./2026-08-23-distribution/03-release.md)                   | 1                |
+| 2 | [homebrew-formula](./2026-08-23-distribution/02-homebrew-formula.md) | 3                |
 
-Delete the npm installer, ship a Homebrew tap, cut `v0.1.0`.
+Delete the npm installer, cut `v0.1.0`, then ship a Homebrew tap against the
+asset it published. **Rows are in execution order: 1 → 3 → 2.** The two plans
+each declared the other as a prerequisite; a formula cannot pin a digest that
+does not exist, so the release goes first.
 
 ### [website](./2026-08-23-website/index.md)
 
@@ -69,9 +72,18 @@ Two, and both are easy to miss because the folders read as independent:
 - **`website/02` requires `config-and-cli/04`.** The form is built from the
   generated schema.
 
-One soft ordering, not enforced by `requires:`: **`website/01` should land
-before `distribution/02`**, or the formula's caveats print a link to a site that
-does not exist yet.
+The soft ordering recorded here — that `website/01` should land before
+`distribution/02` so the formula's caveats do not link a site that does not
+exist — **has been overtaken and did not do its job.** Both website plans have
+landed, and `claude-status.virajp.dev` still does not resolve: the Pages project
+and DNS record were never created, so `dig` returns nothing and `curl` exits 6.
+A dead name is a worse first impression than a 404.
+
+So this is a **precondition for `distribution/02`, not a sequencing note**:
+either the record is live, or the caveats name something that resolves.
+Cloudflare Pages' own `*.pages.dev` domain needs no DNS work and is the obvious
+interim. Note the repo has already accepted printing the unresolvable URL once —
+`cli.rs`'s help text does, with a test pinning it.
 
 Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — currently
 empty.

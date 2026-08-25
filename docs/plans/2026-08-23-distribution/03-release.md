@@ -10,7 +10,7 @@ covers: [
   docs/spec/statusline-behaviour.md,
 ]
 requires: [
-  docs/plans/2026-08-23-distribution/02-homebrew-formula.md,
+  docs/plans/2026-08-23-distribution/01-drop-npm.md,
 ]
 timestamp: 2026-08-23T14:13:00Z
 tags: [ distribution, release, ci, homebrew, tag ]
@@ -27,11 +27,43 @@ and the formula bump have all been written and none has run on a tag. This cycle
 is where the chain executes for the first time, which makes it a **verification
 cycle** as much as a shipping one.
 
+## Order — this cycle runs BEFORE `02`
+
+`03` declared `requires: 02`, while `02`'s own out-of-scope list says "Cutting
+the release that produces the asset. [Plan 3]". Each declared it needed the
+other. **The cycle was in the documents**, not introduced by reordering them —
+reversing it is the way out, not a violation.
+
+`02` writes a formula pinning a released asset's digest. No release exists, so
+there is nothing to pin. This cycle produces that asset; `02` then reads it.
+
+Two consequences carried here deliberately:
+
+- **The deterministic-archive fix moves into this cycle.** It was assigned to
+  `02` by name in `release.yml` and `01-drop-npm.md`, on the assumption `02`
+  came first. Both now say `03`. Landed as `reproducible_tar`.
+- **Criteria 2 and 3 defer to `02`.** They require a formula that does not exist
+  yet. Their *intent* — a clean machine installing and running the binary with
+  no toolchain — is provable here from the raw asset, and that is what criterion
+  2 now asks.
+
 ## Current state (actual)
 
-**No git tag exists.** No GitHub Release. The npm registry holds
-`@askviraj/claude-status@0.0.1`, deprecated by
-[plan 2](./02-homebrew-formula.md) and pointing at the tap.
+**No git tag exists today.** No GitHub Release. But one was pushed: run
+`32586517321` on 2026-08-22 was a `push` on tag **`v1.0.0`**, which failed and
+was deleted. So `v0.1.0` is a version-number *regression* against a tag that was
+briefly public. Nothing mechanical cares; it is recorded so nobody rediscovers
+it as a surprise. **Decided: ship `v0.1.0` as planned.**
+
+That failure's two causes are both gone at `f6b22c4`: `MISE_ENV=ci` resolved
+`core:rust` with `profile = "minimal"` so clippy was absent, and `mise-action`
+died installing `pnpm` on `darwin/amd64`. Rust is now `profile = "default"` in
+the base config, and neither node nor pnpm nor the Intel runner row remains.
+**The npm registry is not part of this.** `@askviraj/claude-status` 404s to an
+anonymous fetch while the same account's `@askviraj/ai-plugins` returns 200 —
+consistent with a placeholder never published *or* one published and removed,
+and an anonymous query cannot tell those apart. §9's fifth amendment already
+records it as unverified. Nothing here deprecates anything.
 
 **`Cargo.toml` is at `0.1.0`**, with the comment *"one line for the binary and
 the npm package; 1.0.0 ships once tested"*. The npm half of that comment is
@@ -68,13 +100,20 @@ Correct `Cargo.toml`'s comment while here — it still mentions the npm package.
 
 ### 2. Dry-run the whole chain on a throwaway tag first
 
-Push `v0.1.0-rc.1` (or run the workflow in a fork) and watch all four jobs plus
-the bump. **This is the actual point of the cycle.** The likely failures are
-mechanical — a runner label, an artifact path, a permission scope, a tap token
-without write access — and finding them on a real version number is strictly
-worse than finding them on a throwaway one.
+**Use a fork.** Pushing `v0.1.0-rc.1` against this repo does not work: `verify`
+compares the tag to `Cargo.toml`, computes `0.1.0-rc.1` against `0.1.0`, and
+exits 1 — *before* `test` and `build`, which are exactly the jobs a dry run
+exists to watch. The rehearsal would die in the first job and prove nothing.
 
-Delete the rc release and tag afterwards. Nothing consumed it.
+The parse is not the problem; the comparison is. Rehearsing on this repo would
+mean committing `Cargo.toml` at `0.1.0-rc.1`, tagging, then committing it back —
+two commits on `main` and a window where `main` claims to be an rc. A fork
+avoids all of it. Note also that `gh release create` is called without
+`--prerelease`, so an rc would publish as **Latest** until step 3 replaced it.
+
+Watch the four jobs — `verify`, `test`, `build`, `publish`. **There is no bump
+job**; `02` adds it. The likely failures are mechanical: a runner label, an
+artifact path, a permission scope.
 
 ### 3. Cut `v0.1.0`
 
@@ -84,24 +123,39 @@ Delete the rc release and tag afterwards. Nothing consumed it.
 ### 4. Verify the release is complete
 
 Per target: a raw binary, a `.tar.gz`, and both in `SHA256SUMS` with digests
-that check out. Then confirm the tap's formula moved to `0.1.0` **and that its
-`sha256` equals the manifest entry**, not merely that it changed.
+that check out.
+
+The formula half — that the tap moved to `0.1.0` and its `sha256` equals the
+manifest entry rather than merely changing — **defers to `02`**, which is the
+cycle that writes the formula. Record the tarball's digest here; `02` pins it.
 
 ### 5. Re-run the tag, deliberately
 
-Re-run the workflow on `v0.1.0` and confirm it is a no-op: assets clobbered
-identically, and the formula bump committing nothing. A release pipeline you
-cannot safely retry is one you will be afraid to use the first time it
-half-fails — and this is the untested half.
+Re-run the workflow on `v0.1.0` and confirm the re-uploaded assets are
+**byte-identical** — same sha256, not merely present. This is now a real test
+rather than an aspiration: `reproducible_tar` landed in this cycle, and
+`tests/release.rs` proves it by running it. Before that fix this step could not
+have passed.
+
+The formula-commits-nothing half defers to `02`.
+
+Caveat worth stating: reproducibility here is proven for the *archive*. The
+toolchain is `core:rust = "latest"`, so a re-run weeks later could resolve a
+different rustc and change the binary itself. See Risks.
 
 ### 6. Install as a user would
 
 On a Mac with no Rust toolchain and no repo checkout:
 
 ```sh
-brew install virajp/tap/claude-status
-claude-status --configure
+# The tap does not exist yet — `02` writes it. Install from the raw asset:
+curl -fsSLO https://github.com/virajp/claude-status/releases/download/v0.1.0/claude-status-darwin-arm64
+chmod +x claude-status-darwin-arm64 && ./claude-status-darwin-arm64 --configure
 ```
+
+The `brew install` form is `02`'s to prove. Everything below it is provable now,
+and is the part that actually matters — a machine with no toolchain running the
+shipped bytes.
 
 Then confirm the bar renders in Claude Code, `--debug` reports the wiring, and —
 with no config file written — that it reports defaults in use rather than an
@@ -111,10 +165,18 @@ error. That last one is
 
 ### 7. Docs
 
-§9's decision is marked **shipped**, with the version and date. §10's phases are
-marked complete. `readme.md` and the website carry the real install command.
-`docs/plans/index.md` loses its "Nothing has shipped" section, because it stops
-being true.
+§10 **Phase 4** is marked complete — its verification text is about assets and
+digests and needs no channel. §9 records the **release** as shipped with the
+version and date, but **not the channel**: §9's resolved heading is "GitHub
+Release assets, Homebrew as the channel", and marking that shipped with no tap
+would overclaim. `02` closes it.
+
+`readme.md` and `site/content/install.md` carry the raw-asset route and keep
+their "the tap is not published yet" note. `docs/plans/index.md`'s "Nothing has
+shipped" section is **rewritten, not deleted** — this cycle falsifies its no-tag
+and no-Release claims, but its npm sentence is independently unverified (see
+Current state) and its "One target" paragraph is still true and referenced
+elsewhere.
 
 ## Acceptance criteria (from contract)
 
@@ -125,13 +187,18 @@ was one of two left open, and restated for Homebrew — the other was
 1. Given `v0.1.0`, when the GitHub Release is read, then it carries
    `target_count()` raw binaries and the same number of `.tar.gz` archives, all
    present in `SHA256SUMS` with matching digests.
-2. Given a machine with **no Rust toolchain and no checkout**, when
-   `brew install` then `claude-status --configure` run, then the bar renders in
-   Claude Code.
-3. Given the tap after the release, then its formula names `0.1.0` and a
-   `sha256` equal to the release's `SHA256SUMS` entry.
-4. Given a re-run of `v0.1.0`, then the workflow completes, the assets are
-   unchanged, and the tap receives **no new commit**.
+2. Given a machine with **no Rust toolchain and no checkout**, when the release
+   asset is downloaded and `--configure` run, then the bar renders in Claude
+   Code. *(Restated from `brew install`, which `02` owns. The property being
+   proven — shipped bytes running on a machine that cannot build them — is
+   unchanged; only the delivery is.)*
+3. **Deferred to `02`.** Given the tap after the release, then its formula names
+   `0.1.0` and a `sha256` equal to the release's `SHA256SUMS` entry. No formula
+   exists to check until `02` writes one.
+4. Given a re-run of `v0.1.0`, then the workflow completes and the assets are
+   **byte-identical** — same sha256, not merely present. *(The "tap receives no
+   new commit" half defers to `02`. This criterion was unsatisfiable before
+   `reproducible_tar` landed in this cycle; `tests/release.rs` now holds it.)*
 5. Given the installed binary, when `--version` runs, then stdout is exactly
    `0.1.0`.
 6. Given that install with no config file, when `--debug` runs, then it reports
@@ -140,6 +207,22 @@ was one of two left open, and restated for Homebrew — the other was
    fails before any build runs.
 
 ## Risks / drift
+
+**`core:rust` is `latest`, so criterion 4 has a horizon.** There is no
+`rust-toolchain.toml`. `reproducible_tar` makes the *archive* deterministic
+given the same binary, and the Rust build is itself reproducible on a fixed
+toolchain — both verified. But a `workflow_dispatch` re-run weeks later can
+resolve a different rustc, producing a different binary and therefore different
+digests for all three assets. Criterion 4 is reliably true for a re-run close in
+time. Pinning rust for the release path would close it; that is a decision this
+cycle records rather than takes.
+
+**`workflow_dispatch` can create a tag out of thin air.** The tag/crate gate is
+wrapped in `if [ "$ref_type" = "tag" ]`, and a dispatch runs against a branch,
+so it is skipped. `publish` then computes the tag from `Cargo.toml` and
+`gh release create` **creates a tag that was never pushed**. Dispatching from
+`main` today would publish `v0.1.0` with no human having tagged it. Not on the
+intended path; a loaded footgun beside it.
 
 **Step 2 is the whole cycle and it is the step most likely to be skipped.**
 Everything here has been written against a workflow nobody has run. Going

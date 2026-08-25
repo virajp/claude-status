@@ -463,7 +463,9 @@ nowhere: `no_mode_writes_outside_the_cache_directory` has no empty-args row.
   retry silently breaks every `brew install` with no signal. The header comment
   no longer claims byte-idempotence, and names the fix (`--sort=name`,
   `--mtime`, fixed owner/group — GNU tar only, which `publish` has and a macOS
-  reviewer does not). **Owned by `distribution/02`.**
+  reviewer does not). **Owned by `distribution/03`**, which now runs first —
+  `02` needs a published asset to pin, and only a release produces one. Landed
+  there as `reproducible_tar`, held by `tests/release.rs`.
 - **`jdx/mise-action@v4` is dead weight in `publish`** now that no `mise run`
   survives there. Installing a full Rust toolchain is a failure surface between
   a green build and the actual release. Safe follow-up, not this cycle's.

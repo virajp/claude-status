@@ -98,3 +98,52 @@ target_count() {
 asset_name() {
   printf 'claude-status-%s-%s' "$1" "$2"
 }
+
+# A `.tar.gz` whose bytes depend only on what is inside it.
+#
+# `distribution/02`'s formula pins this archive's sha256, read out of
+# `SHA256SUMS` and committed into another repository. From then on, any re-run
+# of the same tag producing different bytes breaks `brew install` for everyone
+# — the upload replaces the asset at a stable URL and the run stays green. So
+# "same contents, same digest" stops being a nicety and becomes the thing the
+# formula rests on.
+#
+# Plain `tar` with `-z` cannot promise it. Three things leak in:
+#
+#   1. the member's mtime, which is whenever this runner happened to build;
+#   2. the owner and group, `runner`/`docker` on CI and a developer's own
+#      account locally;
+#   3. gzip's own header timestamp, which `-z` gives no way to suppress.
+#
+# All three are removed here: the mtime is pinned to a fixed instant, ownership
+# is zeroed numerically, and gzip is invoked directly so `-n` can drop its
+# timestamp and the original filename.
+#
+# **`--sort=name` is deliberately absent.** The `release.yml` header worried a
+# deterministic archive would be GNU-only and break the collect step when a
+# reviewer runs it by hand on macOS, where `tar` is bsdtar. That worry does not
+# apply: sorting is meaningless for a single-member archive, and the remaining
+# flags are accepted by both — verified on bsdtar 3.5.3, which produces a
+# byte-identical archive to the GNU-style invocation, with owner and group
+# reported as `0 0`.
+#
+# The fixed mtime is 2000-01-01 UTC. Any constant does, but it must not derive
+# from the build or the clock, which is the whole point.
+#
+# Note this *touches* the staged file. That is build output, and nothing
+# downstream reads its mtime — the raw binary asset is shipped by content.
+reproducible_tar() {
+  out="$1"
+  dir="$2"
+  member="$3"
+
+  TZ=UTC touch -t 200001010000.00 "$dir/$member"
+
+  # An explicit pipefail: this file is sourced into scripts that set `-e`,
+  # which does not see a failure on the left of a pipe without it, and a
+  # truncated archive that reports success is exactly the silent failure this
+  # function exists to prevent.
+  set -o pipefail
+  tar --owner=0 --group=0 --numeric-owner --format=ustar \
+    -cf - -C "$dir" "$member" | gzip -n > "$out"
+}

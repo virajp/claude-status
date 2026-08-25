@@ -37,14 +37,25 @@ does not allow unpublishing after 72 hours anyway.
 
 ## Order
 
-**1 → 2 → 3.** Plan 1 removes npm and adds the `.tar.gz` asset a formula needs.
-Plan 2 writes the tap and formula against an asset that does not exist yet. Plan
-3 cuts the tag that produces it — and is therefore the first time any of it
-runs.
+**1 → 3 → 2.** Plan 1 removes npm and adds the `.tar.gz` asset a formula needs.
+Plan 3 cuts the tag that produces that asset. Plan 2 then writes the formula
+against a digest that actually exists.
 
-Putting the release last is deliberate. A release that only publishes half the
-chain would leave a tap pointing at an asset that was never uploaded, and the
-formula bump is the step most likely to be wrong on the first attempt.
+**This reverses the order originally recorded here, and the reversal resolves a
+contradiction rather than creating one.** Plan 3's frontmatter declared
+`requires: 2`, while plan 2's out-of-scope list said "Cutting the release that
+produces the asset. [Plan 3]". Each declared it needed the other; the cycle was
+in the documents. Only one order breaks it, because a formula cannot pin a
+digest that has never been published.
+
+The paragraph that stood here argued the release must come last, so a tap would
+never point at an asset that was never uploaded. Under the new order that risk
+cannot arise at all: the asset exists before the formula naming it is written.
+
+One consequence travelled with the reversal — the deterministic-archive fix,
+assigned to plan 2 by name in `release.yml` and plan 1, moved into plan 3. It
+has to precede the digest being pinned, and under this order plan 3 is what
+precedes it.
 
 ## What plan 1 deletes, and where it went
 
