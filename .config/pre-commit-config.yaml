@@ -84,6 +84,36 @@ repos:
 
   - repo: local
     hooks:
+      - id: actionlint
+        name: Lint GitHub workflows
+        description: The release workflow only runs on a tag, so a mistake in it
+          is normally found by cutting a release. This reads it statically, and
+          shells out to shellcheck for every `run:` block. Suppressions live in
+          .github/actionlint.yaml, which is also what `code:lint` reads, so the
+          hook and the CI gate cannot disagree.
+        entry: mise x -- actionlint
+        language: system
+        pass_filenames: false
+        files: ^\.github/workflows/.*\.ya?ml$
+        stages: [ pre-commit ]
+
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: Lint the task library
+        description: Every mise task is a bash file, and they are the least
+          reviewed code here. `-x` follows the sourced `_scripts/` libraries so
+          they are analysed as the callers actually see them. Scoped by path
+          rather than run always, because `code:lint` already covers the whole
+          set on CI and this only needs to catch the file being committed.
+        entry: mise x -- shellcheck -x
+        language: system
+        files: ^\.config/mise/tasks/
+        exclude: \.md$
+        stages: [ pre-commit ]
+
+  - repo: local
+    hooks:
       - id: formatter
         name: Formatter
         entry: |

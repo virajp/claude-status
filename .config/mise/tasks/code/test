@@ -10,7 +10,9 @@ source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
 
 cd "$MISE_PROJECT_ROOT"
 
-[[ "${usage_debug:-false}" == "true" ]] && VERBOSE="--verbose" || VERBOSE=""
+# An array: quoted, an empty string is still an argument cargo must reject.
+VERBOSE=()
+[[ "${usage_debug:-false}" == "true" ]] && VERBOSE=(--verbose)
 
 print_header "Running tests (cargo test) ..."
 
@@ -36,6 +38,6 @@ print_header "Running tests (cargo test) ..."
 # the belt to that pair of braces.
 export CLAUDE_STATUS_SPEND_URL="${CLAUDE_STATUS_SPEND_URL:-http://127.0.0.1:1/never}"
 
-cargo test --features schema ${VERBOSE}
+cargo test --features schema "${VERBOSE[@]}"
 
 print_header "Tests done"

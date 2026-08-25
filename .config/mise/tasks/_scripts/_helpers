@@ -10,6 +10,8 @@ readonly NORMAL='\033[0m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[0;33m'
 readonly RED='\033[0;31m'
+# Unused today — kept so the palette is complete for scripts that source this.
+# shellcheck disable=SC2034
 readonly BLUE='\033[0;34m'
 
 print_header()      { echo -e "${GREEN}${BOLD}$1${NORMAL}"; }

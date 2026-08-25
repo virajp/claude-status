@@ -1,0 +1,19 @@
+# actionlint configuration.
+#
+# The only suppressions in this repo, and both are the same fact: actionlint
+# ships a SNAPSHOT of popular actions' input metadata, and its copy of
+# `actions/create-github-app-token` predates the `client-id` input.
+#
+# Checked rather than assumed. The action's own `action.yml` at the **v3 tag**
+# declares `client-id`, and marks `app-id` `required: false` with
+# `deprecationMessage: "Use 'client-id' instead."` — so actionlint has it
+# backwards in both directions. A real release run also minted a token and
+# pushed to the tap, which it could not have done had the input been ignored.
+#
+# Delete this file when actionlint refreshes its snapshot. Nothing else here
+# is suppressed, and nothing else should be.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token'

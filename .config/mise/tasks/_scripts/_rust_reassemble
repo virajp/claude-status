@@ -16,6 +16,9 @@
 # one file rather than an edit here as well.
 
 set -e
+# The path is computed at run time. `SCRIPTDIR` resolves it relative to THIS
+# file rather than the caller's cwd, which is the whole point of the `dirname`.
+# shellcheck source-path=SCRIPTDIR
 source "$(dirname "${BASH_SOURCE[0]}")/_rust"
 
 while read -r target _os _cpu; do

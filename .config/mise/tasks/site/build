@@ -39,8 +39,10 @@ cd "$MISE_PROJECT_ROOT"
 #
 # Run it directly, or let .github/workflows/site.yml run it. Nothing else does.
 
-[[ "${usage_drafts:-false}" == "true" ]] && DRAFT_FLAG="--drafts" || DRAFT_FLAG=""
-[[ "${usage_minify:-false}" == "true" ]] && MINIFY_FLAG="--minify" || MINIFY_FLAG=""
+# Arrays: quoted, an empty string is still an argument zola must reject;
+# unquoted, it only vanishes because of word-splitting.
+DRAFT_FLAG=(); [[ "${usage_drafts:-false}" == "true" ]] && DRAFT_FLAG=(--drafts)
+MINIFY_FLAG=(); [[ "${usage_minify:-false}" == "true" ]] && MINIFY_FLAG=(--minify)
 
 SITE_DIR="${MISE_PROJECT_ROOT}/site"
 
@@ -49,7 +51,7 @@ print_header "Building the site (zola) ..."
 # `--root` rather than a `cd`: zola resolves `content/`, `templates/`,
 # `static/` and the output directory relative to it, so the task stays runnable
 # from anywhere and the paths it prints stay absolute.
-zola --root "${SITE_DIR}" build ${DRAFT_FLAG} ${MINIFY_FLAG}
+zola --root "${SITE_DIR}" build "${DRAFT_FLAG[@]}" "${MINIFY_FLAG[@]}"
 
 # The internal-link check, and the reason this site pins no separate crawler.
 #

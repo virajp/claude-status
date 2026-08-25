@@ -15,6 +15,9 @@ crate_version() {
 # fourth column on the table below, carrying `.exe` for the two Windows rows;
 # with those gone it was a constant threaded through two consumers that each had
 # to remember to ignore it.
+# Read by `_rust_reassemble`, `build/statusline` and `release.yml`'s collect
+# step — all of which source this file, which shellcheck cannot see from here.
+# shellcheck disable=SC2034
 BINARY_NAME="claude-status"
 
 # The supported target, as a `<rust-triple> <os> <cpu>` row. The os/cpu names
