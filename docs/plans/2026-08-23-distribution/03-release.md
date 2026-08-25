@@ -238,11 +238,21 @@ for one months later. `code:lint` is clippy with `-D warnings` on the release
 path, so a new lint can also fail a release whose code did not change; the
 remedy there is the same one — fix forward.
 
-**`publish` installed a toolchain it never used — fixed.** `install: false`; the
-three jobs that genuinely need cargo now pass `install_args: rust`, so nothing
-on the release path installs zola. `tests/release.rs` holds both, and each was
-proven able to fail. Original finding, kept because it explains why: `publish`
-runs `jdx/mise-action@v4` and then touches no mise-provided tool —
+**`publish` installed a toolchain it never used — fixed** with `install: false`,
+and it has since succeeded that way on a real release.
+
+**Scoping the other three jobs was reverted, and the reason is worth keeping.**
+They briefly passed `install_args: rust dprint`. Three runs of the same commit,
+minutes apart, then produced clippy twice and not the third time — rustup
+resynced a `minimal` toolchain at lint time ("downloading 3 components") and
+`code:lint` failed on a release whose code had not changed. Whether the arg
+drops the tool's `profile` option or interacts with the action's cache was never
+isolated, and did not need to be: the risk traded away was an extra tool
+download; the risk taken on was a release gate that fails at random. Installing
+the declared set is what reliably applies `profile = "default"`.
+
+Original finding, kept because it explains why `publish` was worth changing:
+`publish` runs `jdx/mise-action@v4` and then touches no mise-provided tool —
 `_rust_reassemble` is bash, the collect step is bash plus `shasum` and `tar`,
 the release step is `gh`. It nonetheless installs rust with `profile = default`
 **and zola** on `ubuntu-24.04`. That is a failure surface added *after* `test`
