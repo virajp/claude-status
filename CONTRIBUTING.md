@@ -120,11 +120,39 @@ target adds both shapes with no edit to the workflow.
 
 ### The Homebrew tap
 
-The formula lives in
-[`virajp/homebrew-tap`](https://github.com/virajp/homebrew-tap) and the
-`bump-tap` job moves it automatically after every release. It takes the asset's
-url and name from the release GitHub just published rather than rebuilding them
-from the version, so there is nothing to keep in step.
+**The formula's source is `.config/homebrew/claude-status.rb`, in this repo.**
+Edit it there. The copy in
+[`virajp/homebrew-tap`](https://github.com/virajp/homebrew-tap) is generated:
+`bump-tap` renders the whole file after every release, substituting `url` and
+`sha256` for the release just published, and overwrites the tap's copy. So the
+tap cannot drift, and the first release creates the formula rather than needing
+one seeded by hand.
+
+The url and name come from the release GitHub just published rather than being
+rebuilt from the version, so there is nothing to keep in step there either.
+
+The template carries a real released `url`/`sha256` pair rather than
+placeholders, which is what lets the brew gates check it at all.
+
+**Check it inside a tap, not as a loose file.** `brew style` on a bare path
+applies generic RuboCop cops that do not apply to formulae — Sorbet sigils,
+`Style/Documentation`, frozen string literals — and reports offences on text
+that is clean in a tap. Only formula-specific cops like
+`FormulaAudit/DependencyOrder` mean anything there.
+
+```sh
+brew tap-new scratch/verify --no-git
+cp .config/homebrew/claude-status.rb \
+  "$(brew --repo scratch/verify)/Formula/claude-status.rb"
+brew style scratch/verify
+brew audit --strict --formula scratch/verify/claude-status
+brew info --formula scratch/verify/claude-status   # the caveats, without installing
+brew untap scratch/verify                          # do not skip this
+```
+
+`/opt/homebrew` is shared across every worktree and checkout on the machine, so
+a scratch tap left behind will contaminate someone else's `brew style` run with
+a duplicate-formula error. Untap when you are done.
 
 It authenticates with a GitHub App — `APP_ID` holds the App's **Client ID**, not
 the numeric App ID, which is the one thing about the setup that catches people
@@ -144,33 +172,40 @@ show it.
 
 #### Bumping the formula by hand
 
-Only needed if the job fails. Two fields move, and **never** add a `version`
-line — a `version` beside a version-bearing url is a hard `brew audit` failure.
+Only needed if the job fails. Run the **same helpers CI runs** rather than
+editing the tap's formula — hand-editing it puts the tap out of step with the
+template, and the next release silently overwrites whatever you wrote.
 
 ```sh
 tag=v1.2.3
+source .config/mise/tasks/_scripts/_rust
+
+# Ground truth, from the release itself — never typed out.
 gh release view "$tag" --json assets \
   --jq '.assets[] | select(.name | endswith(".tar.gz")) | [.name, .url] | @tsv'
 gh release download "$tag" -p SHA256SUMS -O SHA256SUMS
 
-source .config/mise/tasks/_scripts/_rust
-digest_for SHA256SUMS "<the name printed above>"
+name="<the name printed above>"
+url="<the url printed above>"
+digest="$(digest_for SHA256SUMS "$name")"
+
+# Renders the whole formula into a checkout of the tap.
+render_formula .config/homebrew/claude-status.rb "$url" "$digest" \
+  <tap-checkout>/Formula/claude-status.rb
 ```
 
-Put that url and digest into `Formula/claude-status.rb`, then verify before
-pushing:
+Then commit and push in the tap checkout. Verify first, in the tap:
 
 ```sh
-brew style virajp/tap
 brew audit --strict --formula virajp/tap/claude-status
 ```
 
 **Do not use `brew audit --online`** — it requires the homepage to resolve,
 which drags the site's availability into the release path.
 
-Note that neither check will catch a wrong asset name: `audit` does not fetch
-the url, and `--strict` exits 0 against one returning 404. Copy the url from the
-release rather than typing it.
+Note that no brew check catches a wrong asset name: `audit` does not fetch the
+url, and `--strict` was measured exiting 0 against one returning 404. Copying
+the url out of the release, as above, is the only thing that prevents it.
 
 ## Conventions
 

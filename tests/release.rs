@@ -441,139 +441,193 @@ fn an_asset_missing_from_the_manifest_fails_instead_of_returning_empty() {
     );
 }
 
-/// A formula in the shape the tap actually carries.
+/// The path of the formula template — the source the tap is generated from.
+const TEMPLATE: &str = ".config/homebrew/claude-status.rb";
+
+/// **The render produces a complete formula, substituting exactly two fields.**
 ///
-/// Deliberately not a minimal stub: the rewrite has to leave `desc`, `license`,
-/// the `depends_on` pair, `caveats` and `test` untouched, and a stub with only
-/// the two rewritten fields would not notice if it did not.
-fn formula_fixture() -> &'static str {
-    // `r##` and not `r#`: the `test do` block below contains `"#{bin}`, and the
-    // `"#` in that sequence would close an `r#"…"#` literal.
-    r##"class ClaudeStatus < Formula
-  desc "Status line for Claude Code"
-  homepage "https://claude-status-site.pages.dev"
-  url "https://github.com/virajp/claude-status/releases/download/v0.1.0/claude-status-darwin-arm64.tar.gz"
-  sha256 "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044"
-  license "MIT"
-
-  depends_on arch: :arm64
-  depends_on :macos
-
-  def install
-    bin.install "claude-status"
-  end
-
-  test do
-    assert_match version.to_s, shell_output("#{bin}/claude-status --version")
-  end
-end
-"##
-}
-
-/// **The bump rewrites exactly two fields and disturbs nothing else.**
+/// Run against the **real template**, not a fixture, so the thing under test is
+/// the file that will actually be published. A fixture would let the template
+/// drift into a shape the render cannot handle while this stayed green.
 ///
-/// `version` is deliberately not one of them. A `version` line beside a
-/// version-bearing url is a hard `brew audit` failure — brew scans the version
-/// out of the url — measured this cycle against a scratch tap, where adding one
-/// took `brew audit` from exit 0 to exit 1 with "redundant with version scanned
-/// from URL".
+/// `version` is deliberately not one of the substituted fields. A `version` line
+/// beside a version-bearing url is a hard `brew audit` failure — brew scans the
+/// version out of the url — measured this cycle against a scratch tap, where
+/// adding one took `brew audit` from exit 0 to exit 1 with "redundant with
+/// version scanned from URL".
 #[test]
-fn the_formula_rewrite_moves_the_url_and_digest_and_leaves_the_rest_alone() {
+fn the_render_produces_a_whole_formula_with_the_new_url_and_digest() {
     let dir = tempfile::TempDir::new().expect("a temp dir");
-    std::fs::write(dir.path().join("claude-status.rb"), formula_fixture()).expect("fixture formula");
+    let template = read(TEMPLATE);
 
     let new_url = "https://github.com/virajp/claude-status/releases/download/v1.0.0/claude-status-darwin-arm64.tar.gz";
     let new_digest = "1111111111111111111111111111111111111111111111111111111111111111";
 
+    // Into a path that does not exist, and two directories deep — the first
+    // release creates `Formula/claude-status.rb` in a tap that has no
+    // `Formula/` at all, so "the output must already exist" would be a
+    // one-time manual seeding step. It is not one.
+    let out_rel = "tap/Formula/claude-status.rb";
     let out = bash(
-        &format!("rewrite_formula claude-status.rb '{new_url}' '{new_digest}'"),
+        &format!(
+            "render_formula {}/{TEMPLATE} '{new_url}' '{new_digest}' {out_rel}",
+            root().display()
+        ),
         dir.path(),
     );
     assert!(
         out.status.success(),
-        "rewrite_formula failed: {}",
+        "render_formula failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 
-    let after = std::fs::read_to_string(dir.path().join("claude-status.rb")).expect("rewritten formula");
+    let after = std::fs::read_to_string(dir.path().join(out_rel)).expect("the rendered formula");
 
-    assert!(after.contains(new_url), "the new url is not in the formula");
-    assert!(after.contains(new_digest), "the new digest is not in the formula");
+    assert!(after.contains(new_url), "the new url is not in the rendered formula");
+    assert!(after.contains(new_digest), "the new digest is not in the rendered formula");
     assert!(
-        !after.contains("v0.1.0"),
-        "the old url survived the rewrite — the tap would keep serving the previous release"
+        !after.contains("releases/download/v0.1.0/"),
+        "the template's own url survived the render — the tap would serve the previous release under the new version's name"
     );
     assert!(
         !after.contains("af64e2a6"),
-        "the old digest survived the rewrite — brew would fail the checksum on the new tarball"
+        "the template's own digest survived the render — brew would fail the checksum on the new tarball"
     );
 
     // A `version` line is never introduced. Nothing adds one today; this pins
     // that, because the failure is invisible until `brew audit` runs.
     assert!(
         !after.lines().any(|l| l.trim_start().starts_with("version ")),
-        "the rewrite introduced a `version` line, which is a hard `brew audit` failure beside a version-bearing url"
+        "the render introduced a `version` line, which is a hard `brew audit` failure beside a version-bearing url"
     );
 
-    // Everything that is not those two fields is untouched.
+    // The whole formula is present, not just the two fields. These are exactly
+    // the parts that would live only in the tap under a patch-in-place scheme,
+    // where nothing in this repo could see them drift.
     for kept in [
         "desc \"Status line for Claude Code\"",
+        "homepage \"https://claude-status-site.pages.dev\"",
         "license \"MIT\"",
         "depends_on arch: :arm64",
         "depends_on :macos",
         "bin.install \"claude-status\"",
+        "def caveats",
+        "--configure",
+        "OVERWRITES",
     ] {
-        assert!(after.contains(kept), "the rewrite lost `{kept}`");
+        assert!(after.contains(kept), "the rendered formula is missing `{kept}`");
     }
+
     assert_eq!(
         after.lines().count(),
-        formula_fixture().lines().count(),
-        "the rewrite changed the formula's line count, so it did more than replace two values"
+        template.lines().count(),
+        "the render changed the line count, so it did more than substitute two values"
     );
 }
 
-/// **An ambiguous or unrecognisable formula stops the bump.**
+/// **A template the render cannot place stops the bump.**
 ///
-/// `awk` exits 0 whether or not a pattern ever matched, so a formula that
-/// changed shape would sail through a rewrite that silently did nothing, and
-/// the tap would keep pinning the previous release with the run green — the
-/// quiet failure mode this job was always most likely to have.
+/// `awk` exits 0 whether or not a pattern ever matched, so a template that
+/// changed shape would sail through a render that silently emitted the
+/// template's own url and digest — publishing the previous release's bytes
+/// under the new version's name, with the run green. That is the quiet failure
+/// this job was always most likely to have.
 #[test]
-fn the_formula_rewrite_refuses_a_formula_it_cannot_place() {
+fn the_render_refuses_a_template_it_cannot_place() {
     let dir = tempfile::TempDir::new().expect("a temp dir");
     let url = "https://example.com/x.tar.gz";
     let digest = "2222222222222222222222222222222222222222222222222222222222222222";
 
-    // No `url` line at all — nothing to rewrite.
+    // No `url` line at all — nothing to substitute.
     std::fs::write(dir.path().join("no-url.rb"), "class ClaudeStatus < Formula\n  sha256 \"abc\"\nend\n")
         .expect("fixture");
-    let no_url = bash(&format!("rewrite_formula no-url.rb '{url}' '{digest}'"), dir.path());
+    let no_url = bash(&format!("render_formula no-url.rb '{url}' '{digest}' out.rb"), dir.path());
     assert!(
         !no_url.status.success(),
-        "a formula with no `url` line was rewritten successfully — the bump would report success having changed nothing"
+        "a template with no `url` line rendered successfully — the bump would report success having published the wrong bytes"
     );
 
-    // Two `url` lines — the rewrite would be ambiguous.
+    // Two `url` lines — the substitution would be ambiguous.
     std::fs::write(
         dir.path().join("two-urls.rb"),
         "class ClaudeStatus < Formula\n  url \"a\"\n  url \"b\"\n  sha256 \"abc\"\nend\n",
     )
     .expect("fixture");
-    let two_urls = bash(&format!("rewrite_formula two-urls.rb '{url}' '{digest}'"), dir.path());
+    let two_urls = bash(&format!("render_formula two-urls.rb '{url}' '{digest}' out.rb"), dir.path());
     assert!(
         !two_urls.status.success(),
-        "a formula with two `url` lines was accepted — the bump cannot know which one the tarball is"
+        "a template with two `url` lines was accepted — the render cannot know which one the tarball is"
     );
 
-    // CONTROL: the well-formed fixture must succeed with the same helper and
-    // the same arguments. Without it, both assertions above pass just as well
-    // when `rewrite_formula` rejects everything it is given.
-    std::fs::write(dir.path().join("good.rb"), formula_fixture()).expect("fixture");
-    let good = bash(&format!("rewrite_formula good.rb '{url}' '{digest}'"), dir.path());
+    // CONTROL: the real template must succeed with the same helper and the same
+    // arguments. Without it, both assertions above pass just as well when
+    // `render_formula` rejects everything it is given.
+    let good = bash(
+        &format!("render_formula {}/{TEMPLATE} '{url}' '{digest}' out.rb", root().display()),
+        dir.path(),
+    );
     assert!(
         good.status.success(),
-        "the helper rejected a well-formed formula, so its refusals above prove nothing: {}",
+        "the helper rejected the shipped template, so its refusals above prove nothing: {}",
         String::from_utf8_lossy(&good.stderr)
+    );
+}
+
+/// **The shipped template is a formula, not a stub.**
+///
+/// It is the only copy of `desc`, `homepage`, `caveats` and the `depends_on`
+/// pair — the tap's file is generated from it — so anything missing here is
+/// missing from what users install, and no `brew` gate in CI would say so.
+#[test]
+fn the_formula_template_carries_the_whole_contract() {
+    let raw = read(TEMPLATE);
+
+    // **Comments stripped before anything is scanned.** The template explains
+    // its own `depends_on` ordering in the comment directly above it, and that
+    // prose names `depends_on :macos` *before* the real `depends_on arch:`
+    // line — so the ordering check below read the comment and failed against a
+    // correctly ordered file. This repo has now had four guards match their own
+    // explanatory prose; stripping is not optional here.
+    let template: String = raw
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The refusal criterion 4 asks for, and the order `brew style` enforces.
+    let arch = template.find("depends_on arch: :arm64").expect("no arm64 requirement");
+    let macos = template.find("depends_on :macos").expect("no macos requirement");
+    assert!(
+        arch < macos,
+        "`depends_on :macos` precedes `depends_on arch:`; `FormulaAudit/DependencyOrder` fails on that ordering"
+    );
+
+    // Criterion 2: the caveats name the command and warn about the overwrite.
+    let caveats = template
+        .split("def caveats")
+        .nth(1)
+        .and_then(|s| s.split("EOS\n    end").next())
+        .expect("no caveats block");
+    assert!(caveats.contains("--configure"), "the caveats do not name `claude-status --configure`");
+    assert!(
+        caveats.contains("OVERWRITES") || caveats.to_lowercase().contains("overwrites"),
+        "the caveats do not warn that --configure overwrites an existing status line"
+    );
+    assert!(
+        caveats.contains("https://"),
+        "the caveats give no website url, so criterion 2 is unmet"
+    );
+
+    // The vanity domain does not resolve. Shipping it in `homepage` or the
+    // caveats is a dead link in the first thing a user reads.
+    assert!(
+        !template.contains("claude-status.virajp.dev"),
+        "the template names `claude-status.virajp.dev`, which does not resolve; use the pages.dev url until DNS is pointed"
+    );
+
+    assert!(
+        !template.lines().any(|l| l.trim_start().starts_with("version ")),
+        "the template carries a `version` line beside a version-bearing url, which is a hard `brew audit` failure"
     );
 }
 
@@ -625,8 +679,12 @@ fn the_bump_job_takes_the_asset_from_the_published_release() {
         "the bump job does not use `digest_for`, so its digest lookup is unanchored and untested"
     );
     assert!(
-        bump.contains("rewrite_formula"),
-        "the bump job does not use `rewrite_formula`, so its rewrite is untested"
+        bump.contains("render_formula"),
+        "the bump job does not use `render_formula`, so its render is untested"
+    );
+    assert!(
+        bump.contains(".config/homebrew/claude-status.rb"),
+        "the bump job does not render from this repo's template, so the tap's formula would be authoritative and free to drift"
     );
 
     // Ordering is load-bearing: reading a release that does not exist yet

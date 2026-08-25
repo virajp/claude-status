@@ -1692,6 +1692,20 @@ costs until the tap lands.
 > Homebrew row is the answer, and its one argument against — "Linux users still
 > need another" — stopped applying on 2026-08-21.
 >
+> **The tap is a generated artefact and holds nothing authoritative.** The
+> formula's source is `.config/homebrew/claude-status.rb` in this repository;
+> the release workflow renders the **whole file** — substituting only `url` and
+> `sha256` — and overwrites the tap's copy every release. So the tap cannot
+> drift, and the first release *creates* the formula rather than needing one
+> seeded by hand.
+>
+> That shape was chosen over the obvious alternative of hand-writing the first
+> formula and patching two fields thereafter. The alternative leaves `desc`,
+> `homepage`, `caveats` and the `depends_on` pair living only in the tap, where
+> nothing in this repo's suite can see them, and makes the first release depend
+> on a manual step somebody has to get right once. Neither cost is worth a patch
+> over a render.
+>
 > **Only the fully-qualified form works.** Homebrew 6.0.0 (2026-06-11) requires
 > explicit trust for non-official taps, so `brew tap virajp/tap` followed by
 > `brew install claude-status` **fails** until `brew trust`, and `brew doctor`

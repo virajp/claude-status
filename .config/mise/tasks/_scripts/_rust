@@ -192,47 +192,59 @@ digest_for() {
   printf '%s\n' "$digest"
 }
 
-# Point a Homebrew formula at a new tarball: rewrite `url` and `sha256`.
+# Render the complete Homebrew formula for a published release.
 #
-# **Two fields, not three.** A `version` line beside a version-bearing url is a
-# hard `brew audit` failure — brew scans the version out of the url — so the
-# formula carries none and this never adds one. Measured: adding one took
-# `brew audit` from exit 0 to exit 1, "redundant with version scanned from URL".
+# **The whole file, not a two-field patch.** The template in `.config/homebrew/`
+# is the source; the tap holds a generated copy and nothing there is
+# authoritative. Patching two fields in a formula that lived only in the tap
+# would leave `desc`, `homepage`, `caveats` and the `depends_on` pair somewhere
+# no test in this repo can see, free to drift from the project they describe.
+# Overwriting in full every release is what makes drift impossible.
 #
-# **Both fields must be found exactly once, or nothing is written.** `awk` exits
-# 0 whether or not a pattern ever matched, so a formula that changed shape would
-# sail through a rewrite that silently did nothing — leaving the tap pinned to
-# the previous release with the release run green behind it. That is the quiet
-# failure this whole job was always most likely to have, so the arity check is
-# the point of the function rather than a nicety.
-rewrite_formula() {
-  formula="$1"
+# It follows that the output need not already exist: the first release CREATES
+# the tap's formula, so there is no manual seeding step and no one-time state a
+# human has to get right.
+#
+# **Two fields are substituted, never three.** A `version` line beside a
+# version-bearing url is a hard `brew audit` failure — brew scans the version
+# out of the url. Measured: adding one took `brew audit` from exit 0 to exit 1,
+# "redundant with version scanned from URL".
+#
+# **Both must be found exactly once, or nothing is written.** `awk` exits 0
+# whether or not a pattern ever matched, so a template that changed shape would
+# sail through a render that silently emitted the template's own values —
+# publishing the PREVIOUS release's digest under the new version's name, with
+# the run green behind it.
+render_formula() {
+  template="$1"
   url="$2"
   digest="$3"
+  out="$4"
 
   for field in url sha256; do
-    n="$(grep -c "^[[:space:]]*$field " "$formula" || true)"
+    n="$(grep -c "^[[:space:]]*$field " "$template" || true)"
     if [ "$n" != "1" ]; then
-      echo "expected exactly one \`$field\` line in $formula, found $n" >&2
+      echo "expected exactly one \`$field\` line in $template, found $n" >&2
       return 1
     fi
   done
 
+  mkdir -p "$(dirname "$out")"
   awk -v url="$url" -v digest="$digest" '
     /^[[:space:]]*url / { printf "  url \"%s\"\n", url; next }
     /^[[:space:]]*sha256 / { printf "  sha256 \"%s\"\n", digest; next }
     { print }
-  ' "$formula" > "$formula.new"
-  mv "$formula.new" "$formula"
+  ' "$template" > "$out.new"
+  mv "$out.new" "$out"
 
-  # Belt and braces: the arity check above proves the lines existed, this
-  # proves the new values actually landed in the file on disk.
-  grep -qF "$url" "$formula" || {
-    echo "url was not written into $formula" >&2
+  # The arity check proves the lines existed in the template; these prove the
+  # new values reached the file on disk.
+  grep -qF "$url" "$out" || {
+    echo "url was not written into $out" >&2
     return 1
   }
-  grep -qF "$digest" "$formula" || {
-    echo "sha256 was not written into $formula" >&2
+  grep -qF "$digest" "$out" || {
+    echo "sha256 was not written into $out" >&2
     return 1
   }
 }

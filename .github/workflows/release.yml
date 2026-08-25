@@ -443,26 +443,35 @@ jobs:
         run: |
           set -e
           source .config/mise/tasks/_scripts/_rust
-          formula=tap/Formula/claude-status.rb
-          test -f "$formula" || {
-            echo "::error::$formula is missing — the tap must be seeded with a formula once by hand before CI can bump it"
-            exit 1
-          }
 
-          # The rewrite lives in `_scripts/_rust` rather than inline here so
-          # `tests/release.rs` can run it. A rewrite that silently matched
-          # nothing is this job's quiet failure mode, and YAML embedded in a
-          # workflow is the one place it could not be tested.
-          rewrite_formula "$formula" "$URL" "$DIGEST"
+          # The whole formula is rendered from this repo's template, not
+          # patched in place over there. The tap is a generated artefact: it is
+          # overwritten in full every release, so it cannot drift, and the
+          # first release creates it rather than needing a hand-seeded file.
+          #
+          # The render lives in `_scripts/_rust` rather than inline here so
+          # `tests/release.rs` can run it. A render that silently emitted the
+          # template's own values is this job's quiet failure mode, and YAML
+          # embedded in a workflow is the one place it could not be tested.
+          render_formula \
+            .config/homebrew/claude-status.rb \
+            "$URL" "$DIGEST" \
+            tap/Formula/claude-status.rb
 
           cd tap
-          if git diff --quiet; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # `add` BEFORE the emptiness check. On the first release the formula
+          # is a new file, and `git diff` does not see untracked paths — the
+          # check would report "nothing to bump" and exit 0 having published
+          # nothing, which is exactly the silent success this job must not have.
+          # `diff --cached` after staging sees adds and modifications alike.
+          git add Formula/claude-status.rb
+          if git diff --cached --quiet; then
             echo "the formula already pins $VERSION — nothing to bump."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/claude-status.rb
           git commit -m "claude-status $VERSION"
           git push

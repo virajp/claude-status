@@ -107,15 +107,32 @@ to drift. A user runs one command and has a working bar.
 
 ## Delta — ordered steps
 
-### 1. Add `Formula/` to the existing tap
+### 1. The tap is generated, not seeded
 
-`virajp/homebrew-tap` exists and is public; it needs `Formula/claude-status.rb`.
-The repo name is Homebrew's convention, not a choice — it must be
-`homebrew-<name>` for `virajp/tap` to resolve.
+`virajp/homebrew-tap` exists and is public. It needs `Formula/claude-status.rb`
+— and **CI creates it**. There is no hand-seeding step.
 
-**Outward-facing: ask before creating or pushing anything to that repo.** It is
-a separate public repository, and nothing in this cycle may touch it without the
-owner saying so first.
+**This corrects an earlier revision of this plan**, which had the first formula
+written by hand and CI bumping two fields in it thereafter. That splits the
+formula's source across two repositories: `desc`, `homepage`, `caveats` and the
+`depends_on` pair would live only in the tap, where nothing in this repo's suite
+can see them and they drift silently from the project they describe. It also
+makes the first release depend on a one-time manual step somebody has to get
+right.
+
+Instead `.config/homebrew/claude-status.rb` is the source, and `render_formula`
+emits the **whole file** with `url` and `sha256` substituted for the release
+just published. The tap is a generated artefact, overwritten in full every
+release, so it cannot drift; and because the render creates its output, the
+first release creates the formula.
+
+The template is a real formula carrying a real released `url`/`sha256` pair
+rather than placeholders, so `brew style` and `brew audit` can check it as it
+sits in this repo.
+
+**Outward-facing: nothing pushes to that repo until the App exists.** The repo
+name is Homebrew's convention, not a choice — it must be `homebrew-<name>` for
+`virajp/tap` to resolve.
 
 **Not homebrew-core.** Core imposes a notability bar and a release history this
 project does not have, and hands release timing to a review queue. Revisit if
@@ -197,9 +214,10 @@ if the digest does not match `^[0-9a-f]{64}$`.
 **Rewrite the two fields directly; do not put Homebrew on the runner.** Recon
 verified `brew bump-formula-pr --write-only --commit --no-audit` works offline
 and deletes a redundant `version` line itself, and an earlier revision of this
-plan chose it for that reason. **That reason is spent** — the seeded formula
-carries no `version` line, so there is nothing for it to delete, and the tool
-would drag a Homebrew installation onto a runner for a two-field substitution.
+plan chose it for that reason. **That reason is spent** — the template carries
+no `version` line, so there is nothing for it to delete; and the tool patches an
+existing formula, which is the wrong shape entirely now that CI renders the
+whole file. It would also drag a Homebrew installation onto a runner.
 
 That cuts against `publish`'s installs-nothing doctrine, which exists because a
 tool download failing *after* the build has spent its minutes is a green release
@@ -406,15 +424,28 @@ credential test substring-matched `"pat"` and failed against `path: tap`. It now
 enumerates the job's `secrets.` references and requires exactly `APP_ID` and
 `APP_KEY`, which is both precise and catches a credential nobody thought to ban.
 
-**Not done in this cycle, and blocking the acceptance criteria:**
+**The hand-seeding step was removed rather than completed.** An earlier draft of
+this record listed "the tap has no `Formula/`" as work blocked on the owner. It
+was not owner-blocked; it was a design flaw. CI renders the whole formula, so
+the first release creates the tap's file and there is nothing to seed. The
+lesson generalises: *a manual step that exists because the automation was scoped
+too narrowly is not a blocker, it is the automation's missing half.*
 
-- **The tap has no `Formula/`.** A formula pinning v0.1.0's real digest is
-  verified clean at `brew style`, `brew audit` and `brew audit --strict`, but
-  seeding it is outward-facing and needs the owner.
+**Criterion 3 is verified.** `brew info --formula` on the rendered formula, in a
+real scratch tap, prints the caveats without installing — naming `--configure`,
+warning about the overwrite, and giving a URL that resolves. It also renders
+`Required: arm64 architecture, macOS` (criterion 4's mechanism) and reports
+`stable 0.1.0`, which confirms Homebrew scans the version out of the url and no
+`version` line is wanted. `brew style`, `brew audit` and `brew audit --strict`
+are all exit 0 against the rendered output.
+
+**Not done in this cycle, and blocking the remaining criteria:**
+
 - **The GitHub App does not exist.** `bump-tap` fails at the tap checkout until
-  `APP_ID` and `APP_KEY` are set.
+  `APP_ID` and `APP_KEY` are set, and creating a GitHub App is inherently the
+  owner's. This is the one genuine external blocker.
 - **`bump-tap` has never run.** Every guard on it is static analysis of the
-  workflow text; nothing has exercised the job itself. The `v1.0.0` tag is its
-  first real run, by the seeding decision recorded above.
-- **Criteria 1, 2, 3 and 7 are unverifiable** until the tap serves a formula —
-  they all require a real `brew install`.
+  workflow text; the helpers it calls are executed by the suite, but the job
+  itself is not. The `v1.0.0` tag is its first real run.
+- **Criteria 1, 2 and 7 are unverifiable** until the tap serves a formula — they
+  all require a real `brew install`.
