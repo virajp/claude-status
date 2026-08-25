@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name    = "claude-status"
-version = "0.1.0"         # one line for the binary and the npm package; 1.0.0 ships once tested
+version = "0.1.0"         # the binary's version, and the tag `verify` gates on; 1.0.0 ships once tested
 
 # An integration test in tests/ cannot link a bin target, so the golden and
 # defaults tests need the library.

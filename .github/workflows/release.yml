@@ -22,16 +22,21 @@ name: Release
 # `--clobber` on the upload path makes a re-run *recoverable* — a partially
 # failed release is safe to retry, and the assets that land are correct.
 #
-# It does NOT make a re-run byte-identical, and the difference matters to the
-# next cycle. `tar -czf` embeds the file's mtime, so a rebuild produces a
-# tarball with the same contents and a different sha256. Retrying today is
-# harmless. Once `distribution/02`'s formula pins that digest, a retry would
-# silently break `brew install` for everyone with nothing to signal it. The fix
-# when it is needed is a deterministic tar (`--sort=name`, `--mtime`, and a
-# fixed owner/group), which is GNU-tar-only — `publish` runs on ubuntu, so that
-# is available, but the collect step is also run by hand on macOS during
-# review, where bsdtar rejects those flags. Owned by `distribution/02`, which
-# is the cycle that gains something from it.
+# A re-run is also byte-identical, which is a separate promise and the one
+# `distribution/02`'s formula will rest on. It did not used to be: archiving
+# with `-z` embedded the member's mtime, the runner's owner and group, and
+# gzip's own header timestamp, so a rebuild of identical contents produced a
+# different sha256. Once a formula pins that digest, such a retry breaks
+# `brew install` for everyone with nothing to signal it.
+#
+# `reproducible_tar` in `_scripts/_rust` removes all three, and `tests/release.rs`
+# holds it there by running it. **This cycle owns that fix, not
+# `distribution/02`** — the order was reversed, because `02` needs a published
+# asset to pin and only a release produces one.
+#
+# The GNU-versus-bsdtar worry recorded here previously does not apply: it
+# assumed `--sort=name`, which is meaningless for a single-member archive. The
+# flags actually used are accepted by both, verified on bsdtar 3.5.3.
 #
 # To release: bump `version` in Cargo.toml, commit, then push a matching tag
 # (e.g. v1.0.1).
@@ -207,11 +212,18 @@ jobs:
               exit 1
             }
             cp "target/$target/release/$BINARY_NAME" "release-assets/$(asset_name "$os" "$cpu")"
-            # `-C` is what puts the binary at the archive ROOT rather than under
-            # a `target/<triple>/release/` prefix — a formula's `bin.install`
+            # `reproducible_tar` and not `tar -czf`: the formula pins this
+            # archive's digest, so a re-run that changes its bytes breaks
+            # `brew install` at a stable URL with the run still green. The
+            # helper pins the mtime, zeroes ownership and drops gzip's
+            # timestamp; `_scripts/_rust` carries the reasoning. Its third
+            # argument is the member name, and `-C` inside it is what puts the
+            # binary at the archive ROOT rather than under a
+            # `target/<triple>/release/` prefix — a formula's `bin.install`
             # reads the root and nothing else.
-            tar -czf "release-assets/$(asset_name "$os" "$cpu").tar.gz" \
-              -C "target/$target/release" "$BINARY_NAME"
+            reproducible_tar \
+              "release-assets/$(asset_name "$os" "$cpu").tar.gz" \
+              "target/$target/release" "$BINARY_NAME"
           done < <(supported_targets)
           ( cd release-assets && shasum -a 256 * > SHA256SUMS )
           count="$(find release-assets -type f -not -name SHA256SUMS | wc -l | tr -d ' ')"
