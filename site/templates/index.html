@@ -4,16 +4,11 @@
   The landing page, and the ONE page on this site with a composition rather
   than a column.
 
-  It used to be seven lines that piped `section.content` into the same
-  `.prose` article every docs page uses. That is why it read as documentation:
-  structurally it was documentation — an h1, some paragraphs, a bullet list and
-  a table, in a 40rem column.
-
   The hero copy lives in `_index.md`'s `[extra]` rather than in this file, so
   the words stay with the content and the structure stays with the template.
-  Everything below the hero is still markdown, rendered through `section.content`
-  — the bands it lands in are styled by element, so writing a new `##` section
-  in the markdown does not need this template edited too.
+  Everything below the hero is still markdown, rendered through
+  `section.content` — the bands it lands in are styled by element, so writing a
+  new `##` section in the markdown does not need this template edited too.
 
   Every link here goes through `get_url(path="@/...")`, which resolves against
   the content library and fails `zola build` if the target does not exist. See
@@ -22,35 +17,33 @@
 
 {% block content %}
   <section class="hero">
-    <div class="hero-copy">
-      <h1>{{ section.extra.headline }}</h1>
-      <p class="hero-lede">{{ section.extra.lede }}</p>
+    <h1>{{ section.extra.headline }}</h1>
+    <p class="hero-lede">{{ section.extra.lede }}</p>
 
-      {# One label per intent. "Install" is the install intent on this whole
-         site — the nav, this button and the footer all use that one word. #}
-      <div class="cta-row">
-        <a class="cta cta-primary" href="{{ get_url(path='@/install.md') | replace(from=config.base_url, to='') }}">Install</a>
-        <a class="cta cta-secondary" href="{{ get_url(path='@/generate.md') | replace(from=config.base_url, to='') }}">Build a config</a>
-      </div>
+    {# Lowercase mono labels, matching the nav: an action here is named the way
+       a command is. One label per intent — "install" is the install intent in
+       the nav, in this button, and nowhere under a second name. #}
+    <div class="cta-row">
+      <a class="cta cta-primary" href="{{ get_url(path='@/install.md') | replace(from=config.base_url, to='') }}">install</a>
+      <a class="cta cta-ghost" href="{{ get_url(path='@/segments.md') | replace(from=config.base_url, to='') }}">see every segment</a>
     </div>
-
-    {# The evidence, and a real screenshot rather than a mocked-up frame of
-       divs pretending to be one. The alt text describes both rows because the
-       bar is the product and a reader who cannot see it still needs to know
-       what it carries. #}
-    <figure class="hero-shot">
-      {# The real pixel dimensions, so the browser reserves the right box and
-         the image landing does not shift the page. It is a 16.6:1 strip —
-         which is why the hero stacks rather than putting it in a side column,
-         where it would render about thirty pixels tall. #}
-      <img
-        src="{{ get_url(path='statusline.png') | replace(from=config.base_url, to='') }}"
-        width="2294"
-        height="138"
-        alt="Two powerline lines under a Claude Code prompt. The first carries the model and effort, a context gauge with the token count and percentage, the 5-hour and 7-day rate-limit windows each with a reset countdown, and the session cost. The second carries the project name and the git branch with a dirty marker."
-      />
-    </figure>
   </section>
+
+  {# The real render, kept rather than re-drawn in markup: it is an artefact of
+     the tool, and a hand-built copy of the bar would drift from it as the
+     segments change.
+
+     `width`/`height` are the file's true pixel dimensions so the browser
+     reserves the right box — it is a 16.6:1 strip, which is also why it runs
+     the full frame rather than sitting in a column. #}
+  <figure class="hero-shot">
+    <img
+      src="{{ get_url(path='statusline.png') | replace(from=config.base_url, to='') }}"
+      width="2294"
+      height="138"
+      alt="Two powerline lines under a Claude Code prompt. The first carries the model and effort, a context gauge with the token count and percentage, the 5-hour and 7-day rate-limit windows each with a reset countdown, and the session cost. The second carries the project name and the git branch with a dirty marker."
+    />
+  </figure>
 
   <article class="prose landing">
     {{ section.content | safe }}

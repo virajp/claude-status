@@ -776,6 +776,52 @@ fn every_landing_bullet_opens_with_a_complete_bold_title() {
     }
 }
 
+/// **Every `@font-face` names a file that exists and is really a woff2.**
+///
+/// The brand face is IBM Plex, self-hosted rather than pulled from Google. That
+/// choice has one failure mode the build cannot see: zola copies `static/`
+/// through without reading it, so a deleted or truncated font is a green build
+/// that silently falls back to system mono — and the wordmark, the headings and
+/// every nav item are mono by design, so the page would look *plausible* while
+/// being off-brand everywhere at once.
+///
+/// Checked by parsing the stylesheet's own `src: url(...)` rather than a list
+/// kept here, so adding a weight cannot leave the guard behind.
+#[test]
+fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
+    let css = read("site/static/style.css");
+
+    let refs: Vec<&str> = css
+        .match_indices("url(\"")
+        .map(|(i, _)| {
+            let rest = &css[i + 5..];
+            &rest[..rest.find('"').expect("the url literal closes")]
+        })
+        .filter(|u| u.ends_with(".woff2"))
+        .collect();
+
+    assert!(
+        refs.len() >= 4,
+        "expected at least the four Plex faces, found {} — has the stylesheet stopped self-hosting?",
+        refs.len()
+    );
+
+    for rel in refs {
+        let path = root().join("site/static").join(rel);
+        let bytes = std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("style.css asks for {rel}, which is not there: {e}"));
+
+        // `wOF2`. A 404 page or an LFS pointer saved under the right name is
+        // the realistic way this goes wrong, and both start with something
+        // else.
+        assert!(
+            bytes.starts_with(b"wOF2"),
+            "{rel} is not a woff2 — the browser will ignore it and fall back to system mono"
+        );
+        assert!(bytes.len() > 4096, "{rel} is {} bytes, which is not a real face", bytes.len());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // website/02-config-generator — the schema-driven form
 // ---------------------------------------------------------------------------
