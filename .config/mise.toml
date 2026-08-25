@@ -31,18 +31,29 @@ status.missing_tools = "always"
 # renamed the `[markdown]` highlighting keys, so a floating version would break
 # the build on an upgrade nobody asked for.
 #
-# **Rust is pinned for the same reason**, which this file argued for zola and
-# not for the toolchain. `code:lint` is clippy with `-D warnings` and it gates
-# the release path, so against a floating `latest` a stable rustc landing
-# between two runs is picked up silently and any new lint fails a release whose
-# code did not change. That is the shape of the failure that already cost one
-# release, where CI's toolchain was not the one anyone had run against.
+# **Everything here tracks `latest`, deliberately.** That is the convention
+# across this author's projects: take upgrades as they land and fix forward when
+# one breaks, rather than carrying a pin that quietly goes stale and gets bumped
+# without anyone reading the changelog either way.
 #
-# Bumping it is a deliberate edit, and `code:lint` is what tells you whether the
-# new toolchain is clean before a tag depends on it.
+# The zola note above is the shape of the risk, not an argument against the
+# policy — 0.23 renaming the `[markdown]` keys is exactly the kind of break that
+# gets fixed when it happens. `latest` is 0.23.4 today.
+#
+# The one consequence worth knowing: `code:lint` is clippy with `-D warnings`
+# and it gates the release path, so a stable rustc landing between two runs can
+# fail a release whose code did not change. The remedy is the same — fix
+# forward. It is recorded in `03-release`'s Risks so nobody rediscovers it
+# mid-tag.
+#
+# `npm:wrangler` is a deploy-time tool for Cloudflare Pages and does not enter
+# the binary, the release path, or any tracked manifest — the no-JS-toolchain
+# guard (`tests/site.rs`) still passes, because it scans tracked lockfiles,
+# manifests and `node_modules`, none of which this adds.
 [tools]
-"core:rust" = { profile = "default", version = "1.98.0" }
-zola        = { version = "0.23.4" }
+"core:rust"    = { profile = "default", version = "latest" }
+"npm:wrangler" = { version = "latest" }
+zola           = { version = "latest" }
 
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.
@@ -50,3 +61,7 @@ zola        = { version = "0.23.4" }
 description = "Initialize mise tasks"
 hide        = true
 run         = "find .config/mise/tasks/ -name '*' -type f -not -path '*/*.env' -exec chmod 755 {} \\;"
+
+[env]
+# Personal Account ID in Cloudflare
+CLOUDFLARE_ACCOUNT_ID = "56702e03820fd6b69ff032c468913b23"

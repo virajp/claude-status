@@ -152,9 +152,10 @@ have passed.
 
 The formula-commits-nothing half defers to `02`.
 
-Caveat worth stating: reproducibility here is proven for the *archive*. The
-toolchain is `core:rust = "latest"`, so a re-run weeks later could resolve a
-different rustc and change the binary itself. See Risks.
+Caveat worth stating, and it is live rather than hypothetical: reproducibility
+here is proven for the *archive*, not the binary. `core:rust` tracks `latest` by
+decision, so a re-run weeks later can resolve a different rustc and move all
+three digests. See Risks.
 
 ### 6. Install as a user would
 
@@ -222,16 +223,20 @@ was one of two left open, and restated for Homebrew — the other was
 
 ## Risks / drift
 
-**`core:rust` was `latest` — fixed.** Pinned to `1.98.0`, the version it already
-resolved to, so criterion 4 no longer has a silent horizon. `mise.toml` had
-argued exactly this for zola and not for the toolchain. Original finding: There
-is no `rust-toolchain.toml`. `reproducible_tar` makes the *archive*
-deterministic given the same binary, and the Rust build is itself reproducible
-on a fixed toolchain — both verified. But a `workflow_dispatch` re-run weeks
-later can resolve a different rustc, producing a different binary and therefore
-different digests for all three assets. Criterion 4 is reliably true for a
-re-run close in time. Pinning rust for the release path would close it; that is
-a decision this cycle records rather than takes.
+**`core:rust` tracks `latest`, and that is the decision — not an oversight.** It
+was briefly pinned to `1.98.0`; the owner reverted it, because tracking `latest`
+is the convention across their projects: take upgrades as they land and fix
+forward when one breaks. So criterion 4's horizon is **accepted**, not closed.
+
+The risk it accepts: there is no `rust-toolchain.toml`. `reproducible_tar` makes
+the *archive* deterministic given the same binary, and the Rust build is itself
+reproducible on a fixed toolchain — both verified. But a re-run weeks later can
+resolve a different rustc, producing a different binary and therefore different
+digests for all three assets. So **criterion 4 is reliable for a re-run close in
+time**, which is what a retry after a half-failed release actually is, and not
+for one months later. `code:lint` is clippy with `-D warnings` on the release
+path, so a new lint can also fail a release whose code did not change; the
+remedy there is the same one — fix forward.
 
 **`publish` installed a toolchain it never used — fixed.** `install: false`; the
 three jobs that genuinely need cargo now pass `install_args: rust`, so nothing

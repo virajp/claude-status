@@ -265,31 +265,6 @@ fn no_release_job_installs_the_site_generator() {
     }
 }
 
-/// **The toolchain is pinned, like every other tool here.**
-///
-/// `code:lint` runs clippy with `-D warnings` and gates the release. Against a
-/// floating `latest`, a stable rustc landing between two runs is picked up
-/// silently, and any new lint fails a release whose code did not change. That is
-/// the class of failure that already cost one release, when CI's toolchain was
-/// not what anyone had run against.
-///
-/// `mise.toml` already argues this for zola in its own words — pinned exactly
-/// "so a floating version would break the build on an upgrade nobody asked
-/// for". The same reasoning had not been applied to rust.
-#[test]
-fn every_tool_on_the_release_path_is_pinned_to_a_version() {
-    let mise = read(".config/mise.toml");
-    let tools = mise.split("[tools]").nth(1).expect("a [tools] table");
-
-    for line in tools.lines().filter(|l| l.contains('=') && !l.trim_start().starts_with('#')) {
-        assert!(
-            !line.contains("\"latest\""),
-            "a tool on the release path floats: {} — pin it, or a release fails on an upgrade nobody asked for",
-            line.trim()
-        );
-    }
-}
-
 /// **A manual dispatch cannot invent a tag.**
 ///
 /// The tag/crate agreement gate is wrapped in `if ref_type = tag`, and a
