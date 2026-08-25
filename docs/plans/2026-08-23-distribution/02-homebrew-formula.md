@@ -60,9 +60,11 @@ easiest thing in this cycle to get wrong — see step 4.
 **The archive is already reproducible.** `reproducible_tar()` landed with
 [plan 3](./03-release.md): fixed mtime, zeroed numeric owner/group, `gzip -n`.
 The deterministic-tar work that `release.yml`'s header and
-[plan 1](./01-drop-npm.md) both assign to "`distribution/02` by name" is **done
-and not part of this cycle** — those two comments are now stale and step 6
-corrects them.
+[plan 1](./01-drop-npm.md) once assigned to "`distribution/02` by name" is
+**done and not part of this cycle**. Both comments were re-read during execution
+and both had already been updated by the cycle that moved the work —
+`release.yml` now says "this cycle owns that fix, not `distribution/02`" and
+plan 1 says "Owned by `distribution/03`". Nothing to correct.
 
 **Homebrew 6.0.0 requires explicit trust for non-official taps.** Local brew is
 6.0.19. `brew tap virajp/tap` followed by `brew install claude-status` — the
@@ -85,30 +87,52 @@ one output shape a formula's `test do` block can safely match on.
 **not resolve** — `dig +short` returns nothing, with a control proving DNS works
 from here. Both website plans landed; the domain was never pointed.
 
-**The npm placeholder was never published.** `@askviraj/claude-status` returns
-404 from the registry. The original step 5 (`npm deprecate`) and criterion 8 had
-nothing to act on and are **cut**, not deferred. The folder [index](./index.md)
-says a `0.0.1` placeholder holds the name; that is false and this cycle corrects
-it.
+**Nothing is on the npm registry under the placeholder's name.**
+`@askviraj/claude-status` 404s to an authenticated fetch. The original step 5
+(`npm deprecate`) and criterion 8 have nothing to act on and are **cut**, not
+deferred. The folder [index](./index.md) says a `0.0.1` placeholder holds the
+name; that is not true today and this cycle corrects it.
+
+Whether it was *ever* published is not decidable from outside — an unpublished
+package 404s exactly like one that never existed — so this records what was
+measured, not the stronger claim. Nothing depends on which it was.
 
 ## Target state (per contract)
 
 §9's channel is Homebrew. A tag produces the release and a formula bump from one
-workflow, with the formula's `url` **derived from the same `asset_name()` the
-release used** and its digest **read** out of `SHA256SUMS` rather than
-recomputed. A user runs one command and has a working bar.
+workflow, with the formula's `url` **read back out of the release GitHub
+published** and its digest **read** out of that release's `SHA256SUMS` rather
+than recomputed. Nothing about the asset is reconstructed, so there is nothing
+to drift. A user runs one command and has a working bar.
 
 ## Delta — ordered steps
 
-### 1. Add `Formula/` to the existing tap
+### 1. The tap is generated, not seeded
 
-`virajp/homebrew-tap` exists and is public; it needs `Formula/claude-status.rb`.
-The repo name is Homebrew's convention, not a choice — it must be
-`homebrew-<name>` for `virajp/tap` to resolve.
+`virajp/homebrew-tap` exists and is public. It needs `Formula/claude-status.rb`
+— and **CI creates it**. There is no hand-seeding step.
 
-**Outward-facing: ask before creating or pushing anything to that repo.** It is
-a separate public repository, and nothing in this cycle may touch it without the
-owner saying so first.
+**This corrects an earlier revision of this plan**, which had the first formula
+written by hand and CI bumping two fields in it thereafter. That splits the
+formula's source across two repositories: `desc`, `homepage`, `caveats` and the
+`depends_on` pair would live only in the tap, where nothing in this repo's suite
+can see them and they drift silently from the project they describe. It also
+makes the first release depend on a one-time manual step somebody has to get
+right.
+
+Instead `.config/homebrew/claude-status.rb` is the source, and `render_formula`
+emits the **whole file** with `url` and `sha256` substituted for the release
+just published. The tap is a generated artefact, overwritten in full every
+release, so it cannot drift; and because the render creates its output, the
+first release creates the formula.
+
+The template is a real formula carrying a real released `url`/`sha256` pair
+rather than placeholders, so `brew style` and `brew audit` can check it as it
+sits in this repo.
+
+**Outward-facing: nothing pushes to that repo until the App exists.** The repo
+name is Homebrew's convention, not a choice — it must be `homebrew-<name>` for
+`virajp/tap` to resolve.
 
 **Not homebrew-core.** Core imposes a notability bar and a release history this
 project does not have, and hands release timing to a review queue. Revisit if
@@ -154,13 +178,19 @@ drags the site's availability into the release path. Plain `audit` does not.
 
 A job in `release.yml` after `publish`. Four things it must get right:
 
-**Derive the URL from `asset_name()`.** Do not hardcode a literal in workflow
-YAML. The `publish` job already does this — `release.yml:254` is
-`source .config/mise/tasks/_scripts/_rust` — so the bump job follows the
-established pattern rather than inventing one. It is a *separate* job, so it
-needs its own `actions/checkout` before it can source anything. Reading the name
-from the same function that produced the asset leaves one source of truth and no
-assertion to keep in sync.
+**Read the URL back out of the published release.** Not from `asset_name()`, and
+certainly not from a literal in workflow YAML. The job runs after `publish` and
+asks GitHub what the release actually carries —
+`gh release view "$tag" --json assets` — taking both the asset's name and its
+`url` from the response.
+
+**This supersedes an earlier revision of this step, which said to derive the URL
+from `asset_name()`.** That would have been one source of truth for the *name*,
+but still a reconstruction: it assumes the asset that got uploaded is the one
+that function describes. Reading the release removes the assumption instead of
+relocating it — you cannot pin a URL that 404s if the URL came from the thing
+serving it. The `count != 1` guard is what makes it safe when a second target is
+added.
 
 This is the cycle's sharpest hazard, because **a wrong asset name is clean at
 every gate that exists.** Plain `brew audit` does not fetch the URL; only
@@ -181,21 +211,56 @@ name makes it return **empty**, not wrong — and an empty `--sha256` lets brew
 fall back to a best-effort download instead of failing. Fail the job explicitly
 if the digest does not match `^[0-9a-f]{64}$`.
 
-**Use `brew bump-formula-pr --write-only --commit --no-audit`.** Verified in
-recon: it does the edit offline, with no GitHub token, no fork and no PR, and it
-**deletes the redundant `version` line itself**. The original plan's hand-rolled
-rewrite is unnecessary. Gotcha: the tap checkout must have a remote configured.
-Commit message is conventionally `claude-status 0.2.0`.
+**Rewrite the two fields directly; do not put Homebrew on the runner.** Recon
+verified `brew bump-formula-pr --write-only --commit --no-audit` works offline
+and deletes a redundant `version` line itself, and an earlier revision of this
+plan chose it for that reason. **That reason is spent** — the template carries
+no `version` line, so there is nothing for it to delete; and the tool patches an
+existing formula, which is the wrong shape entirely now that CI renders the
+whole file. It would also drag a Homebrew installation onto a runner.
+
+That cuts against `publish`'s installs-nothing doctrine, which exists because a
+tool download failing *after* the build has spent its minutes is a green release
+with no artifact — the exact shape of the 2026-08-22 failure. A bump job has the
+same shape one step later: a green release whose tap silently did not move.
+
+So `rewrite_formula` in `_scripts/_rust` does it, and the suite runs it. It
+refuses a formula where `url` or `sha256` is absent or doubled, because `awk`
+exits 0 whether or not a pattern matched — without that check a formula that
+changed shape would sail through a rewrite that did nothing. Commit message
+stays `claude-status <version>`, matching Homebrew's own convention.
 
 **The digest is read from `SHA256SUMS`, never recomputed.** Recomputing from a
 rebuilt binary lets the tap and the release ship different bytes under one
 version. Criterion 6 is this.
 
-**Credential: an SSH deploy key on `virajp/homebrew-tap`, not a PAT.** Owner's
-decision. A deploy key is scoped to that one repository and cannot reach any
-other; a PAT is an account-level credential. Only `git push` needs it — the edit
-is offline. Record it in §9, which must stop claiming the repo has no standing
-credentials.
+**Credential: a GitHub App.** Owner's decision, after research, and it
+supersedes the SSH deploy key an earlier revision of this plan recorded.
+`GITHUB_TOKEN` cannot reach another repository, so the push needs a credential
+of its own, and the three candidates differ in what sits in this repo's secrets
+between releases:
+
+| Option     | What is at rest                        | Blast radius               |
+| ---------- | -------------------------------------- | -------------------------- |
+| PAT        | an account-level token                 | every repo the account has |
+| Deploy key | a private key that can push to the tap | the tap, forever           |
+| **App**    | credentials that only *mint* a token   | one hour, one repo         |
+
+The App wins because nothing at rest can push anything. `APP_ID` and `APP_KEY`
+authorise minting; the token itself is installation-scoped, expires in an hour,
+and `actions/create-github-app-token` revokes it when the job ends.
+
+Two details that are easy to get wrong:
+
+- **`client-id`, not `app-id`.** The action deprecates `app-id`. These are
+  different values on the App's settings page — `APP_ID` holds the **Client ID**
+  (`Iv23…`), not the numeric App ID. Same secret name, different value.
+- **`permission-contents: write`** narrows the minted token below whatever the
+  installation was granted, so a later broadening of the App does not silently
+  widen this job.
+
+Record it in §9, which must stop claiming the repo has no standing credentials —
+though "standing" is now weaker than it was going to be.
 
 ### 5. Close the secret-containment asymmetry
 
@@ -210,17 +275,25 @@ run is not optional.
 
 ### 6. Docs
 
-§9 records Homebrew as the channel, the tap's location, the deploy key, and
+§9 records Homebrew as the channel, the tap's location, the App credential, and
 marks the options-table Homebrew row resolved. It must show the
 **fully-qualified** install form only — `brew install virajp/tap/claude-status`
 — and not the two-step `brew tap` + `brew install`, which Homebrew 6 broke.
 
 `CONTRIBUTING.md` gains how to bump the formula by hand if CI cannot.
 
-Correct the two stale "Owned by `distribution/02`" comments in `release.yml`'s
+Correct the folder [index](./index.md)'s claim that a `0.0.1` npm placeholder
+exists.
+
+~~Correct the two stale "Owned by `distribution/02`" comments in `release.yml`'s
 header and `01-drop-npm.md` — deterministic tar landed in
-[plan 3](./03-release.md). Correct the folder [index](./index.md)'s claim that a
-`0.0.1` npm placeholder exists.
+[plan 3](./03-release.md).~~ **Already done.** Checked during execution:
+`release.yml`'s header reads "**This cycle owns that fix, not
+`distribution/02`**" and `01-drop-npm.md` reads "**Owned by
+`distribution/03`**". The cycle that moved the work moved the comments with it.
+The instruction was written from the recon's snapshot at `f6b22c4` and was stale
+by the time this plan was revised — the same failure mode the revision existed
+to fix, one level up.
 
 ## Acceptance criteria (from contract)
 
@@ -250,11 +323,18 @@ header and `01-drop-npm.md` — deterministic tar landed in
 
 ## Risks / drift
 
-**The deploy key is a new long-lived credential.** Plan 1 removed the repo's
-last one by deleting OIDC's consumer; this adds one back. It can push to the
-tap, which means a compromise can ship a formula pointing anywhere. Scoping it
-to that repo is the mitigation, and it is why a deploy key was chosen over a
-PAT.
+**The App can still ship a formula pointing anywhere.** Plan 1 removed the
+repo's last standing credential by deleting OIDC's consumer; this adds something
+back. The App is the mildest of the three options — a compromise of
+`APP_ID`/`APP_KEY` yields tokens scoped to the tap and expiring hourly, not a
+key that pushes forever — but "scoped to the tap" is precisely the scope needed
+to publish a malicious formula, so the reduction is in *duration and breadth*,
+not in what a live compromise could do to a user running `brew install`.
+
+**The App's private key is the thing to protect, and it does not expire.**
+Short-lived tokens do not make the key short-lived. Rotating it is a manual step
+nobody is currently prompted to take, which is worth a note in §9 rather than a
+false sense that the App made this a solved problem.
 
 **The digest is the integrity story now.** npm's immutability used to anchor it.
 A GitHub Release asset is *mutable* — it can be deleted and re-uploaded at the
@@ -301,12 +381,71 @@ drive `brew`.
   neither.
 - **Linux and Linuxbrew.** Deferred; see the folder [index](./index.md).
 - **Code signing and notarisation.** Still deferred, still unowned.
-- **Deprecating the npm placeholder.** It was never published — nothing to
-  deprecate.
+- **Deprecating the npm placeholder.** Nothing is on the registry under that
+  name — nothing to deprecate.
 - **An uninstall path for the `settings.json` keys.** Decided against in
   `config-and-cli/03`.
 - **Fixing the `workflow_dispatch` gate gap.** Recorded above; its own cycle.
 
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+**Blocker 6 was confirmed, not inherited.** A scratch tap was built and
+`brew audit --strict` run against a formula whose url named
+`claude-status-aarch64-apple-darwin.tar.gz`. It **exited 0**; the url returns
+HTTP 404. That is the whole justification for reading the asset from the
+release, and it is now measured rather than quoted. Blocker 5 was confirmed the
+same way — adding a `version` line took `brew audit` from exit 0 to exit 1,
+"redundant with version scanned from URL" — which doubles as proof the audit
+gate is live rather than passing vacuously. The scratch tap was removed and
+`/opt/homebrew/Library/Taps/` restored to its baseline of `macpaw` and
+`stablyai`.
+
+**Blocker 3 reproduced against the real published manifest.** v0.1.0's
+`SHA256SUMS`: the naive `grep … | head -1` returns `9d088dc5…`, the raw binary's
+digest, for a url pointing at the tarball, whose digest is `af64e2a6…`.
+
+**`brew style` on a bare file path is misleading.** It applies generic RuboCop
+cops — Sorbet sigils, `Style/Documentation`, frozen string literals — that do
+not apply to a formula in a tap, and it reported 5 offences on text that is
+clean inside a tap. Only `FormulaAudit/DependencyOrder` was real (`arch` before
+`macos`). Verify formulae in a tap, not as loose files.
+
+**The step-6 instruction to fix two stale comments was itself stale.** Both had
+already been corrected by the cycles that moved the work. Recorded in step 6
+rather than silently dropped.
+
+**The npm claim was weakened.** An earlier draft of this revision said the
+placeholder "was never published". An authenticated fetch proves only that
+nothing is there **now** — an unpublished package 404s identically. Corrected
+here and in the folder index.
+
+**A guard's first draft had a false positive that the suite caught.** The
+credential test substring-matched `"pat"` and failed against `path: tap`. It now
+enumerates the job's `secrets.` references and requires exactly `APP_ID` and
+`APP_KEY`, which is both precise and catches a credential nobody thought to ban.
+
+**The hand-seeding step was removed rather than completed.** An earlier draft of
+this record listed "the tap has no `Formula/`" as work blocked on the owner. It
+was not owner-blocked; it was a design flaw. CI renders the whole formula, so
+the first release creates the tap's file and there is nothing to seed. The
+lesson generalises: *a manual step that exists because the automation was scoped
+too narrowly is not a blocker, it is the automation's missing half.*
+
+**Criterion 3 is verified.** `brew info --formula` on the rendered formula, in a
+real scratch tap, prints the caveats without installing — naming `--configure`,
+warning about the overwrite, and giving a URL that resolves. It also renders
+`Required: arm64 architecture, macOS` (criterion 4's mechanism) and reports
+`stable 0.1.0`, which confirms Homebrew scans the version out of the url and no
+`version` line is wanted. `brew style`, `brew audit` and `brew audit --strict`
+are all exit 0 against the rendered output.
+
+**Not done in this cycle, and blocking the remaining criteria:**
+
+- **The GitHub App does not exist.** `bump-tap` fails at the tap checkout until
+  `APP_ID` and `APP_KEY` are set, and creating a GitHub App is inherently the
+  owner's. This is the one genuine external blocker.
+- **`bump-tap` has never run.** Every guard on it is static analysis of the
+  workflow text; the helpers it calls are executed by the suite, but the job
+  itself is not. The `v1.0.0` tag is its first real run.
+- **Criteria 1, 2 and 7 are unverifiable** until the tap serves a formula — they
+  all require a real `brew install`.

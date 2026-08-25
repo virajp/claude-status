@@ -324,3 +324,154 @@ jobs:
               --title "$tag" \
               --notes-file notes/RELEASE_NOTES.md
           fi
+
+  # The tap moves only after the release exists, and reads back out of it.
+  #
+  # `needs: publish` is the whole design, not sequencing hygiene. The formula's
+  # `url` and `sha256` are read from the release GitHub actually published,
+  # rather than rebuilt from a version string here — so the tap can only ever
+  # pin something that is genuinely being served.
+  #
+  # That closes the sharpest hazard in this cycle. A formula whose `url` names
+  # an asset that does not exist is clean at every gate that exists: plain
+  # `brew audit` does not fetch the URL, and `brew audit --strict` was measured
+  # this cycle exiting 0 on a URL returning 404. It surfaces first as a failed
+  # `brew install`, in front of the first user. Nothing is transcribed here, so
+  # there is no name to get wrong.
+  #
+  # This job installs nothing, for the same reason `publish` does not: it runs
+  # after the build has spent its minutes, and a tool download failing here is
+  # a green release whose tap silently did not move. It needs `gh`, `awk`,
+  # `sed` and `git`, all of which the runner image ships.
+  bump-tap:
+    needs: [ verify, publish ]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Read the published release
+        id: asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -e
+          set -o pipefail
+          source .config/mise/tasks/_scripts/_rust
+          tag="v$VERSION"
+
+          # Ground truth: what is attached to the release, not what we think
+          # `asset_name` would have produced.
+          gh release view "$tag" --json assets \
+            --jq '.assets[] | select(.name | endswith(".tar.gz")) | [.name, .url] | @tsv' \
+            > assets.tsv
+
+          count="$(wc -l < assets.tsv | tr -d ' ')"
+          # One target today. If a second is added, the formula grows a
+          # per-arch block and this job must be taught about it — failing here
+          # is how that gets noticed, rather than the tap silently pinning
+          # whichever tarball sorted first.
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one .tar.gz asset on $tag, found $count — a formula bump cannot choose between them"
+            exit 1
+          fi
+
+          name="$(cut -f1 assets.tsv)"
+          url="$(cut -f2 assets.tsv)"
+
+          gh release download "$tag" -p SHA256SUMS -O SHA256SUMS --clobber
+          # Keyed on the exact published name. `digest_for` refuses a miss
+          # rather than returning empty — an empty sha256 makes brew fall back
+          # to a best-effort download instead of verifying anything.
+          digest="$(digest_for SHA256SUMS "$name")"
+
+          {
+            echo "url=$url"
+            echo "digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      # A GitHub App, not a deploy key and not a PAT.
+      #
+      # `GITHUB_TOKEN` cannot reach another repository at all, so pushing to the
+      # tap needs a credential of its own. The three candidates differ in what
+      # is sitting at rest in this repository's secrets:
+      #
+      #   PAT        — an account-level credential; can reach every repo the
+      #                account can, and expires on a schedule somebody has to
+      #                remember.
+      #   deploy key — scoped to the tap, but a long-lived private key that can
+      #                push to it forever.
+      #   App        — nothing at rest can push anything. The secrets below
+      #                only authorise MINTING a token, and the token itself is
+      #                installation-scoped, valid for an hour, and revoked by
+      #                the action when this job ends.
+      #
+      # `client-id` and not `app-id`: the action deprecates `app-id` and says
+      # to use `client-id`. Note the secret holds the App's **Client ID**
+      # (`Iv23…`), not the numeric App ID — same secret name, different value.
+      #
+      # `permission-contents: write` narrows the minted token below whatever
+      # the installation was granted. If the App later gains other permissions,
+      # a token minted here still cannot use them.
+      - name: Mint a token for the tap
+        id: tap-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+          owner: virajp
+          repositories: homebrew-tap
+          permission-contents: write
+
+      - name: Check out the tap
+        uses: actions/checkout@v7
+        with:
+          repository: virajp/homebrew-tap
+          path: tap
+          token: ${{ steps.tap-token.outputs.token }}
+
+      - name: Rewrite the formula
+        env:
+          URL: ${{ steps.asset.outputs.url }}
+          DIGEST: ${{ steps.asset.outputs.digest }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        # Read through the environment, never interpolated into the script
+        # body: `${{ }}` substitution happens before bash sees the text, so a
+        # value containing shell syntax would execute rather than be assigned.
+        run: |
+          set -e
+          source .config/mise/tasks/_scripts/_rust
+
+          # The whole formula is rendered from this repo's template, not
+          # patched in place over there. The tap is a generated artefact: it is
+          # overwritten in full every release, so it cannot drift, and the
+          # first release creates it rather than needing a hand-seeded file.
+          #
+          # The render lives in `_scripts/_rust` rather than inline here so
+          # `tests/release.rs` can run it. A render that silently emitted the
+          # template's own values is this job's quiet failure mode, and YAML
+          # embedded in a workflow is the one place it could not be tested.
+          render_formula \
+            .config/homebrew/claude-status.rb \
+            "$URL" "$DIGEST" \
+            tap/Formula/claude-status.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # `add` BEFORE the emptiness check. On the first release the formula
+          # is a new file, and `git diff` does not see untracked paths — the
+          # check would report "nothing to bump" and exit 0 having published
+          # nothing, which is exactly the silent success this job must not have.
+          # `diff --cached` after staging sees adds and modifications alike.
+          git add Formula/claude-status.rb
+          if git diff --cached --quiet; then
+            echo "the formula already pins $VERSION — nothing to bump."
+            exit 0
+          fi
+
+          git commit -m "claude-status $VERSION"
+          git push

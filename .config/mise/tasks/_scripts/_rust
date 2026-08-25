@@ -147,3 +147,104 @@ reproducible_tar() {
   tar --owner=0 --group=0 --numeric-owner --format=ustar \
     -cf - -C "$dir" "$member" | gzip -n > "$out"
 }
+
+# The sha256 of one named asset, read out of a `shasum`-format manifest.
+#
+# `distribution/02`'s bump job commits this digest into a formula in another
+# repository, so a wrong answer here is not a broken build — it is a broken
+# `brew install` for every user, with the release run green behind it.
+#
+# **Matched on the whole name, never a substring.** `SHA256SUMS` carries both
+# assets for a target, and the raw binary's name is a strict PREFIX of the
+# tarball's — `claude-status-darwin-arm64` inside
+# `claude-status-darwin-arm64.tar.gz`. `shasum` writes the shorter one first,
+# so `grep "$asset" SHA256SUMS | head -1` returns the RAW BINARY's digest for a
+# url pointing at the tarball. Well-formed, plausible, and wrong. Hence awk on
+# an exact field comparison rather than a pattern.
+#
+# The `*` strip handles `shasum`'s binary-mode manifests, which prefix the name.
+#
+# **An absent asset fails rather than returning empty.** The lookup is keyed by
+# name, so a *renamed* asset yields nothing at all — and an empty `--sha256`
+# makes brew fall back to a best-effort download instead of refusing, shipping
+# a formula with no integrity check. Nothing offline catches the rename itself:
+# `brew audit --strict` exits 0 on a url that 404s, measured. This guard is the
+# only thing between that rename and a formula that verifies nothing.
+digest_for() {
+  manifest="$1"
+  asset="$2"
+
+  digest="$(awk -v want="$asset" '{ name = $NF; sub(/^\*/, "", name); if (name == want) print $1 }' "$manifest")"
+
+  # Catches empty, multi-line (two matches) and anything that is not 64 hex
+  # digits, in one test — every shape that is not exactly one digest.
+  case "$digest" in
+    *[!0-9a-f]* | "")
+      echo "no unique sha256 for '$asset' in $manifest" >&2
+      return 1
+      ;;
+  esac
+  if [ "${#digest}" -ne 64 ]; then
+    echo "sha256 for '$asset' in $manifest is ${#digest} chars, not 64" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$digest"
+}
+
+# Render the complete Homebrew formula for a published release.
+#
+# **The whole file, not a two-field patch.** The template in `.config/homebrew/`
+# is the source; the tap holds a generated copy and nothing there is
+# authoritative. Patching two fields in a formula that lived only in the tap
+# would leave `desc`, `homepage`, `caveats` and the `depends_on` pair somewhere
+# no test in this repo can see, free to drift from the project they describe.
+# Overwriting in full every release is what makes drift impossible.
+#
+# It follows that the output need not already exist: the first release CREATES
+# the tap's formula, so there is no manual seeding step and no one-time state a
+# human has to get right.
+#
+# **Two fields are substituted, never three.** A `version` line beside a
+# version-bearing url is a hard `brew audit` failure — brew scans the version
+# out of the url. Measured: adding one took `brew audit` from exit 0 to exit 1,
+# "redundant with version scanned from URL".
+#
+# **Both must be found exactly once, or nothing is written.** `awk` exits 0
+# whether or not a pattern ever matched, so a template that changed shape would
+# sail through a render that silently emitted the template's own values —
+# publishing the PREVIOUS release's digest under the new version's name, with
+# the run green behind it.
+render_formula() {
+  template="$1"
+  url="$2"
+  digest="$3"
+  out="$4"
+
+  for field in url sha256; do
+    n="$(grep -c "^[[:space:]]*$field " "$template" || true)"
+    if [ "$n" != "1" ]; then
+      echo "expected exactly one \`$field\` line in $template, found $n" >&2
+      return 1
+    fi
+  done
+
+  mkdir -p "$(dirname "$out")"
+  awk -v url="$url" -v digest="$digest" '
+    /^[[:space:]]*url / { printf "  url \"%s\"\n", url; next }
+    /^[[:space:]]*sha256 / { printf "  sha256 \"%s\"\n", digest; next }
+    { print }
+  ' "$template" > "$out.new"
+  mv "$out.new" "$out"
+
+  # The arity check proves the lines existed in the template; these prove the
+  # new values reached the file on disk.
+  grep -qF "$url" "$out" || {
+    echo "url was not written into $out" >&2
+    return 1
+  }
+  grep -qF "$digest" "$out" || {
+    echo "sha256 was not written into $out" >&2
+    return 1
+  }
+}

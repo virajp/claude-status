@@ -31,12 +31,16 @@ Release, and nothing on the npm registry at all. There are no users, so there is
 no migration, no deprecation window and no compatibility to keep. The
 `installer/` directory is deleted rather than ported.
 
-**The npm name was never taken.** This folder recorded a `0.0.1` placeholder
-holding `@askviraj/claude-status`; that was wrong — the registry returns 404 and
-always did. So there is nothing to deprecate and nothing to unpublish, and
+**Nothing is on the registry under the npm name.** This folder recorded a
+`0.0.1` placeholder holding `@askviraj/claude-status`; an authenticated fetch
+returns 404, so there is nothing to deprecate and nothing to unpublish, and
 [plan 2](./02-homebrew-formula.md) drops the `npm deprecate` step it carried for
-that reason. The name is unreserved; claiming it is a separate decision nobody
-has made.
+that reason.
+
+Whether it was *ever* published is not decidable from outside — an unpublished
+package 404s exactly like one that never existed — so this says what was
+measured rather than the stronger claim. Nothing turns on the difference. The
+name is unclaimed today; taking it is a separate decision nobody has made.
 
 ## Order
 
