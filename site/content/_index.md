@@ -2,26 +2,14 @@
 title = "claude-status"
 description = "A powerline status line for Claude Code, in Rust."
 template = "index.html"
+
+# The hero's words live here rather than in the template, so the copy stays
+# with the content and only the structure lives in `index.html`. Everything
+# below the front matter is ordinary markdown and needs no template edit.
+[extra]
+headline = "Know what your Claude Code session is up to"
+lede = "A powerline bar under Claude Code carrying what you actually keep checking: model, context, both rate-limit windows, session cost, and the branch you are on."
 +++
-
-# Know what your Claude Code session is up to
-
-`claude-status` draws a powerline bar under Claude Code with the things you
-actually keep checking: which model you are on, how much context you have
-burned, how close you are to your rate limits, what the session has cost, and
-which branch you are standing on.
-
-It is one Rust binary. No runtime, no Node, nothing to keep up to date — Claude
-Code invokes it directly, and it starts in about a millisecond. Most of a render
-is spent asking `git` about your working tree, so inside a repository the whole
-thing costs tens of milliseconds rather than a couple; outside one it is barely
-more than the process starting.
-
-![Two powerline lines under a Claude Code prompt. The first carries the model
-and effort, a context gauge with the token count and percentage, the 5-hour and
-7-day rate-limit windows each with a reset countdown, and the session cost. The
-second carries the project name and the git branch with a dirty
-marker.](statusline.png)
 
 ## What it shows you
 
@@ -29,39 +17,43 @@ marker.](statusline.png)
   know you are getting close before Claude tells you.
 - **Both rate-limit windows.** The 5-hour and the 7-day, each with the time
   until it resets.
-- **Cost as you go**, and — on a seat whose limit is a monthly budget rather
-  than the rolling windows — that budget beside it.
-- **Your subagents.** The same binary draws a second panel: a row per subagent
-  with its name, model, what it is working on, tokens, elapsed time and a status
-  glyph. The status colours that first segment; the rest of the row keeps its
-  own configured colours.
+- **Cost as you go.** The session's spend, and on a seat billed against a
+  monthly budget rather than the rolling windows, that budget beside it.
+- **Your subagents.** A second panel, a row per subagent, with its name, model,
+  what it is working on, tokens, elapsed time and a status glyph.
 - **Git, from the filesystem.** Branch, worktree and dirty markers, resolved by
   reading the repository rather than shelling out for everything.
 
-It also does one thing that is not display. A `PostToolUse` hook watches your
-usage and, when you cross a cap, tells Claude to wrap up and hand off rather
-than letting the session run past the line. The shipped caps are 65% of the
-context window, 90% of the 5-hour window, 80% of the 7-day one and 90% of a
-monthly budget — all four are yours to change, and a repository you cloned
-cannot raise them past what you set. See [Configure](@/configure.md).
+It is one Rust binary. No runtime, no Node, nothing to keep up to date — Claude
+Code invokes it directly, and it starts in about a millisecond. Most of a render
+is spent asking `git` about your working tree, so inside a repository the whole
+thing costs tens of milliseconds rather than a couple; outside one it is barely
+more than the process starting.
+
+## It can also stop a session running past the line
+
+A `PostToolUse` hook watches your usage and, when you cross a cap, tells Claude
+to wrap up and hand off rather than letting the session run on. The shipped caps
+are 65% of the context window, 90% of the 5-hour window, 80% of the 7-day one
+and 90% of a monthly budget — all four are yours to change, and a repository you
+cloned cannot raise them past what you set. See [Configure](@/configure.md).
 
 ## Getting it
 
-On Apple Silicon macOS, `brew install virajp/tap/claude-status` — the
-fully-qualified form, which Homebrew 6 requires for third-party taps. On
-anything else, build from source:
+On Apple Silicon macOS:
 
 ```sh
-git clone https://github.com/virajp/claude-status
-cd claude-status
-cargo build --release
-# put target/release/claude-status on your PATH, then:
+brew install virajp/tap/claude-status
 claude-status --configure
 ```
 
-`--configure` is the real second step, not a formality — it is what wires Claude
-Code to the binary. [Install](@/install.md) covers both, including the Homebrew
-route once the tap exists.
+The fully-qualified form is the one that works — Homebrew 6 requires explicit
+trust for third-party taps, so `brew tap` followed by `brew install` does not.
+On anything else, build from source with `cargo build --release` and put the
+binary on your `PATH`.
+
+`--configure` is the real second step, not a formality: it is what wires Claude
+Code to the binary. [Install](@/install.md) covers both routes in full.
 
 ## Where to go next
 

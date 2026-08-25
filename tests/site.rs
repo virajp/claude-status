@@ -707,10 +707,73 @@ fn the_landing_page_screenshot_exists_and_is_a_png() {
 
     assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "site/static/statusline.png is not a PNG");
     assert!(bytes.len() > 1024, "site/static/statusline.png is {} bytes — that is a placeholder, not a render", bytes.len());
-    assert!(
-        read("site/content/_index.md").contains("statusline.png"),
-        "the landing page no longer shows the screenshot"
+
+    // Either layer may carry the reference. It used to be markdown; the
+    // redesign moved it into the template, because the hero needs the `<img>`
+    // to carry real `width`/`height` and markdown cannot write them.
+    //
+    // Asserted across both rather than repointed at the template, so that
+    // moving it back — or into a shortcode — does not fail a test whose
+    // subject is "the landing page shows the screenshot", which is what this
+    // is actually about.
+    let landing = format!("{}{}", read("site/content/_index.md"), read("site/templates/index.html"));
+    assert!(landing.contains("statusline.png"), "the landing page no longer shows the screenshot");
+
+    // And the reserved box matches the file, so the image landing does not
+    // shift the page. The dimensions were wrong when the hero was first
+    // written — 1600x238 against a real 2294x138 — which reserves the wrong
+    // aspect ratio and moves everything below it.
+    let (w, h) = (
+        u32::from_be_bytes(bytes[16..20].try_into().expect("PNG IHDR width")),
+        u32::from_be_bytes(bytes[20..24].try_into().expect("PNG IHDR height")),
     );
+    if read("site/templates/index.html").contains("statusline.png") {
+        let tpl = read("site/templates/index.html");
+        assert!(
+            tpl.contains(&format!("width=\"{w}\"")) && tpl.contains(&format!("height=\"{h}\"")),
+            "the hero reserves a box that is not the screenshot's {w}x{h} — the image will shift the page as it loads"
+        );
+    }
+}
+
+/// **Every landing bullet opens with a bold that can stand as a card title.**
+///
+/// The landing page renders its list as a card grid, and the CSS promotes each
+/// item's leading `<strong>` to the card's heading. So the markdown shape is
+/// load-bearing in a way it was not when these were bullets: a bold that is
+/// only part of the first clause leaves the body starting mid-sentence.
+///
+/// That is not hypothetical. `- **Cost as you go**, and — on a seat …` shipped
+/// through a build and a passing suite, and rendered a card titled "Cost as you
+/// go" whose body began ", and —". Nothing but looking at the page caught it,
+/// which is exactly why it is asserted here now.
+#[test]
+fn every_landing_bullet_opens_with_a_complete_bold_title() {
+    let landing = read("site/content/_index.md");
+
+    // Front matter holds a `lede` with its own punctuation; the body starts
+    // after the closing fence.
+    let body = landing.split("+++").nth(2).expect("the landing has front matter");
+
+    let bullets: Vec<&str> = body.lines().filter(|l| l.starts_with("- ")).collect();
+    assert!(
+        bullets.len() >= 3,
+        "the landing has {} top-level bullets — this test is reading the wrong thing",
+        bullets.len()
+    );
+
+    for bullet in bullets {
+        let rest = bullet.strip_prefix("- ").expect("filtered on this prefix");
+        assert!(
+            rest.starts_with("**"),
+            "landing bullet does not open with a bold, so its card would have no title: {bullet}"
+        );
+        let title = rest.trim_start_matches("**").split("**").next().unwrap_or("");
+        assert!(
+            title.ends_with('.'),
+            "landing bullet's bold title `{title}` does not end a sentence, so the card body starts mid-clause: {bullet}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
