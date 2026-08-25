@@ -17,12 +17,21 @@ marker.](https://cdn.virajp.dev/claude-status/statusline.png)
 
 ## Install
 
-> **There is no published install route yet.** `claude-status` used to be an npm
-> package; that channel was retired before it ever shipped a real version,
-> because it asked you for a Node toolchain to deliver a binary that needs none.
-> Homebrew replaces it, and the tap is not published yet.
+Apple Silicon macOS:
 
-Building from source is what works today, and needs only a Rust toolchain:
+```sh
+brew install virajp/tap/claude-status
+```
+
+Use that fully-qualified form — Homebrew 6 requires explicit trust for
+third-party taps, so the two-step `brew tap` then `brew install` needs a
+`brew trust` in between.
+
+> `claude-status` used to be an npm package; that channel was retired before it
+> ever shipped a real version, because it asked you for a Node toolchain to
+> deliver a binary that needs none.
+
+For any other platform, build from source — needs only a Rust toolchain:
 
 ```sh
 git clone https://github.com/virajp/claude-status

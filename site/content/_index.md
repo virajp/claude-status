@@ -47,8 +47,9 @@ cannot raise them past what you set. See [Configure](@/configure.md).
 
 ## Getting it
 
-**There is no published install route yet.** Building from source is the one
-route that works today:
+On Apple Silicon macOS, `brew install virajp/tap/claude-status` — the
+fully-qualified form, which Homebrew 6 requires for third-party taps. On
+anything else, build from source:
 
 ```sh
 git clone https://github.com/virajp/claude-status

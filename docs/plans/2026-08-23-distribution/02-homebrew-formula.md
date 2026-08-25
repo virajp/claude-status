@@ -4,7 +4,7 @@ title: homebrew-formula — 2026-08-23
 description: Cycle plan (a diff) adding the formula to the existing
   virajp/homebrew-tap, pinning the published tarball by a digest read out of
   SHA256SUMS, and bumping it from CI on every tag.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]
@@ -43,6 +43,11 @@ the supported set narrowed to Apple Silicon alone, and §9 already carries a not
 saying that row is no longer live.
 
 ## Current state (actual)
+
+> **This is the pre-execution snapshot, kept as written.** Two of its statements
+> are now false by design: `v0.1.0` was deleted for the `v1.0.0` restart, and
+> the tap now has a `Formula/` that CI created. See **Shipped — `v1.0.0`** at
+> the end for what is true today.
 
 **`v0.1.0` is published.** Three assets — `claude-status-darwin-arm64`,
 `claude-status-darwin-arm64.tar.gz`, and `SHA256SUMS`. There is a real digest to
@@ -439,13 +444,44 @@ warning about the overwrite, and giving a URL that resolves. It also renders
 `version` line is wanted. `brew style`, `brew audit` and `brew audit --strict`
 are all exit 0 against the rendered output.
 
-**Not done in this cycle, and blocking the remaining criteria:**
+## Shipped — `v1.0.0`, 2026-08-25
 
-- **The GitHub App does not exist.** `bump-tap` fails at the tap checkout until
-  `APP_ID` and `APP_KEY` are set, and creating a GitHub App is inherently the
-  owner's. This is the one genuine external blocker.
-- **`bump-tap` has never run.** Every guard on it is static analysis of the
-  workflow text; the helpers it calls are executed by the suite, but the job
-  itself is not. The `v1.0.0` tag is its first real run.
-- **Criteria 1, 2 and 7 are unverifiable** until the tap serves a formula — they
-  all require a real `brew install`.
+The owner created the GitHub App and set `APP_ID` / `APP_KEY`, which was the
+last external blocker. `v1.0.0` was then tagged and the whole chain ran.
+
+**Run `32878826168` passed end to end, `bump-tap` included on its first ever
+execution.** The App minted a token, checked out the tap and pushed
+`claude-status 1.0.0` as `github-actions[bot]`. `Formula/claude-status.rb` did
+not exist beforehand — CI created it, which is the render design working as
+intended rather than a step somebody performed.
+
+**Criterion 6 held on real data, and this is the one that mattered.** The tap
+pins `7d91e4bf…`, the **tarball's** digest. The raw binary's is `990856ec…`, and
+the naive `grep … | head -1` returns that one — so the anchored lookup is the
+difference between a working tap and a checksum failure for every user, with the
+release run green either way.
+
+**Ordering was reversed from the recorded plan and that was right.** `v0.1.0`
+was deleted only after `v1.0.0` was confirmed good. Had `bump-tap` failed — a
+live possibility for a job that had never run — the project would still have had
+a published release to fix forward from.
+
+### Acceptance criteria
+
+| # | Status                 | Evidence                                                                                                                                                           |
+| - | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 | **met**                | `brew install virajp/tap/claude-status`, then `claude-status --version` prints `1.0.0` from `/tmp` via `PATH`                                                      |
+| 2 | **met**                | caveats name `--configure`, warn `OVERWRITES`, and give a URL that resolves                                                                                        |
+| 3 | **met**                | `brew info --formula` prints those caveats; also verified pre-release in a scratch tap                                                                             |
+| 4 | **mechanism verified** | `brew info` renders `Required: arm64 architecture, macOS`; `ArchRequirement` is `fatal true`. The refusal itself is still untestable here — no Intel or Linux host |
+| 5 | **met**                | the tag's run moved the tap with no human step                                                                                                                     |
+| 6 | **met**                | tap `sha256` = the published `SHA256SUMS` entry for the tarball, read not computed                                                                                 |
+| 7 | **not verified**       | the binary was left installed; no `brew uninstall` was run                                                                                                         |
+| 8 | **cut**                | nothing on the npm registry to deprecate                                                                                                                           |
+
+Two notes on what is *not* closed. **Criterion 7** stayed unverified because the
+install is in use rather than a test fixture — uninstalling to prove
+`settings.json` survives would have taken the owner's status line down.
+**`--configure` was run** by the owner and rewrote `statusLine` from
+`${HOME}/.claude/bin/claude-status` to a bare `claude-status`, so the bar is now
+served by the brew-managed binary and `brew upgrade` keeps it current.

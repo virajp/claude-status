@@ -4,19 +4,29 @@ description = "Get the binary, then wire Claude Code to it."
 weight = 1
 +++
 
-## There is no published install route yet
+## Homebrew
 
-`claude-status` has no release, no tap, no registry entry. It used to be an npm
-package; that channel was retired before it shipped a real version, because it
-asked you for a Node toolchain in order to deliver a binary that needs none.
-Homebrew replaces it, and the tap is not published.
+Apple Silicon macOS. One command:
 
-Until it is, **build from source**. That is not a fallback — it is currently the
-only thing that works.
+```sh
+brew install virajp/tap/claude-status
+```
+
+**Use that fully-qualified form.** Homebrew 6 requires explicit trust for
+third-party taps, so the two-step `brew tap virajp/tap` followed by
+`brew install claude-status` fails until you also run `brew trust`. Most
+tutorials still show the two-step version; this is the one that works.
+
+`brew upgrade` keeps it current from then on.
+
+It used to be an npm package. That channel was retired before it shipped a real
+version, because it asked you for a Node toolchain in order to deliver a binary
+that needs none.
 
 ## From source
 
-Needs a Rust toolchain and nothing else.
+For anything that is not Apple Silicon macOS, or if you would rather not use a
+tap. Needs a Rust toolchain and nothing else.
 
 ```sh
 git clone https://github.com/virajp/claude-status
@@ -27,16 +37,10 @@ cargo build --release
 That leaves the binary at `target/release/claude-status`. Put it somewhere on
 your `PATH` — the wiring step below invokes it **by name**, so a binary that is
 not on your `PATH` will not be found by Claude Code even though it works when
-you run it yourself.
+you run it yourself. Homebrew does this part for you.
 
-## Once the tap exists
-
-> **Not published yet.** This is what the route will be, recorded here so the
-> shape is not a surprise. It does not work today.
-
-```sh
-brew install virajp/tap/claude-status
-```
+Linux builds natively; Windows does not compile. Neither is tested or supported
+— see the repository's `CONTRIBUTING.md` before you try.
 
 ## Then wire Claude Code to it
 
@@ -140,11 +144,14 @@ the branch glyph and the gauge blocks are all font glyphs; without one you get
 tofu where the seams should be. Nothing else is required — no Node, no runtime,
 no second language.
 
-**Apple Silicon macOS** is what is built and tested. Intel Macs, Linux and
-Windows are not served today, and nothing currently stops you trying: the npm
-manifest that used to refuse went with the npm channel, and the Homebrew formula
-that will refuse again is not published. `cargo build --release` may well work
-on your platform; it is simply not something anyone checks.
+**Apple Silicon macOS** is what is built and tested. The Homebrew formula
+refuses anything else — it declares an `arm64` and a macOS requirement, so an
+Intel Mac is told *"The arm64 architecture is required for this software"*
+rather than installing something that cannot run.
+
+Building from source has no such gate, and nothing stops you trying.
+`cargo build --release` may well work on your platform; it is simply not
+something anyone checks.
 
 ## Removing it
 
