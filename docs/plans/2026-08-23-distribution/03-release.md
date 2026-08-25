@@ -217,6 +217,24 @@ digests for all three assets. Criterion 4 is reliably true for a re-run close in
 time. Pinning rust for the release path would close it; that is a decision this
 cycle records rather than takes.
 
+**`publish` installs a toolchain it never uses, and that is where the last
+release died.** `publish` runs `jdx/mise-action@v4` and then touches no
+mise-provided tool — `_rust_reassemble` is bash, the collect step is bash plus
+`shasum` and `tar`, the release step is `gh`. It nonetheless installs rust with
+`profile = default` **and zola** on `ubuntu-24.04`. That is a failure surface
+added *after* `test` and `build` have spent their runner minutes and produced an
+artifact: a death there means a green build and no release. It is also the exact
+shape of the 2026-08-22 failure, where `mise-action` died installing `pnpm`
+before any repo command ran. `verify` genuinely needs cargo; neither job needs
+zola.
+
+**Cheapest de-risk, and it costs nothing extra:** prove `mise install` with the
+current tool set on `ubuntu-24.04` *before* the release tag depends on it — open
+a throwaway PR touching `site/`, or push a `site-v*` tag. The site deploy needs
+doing anyway, and it exercises the same install on the same runner image. Doing
+that first turns the largest unexercised risk on the release path into a known
+quantity.
+
 **`workflow_dispatch` can create a tag out of thin air.** The tag/crate gate is
 wrapped in `if [ "$ref_type" = "tag" ]`, and a dispatch runs against a branch,
 so it is skipped. `publish` then computes the tag from `Cargo.toml` and
