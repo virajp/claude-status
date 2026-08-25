@@ -60,6 +60,13 @@ zola           = { version = "latest" }
 # dev until the first release attempt failed on a runner that did not have it.
 dprint = { version = "latest" }
 
+# Generates the release notes from the commit history, using the changelog
+# block in `.config/git-conventional-commits.yaml` that already describes the
+# headlines and URLs this project wants. In the BASE because `verify` runs it
+# on a runner. The same config is what the pre-commit hook validates messages
+# against, so the notes and the rules that shape them cannot drift apart.
+"npm:git-conventional-commits" = { version = "latest" }
+
 [tasks.init]
 # Mandatory — chmod the file-based tasks under .config/mise/tasks/ executable.
 # Lives in the BASE (not dev) so tasks are runnable in every env, CI included.

@@ -239,32 +239,18 @@ fn the_publish_job_installs_no_tools() {
     );
 }
 
-/// **No release job installs zola.**
+/// **`publish` still installs nothing.**
 ///
-/// `verify`, `test` and `build` genuinely need cargo. None of them builds the
-/// site. Installing zola on the release path adds a download that can fail for
-/// reasons entirely unrelated to the release.
-#[test]
-fn no_release_job_installs_the_site_generator() {
-    let workflow = read(".github/workflows/release.yml");
-
-    for name in ["verify", "test", "build"] {
-        let body = job(&workflow, name);
-        assert!(
-            body.contains("install_args:"),
-            "the `{name}` job installs every tool in mise.toml, zola included; scope it with install_args"
-        );
-        assert!(
-            body.contains("rust"),
-            "the `{name}` job's install_args does not name rust, which it needs"
-        );
-        assert!(
-            !body.contains("zola"),
-            "the `{name}` job still installs zola, which nothing on the release path uses"
-        );
-    }
-}
-
+/// The sibling guard that required `install_args` on the cargo jobs is gone.
+/// Scoping those installs looked like a cheap risk reduction and was not: three
+/// runs of the same commit, minutes apart, produced clippy twice and not the
+/// third, with rustup resyncing a `minimal` toolchain at lint time. A release
+/// gate that fails at random is worse than an extra tool download, so the
+/// declared set is installed again.
+///
+/// `publish` is different and keeps its `install: false`: it genuinely runs no
+/// mise-provided tool — bash, `shasum`, `tar`, `gh` — and it has now succeeded
+/// that way on a real release.
 /// **A manual dispatch cannot invent a tag.**
 ///
 /// The tag/crate agreement gate is wrapped in `if ref_type = tag`, and a
@@ -284,5 +270,75 @@ fn a_manual_dispatch_cannot_publish_a_release() {
     assert!(
         publish.contains("github.ref_type") || publish.contains("REF_TYPE"),
         "the publish job does not check what kind of ref it is running against, so a workflow_dispatch can create a tag out of thin air"
+    );
+}
+
+/// **Release notes are generated from the commits, not by GitHub.**
+///
+/// `--generate-notes` produced 74 characters for `v0.1.0` — a bare changelog
+/// link. It has nothing to enumerate here: there was no prior tag to diff, and
+/// this repository merges locally rather than through pull requests, which is
+/// the input GitHub's generator actually reads.
+///
+/// `.config/git-conventional-commits.yaml` already describes exactly the
+/// changelog this project wants — headlines per commit type, commit and issue
+/// URLs, and which types are worth listing. It had never been used for
+/// anything but validating commit messages.
+///
+/// The notes are built in `verify` rather than `publish`, for two reasons:
+/// `publish` installs no tools and is worth keeping that way, and `verify`
+/// runs before anything is built, so a broken generator costs nothing.
+///
+/// **`fetch-depth: 0` is load-bearing.** `actions/checkout` is shallow by
+/// default, and a changelog walked over one commit is empty.
+#[test]
+fn the_release_notes_are_generated_from_conventional_commits() {
+    let workflow = read(".github/workflows/release.yml");
+
+    let verify = job(&workflow, "verify");
+    assert!(
+        verify.contains("fetch-depth: 0"),
+        "the verify job checks out shallow, so the changelog would be walked over a single commit and come out empty"
+    );
+    assert!(
+        verify.contains("git-conventional-commits"),
+        "nothing generates release notes from the commit history"
+    );
+
+    let publish = job(&workflow, "publish");
+    assert!(
+        publish.contains("--notes-file"),
+        "the release still takes its body from somewhere other than the generated notes"
+    );
+    assert!(
+        !publish.contains("--generate-notes"),
+        "the release still asks GitHub to generate notes, which produced 74 characters for v0.1.0"
+    );
+}
+
+/// The generator is declared where CI installs it.
+///
+/// `verify` installs the declared tool set, so the tool has to be in the base
+/// config — the same rule that `dprint` was moved for after the first release
+/// attempt failed on a runner that did not have it.
+#[test]
+fn the_changelog_generator_is_declared_for_ci() {
+    let base = read(".config/mise.toml");
+    let tools: String = base
+        .split("[tools]")
+        .nth(1)
+        .unwrap_or("")
+        .split("\n[")
+        .next()
+        .unwrap_or("")
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| l.contains('='))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        tools.contains("git-conventional-commits"),
+        "the changelog generator is not in `.config/mise.toml`'s [tools], so `MISE_ENV=ci` will not install it and the release would publish empty notes"
     );
 }
