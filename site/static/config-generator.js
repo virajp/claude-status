@@ -929,7 +929,13 @@ function start(schema, defaults, mount) {
     const value = valueAt(current, path) ?? null;
     const active = branchFor(value, field.branches);
 
-    const select = element("select", { class: "gen-mode" });
+    // The enclosing `<legend>` names the fieldset, not this control. Without
+    // its own name a screen reader announces the group and then an unlabelled
+    // combo box, and there are 49 of them on the page.
+    const select = element("select", {
+      class: "gen-mode",
+      "aria-label": `${label} — value kind`,
+    });
     field.branches.forEach(({ label: name }, index) => {
       select.append(element("option", { value: String(index), text: name }));
     });
@@ -1011,7 +1017,13 @@ function start(schema, defaults, mount) {
       );
     }
 
-    const keyInput = element("input", { type: "text", placeholder: "new key" });
+    // `placeholder` is not an accessible name — it is a hint, it disappears on
+    // input, and some assistive tech never announces it.
+    const keyInput = element("input", {
+      type: "text",
+      placeholder: "new key",
+      "aria-label": `new ${label} key`,
+    });
     const add = element("button", { type: "button", text: "Add" });
     const error = element("p", { class: "gen-error" });
     add.addEventListener("click", () => {

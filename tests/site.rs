@@ -131,6 +131,41 @@ fn no_javascript_lockfile_or_node_modules_is_tracked() {
     );
 }
 
+/// **Every control the generator builds carries an accessible name.**
+///
+/// A `<legend>` names the *fieldset*, not the controls inside it, and a
+/// `placeholder` is not an accessible name. Both were relied on: the `oneOf`
+/// mode switchers sat as a bare `select` under a legend, and each open map's
+/// add-a-key box had only a placeholder — 54 controls in all, announced to a
+/// screen reader as unlabelled.
+///
+/// **Found by opening the deployed page in a real browser**, which is the only
+/// thing that can see an accessible name. No reviewer caught it from the source
+/// in three passes, and this suite had no assertion about label binding at all.
+///
+/// This is a **source scan, not a behavioural test** — it cannot compute an
+/// accessibility tree, only check that the constructs which had no name now ask
+/// for one. It is a regression pin, and it is weaker than the thing it pins.
+#[test]
+fn every_generated_control_asks_for_an_accessible_name() {
+    let js = read("site/static/config-generator.js");
+
+    for (construct, needle) in [
+        ("the oneOf mode switcher", "class: \"gen-mode\""),
+        ("an open map's add-a-key box", "placeholder: \"new key\""),
+    ] {
+        let at = js.find(needle).unwrap_or_else(|| panic!("{construct} is gone from the generator — this guard is now scanning for nothing"));
+        // The attribute bag is small; the name must be inside it, not merely
+        // somewhere else in the file.
+        let bag_end = js[at..].find("})").map(|e| at + e).unwrap_or(js.len());
+        let bag = &js[at.saturating_sub(200)..bag_end];
+        assert!(
+            bag.contains("aria-label"),
+            "{construct} is built without an accessible name; a legend names the group and a placeholder names nothing"
+        );
+    }
+}
+
 /// The build output is not tracked either, and cannot become tracked by
 /// accident. `zola build` writes `site/public/`; committing it would put a
 /// generated tree in review diffs forever.
