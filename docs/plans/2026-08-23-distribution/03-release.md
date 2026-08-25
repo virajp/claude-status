@@ -53,7 +53,11 @@ Two consequences carried here deliberately:
 `32586517321` on 2026-08-22 was a `push` on tag **`v1.0.0`**, which failed and
 was deleted. So `v0.1.0` is a version-number *regression* against a tag that was
 briefly public. Nothing mechanical cares; it is recorded so nobody rediscovers
-it as a surprise. **Decided: ship `v0.1.0` as planned.**
+it as a surprise. **Decided at the time: ship `v0.1.0`.** Superseded — the
+releases are being restarted from a clean slate at **`v1.0.0`** once the
+remaining work lands. That also retires the version-regression oddity noted
+here: `v1.0.0` was pushed and deleted on 2026-08-22, so `v0.1.0` read as a step
+backwards from a number the repository had already shown the world.
 
 That failure's two causes are both gone at `f6b22c4`: `MISE_ENV=ci` resolved
 `core:rust` with `profile = "minimal"` so clippy was absent, and `mise-action`
@@ -192,6 +196,79 @@ and no-Release claims, but its npm sentence is independently unverified (see
 Current state) and its "One target" paragraph is still true and referenced
 elsewhere.
 
+## Execution record — what `v0.1.0` actually proved
+
+`v0.1.0` was cut, published, and verified. **The plan is being restarted from a
+clean slate at `v1.0.0`** once the remaining work is sorted; this section is the
+record of what the first run established, so none of it is rediscovered.
+
+### Verified against a real release
+
+Criteria 1, 2, 5, 6 and 7 all passed against the published artifacts: three
+assets whose digests verify, the binary running on a clean `$HOME` with no
+toolchain and no checkout, `--version` printing exactly `0.1.0\n` (six bytes),
+`--debug` reporting defaults and exiting 0, and the tag/crate gate passing on a
+real tag for the first time.
+
+The archive header is what `reproducible_tar` was written for, and it holds:
+
+```
+-rwxr-xr-x  0 0  0  1979600  Jan  1  2000  claude-status
+```
+
+Ownership zeroed, mtime pinned, one member at the root, mode 755.
+
+### Criterion 4 is UNVERIFIED, and the reason is understood
+
+A re-run has never reached `publish`, so the assets have never been re-uploaded.
+Their digests match across checks only because nothing overwrote them, which is
+no evidence at all.
+
+Two facts bound what is left to prove:
+
+- **The binary is not reproducible across machines**, and the cause is not
+  mysterious: it embeds absolute cargo registry paths
+  (`/Users/<user>/.cargo/registry/...`), which differ between a laptop and a
+  runner. A local rebuild is byte-identical *with itself* across rebuilds —
+  confirmed with a control — and structurally cannot match CI's bytes. Closing
+  the criterion locally is therefore impossible, not merely inconvenient.
+  Cross-machine reproducibility would need `--remap-path-prefix`; nobody has
+  asked for it.
+- **CI-to-CI reproducibility is expected but unproven.** Two runs share a runner
+  image and `$CARGO_HOME`, so the path that defeats a local check does not
+  differ between them. `reproducible_tar` then removes the archive's own sources
+  of drift. `v1.0.0`'s release and one dispatched re-run settle it.
+
+### `install_args` broke the toolchain on a cold install
+
+Recorded because the mechanism is sharper than "flaky" and the shape recurs.
+Across four runs of the same workflow:
+
+| Run | Event    | Outcome                         |
+| --- | -------- | ------------------------------- |
+| 1   | tag push | passed lint, failed on `dprint` |
+| 2   | tag push | all green, published            |
+| 3   | dispatch | failed lint — clippy missing    |
+| 4   | dispatch | failed lint — clippy missing    |
+
+Not random: **push runs passed, dispatch runs failed.** GitHub Actions caches
+are scoped by ref, so the push runs restored a cache holding a full rust while
+the dispatch runs installed cold — and on a cold install `install_args` yielded
+a `minimal` profile (`downloading 3 components`, no clippy) instead of the
+`default` the config asks for. A warm cache masked it for two runs.
+
+The scoping is reverted. The lesson generalises: a narrowed install is only as
+good as its coldest path, and a green run on a warm cache proves nothing about a
+fresh one.
+
+### A dispatched re-run uses the *tag's* workflow file
+
+Confirmed by observation: a dispatch against `v0.1.0` ran a workflow with no
+notes step, i.e. the version at the tagged commit rather than the one on `main`.
+**A workflow fix on `main` does not reach a re-run of an older tag.** That is
+why criterion 4 could not be settled after the fix landed, and it is worth
+knowing before anyone plans a re-run as a recovery path.
+
 ## Acceptance criteria (from contract)
 
 Criterion 2 is carried forward from the archived `distribution` plan, where it
@@ -209,10 +286,11 @@ was one of two left open, and restated for Homebrew — the other was
 3. **Deferred to `02`.** Given the tap after the release, then its formula names
    `0.1.0` and a `sha256` equal to the release's `SHA256SUMS` entry. No formula
    exists to check until `02` writes one.
-4. Given a re-run of `v0.1.0`, then the workflow completes and the assets are
-   **byte-identical** — same sha256, not merely present. *(The "tap receives no
-   new commit" half defers to `02`. This criterion was unsatisfiable before
-   `reproducible_tar` landed in this cycle; `tests/release.rs` now holds it.)*
+4. **UNVERIFIED — carried to `v1.0.0`.** Given a re-run, the workflow completes
+   and the assets are **byte-identical** — same sha256, not merely present.
+   *(The "tap receives no new commit" half defers to `02`. This criterion was
+   unsatisfiable before `reproducible_tar` landed in this cycle;
+   `tests/release.rs` now holds it.)*
 5. Given the installed binary, when `--version` runs, then stdout is exactly
    `0.1.0`.
 6. Given the binary from criterion 2 with no config file, when `--debug` runs,
