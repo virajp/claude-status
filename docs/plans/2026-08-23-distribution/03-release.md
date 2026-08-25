@@ -78,9 +78,10 @@ is built but never executed is a claim nobody checked.
 
 **The release steps are idempotent by construction.** The GitHub Release upload
 uses `--clobber` for an existing tag. The npm skip-if-published check is gone
-with npm. The formula bump's idempotence is **untested** — it commits to another
-repo, and "commits nothing when nothing changed" is a property nobody has
-verified.
+with npm. **There is no formula bump job.** `release.yml` has four jobs —
+`verify`, `test`, `build`, `publish` — and `02` is what adds a fifth. The
+earlier text called the bump's idempotence "untested", which understated it:
+there is nothing to test yet.
 
 ## Target state (per contract)
 
@@ -89,6 +90,17 @@ verified.
 clean Mac, and every subsequent release is a tag push with no manual step.
 
 ## Delta — ordered steps
+
+### 0. Make the archive byte-reproducible — **landed**
+
+Done ahead of the rest, because everything after it depends on the asset being
+stable. `reproducible_tar` in `_scripts/_rust` pins the member's mtime, zeroes
+ownership numerically and drops gzip's header timestamp; the collect step calls
+it instead of archiving with `-z`. `tests/release.rs` holds it by running it,
+and each assertion was watched failing first.
+
+This is the work `release.yml` and `01-drop-npm.md` assigned to `02` by name.
+Both now say `03`. Without it, criterion 4 below cannot pass.
 
 ### 1. Confirm the version, and stop
 
@@ -201,8 +213,9 @@ was one of two left open, and restated for Homebrew — the other was
    `reproducible_tar` landed in this cycle; `tests/release.rs` now holds it.)*
 5. Given the installed binary, when `--version` runs, then stdout is exactly
    `0.1.0`.
-6. Given that install with no config file, when `--debug` runs, then it reports
-   defaults in use and exits 0.
+6. Given the binary from criterion 2 with no config file, when `--debug` runs,
+   then it reports defaults in use and exits 0. *(Independent of the delivery
+   channel — the raw asset proves it as well as a formula would.)*
 7. Given a pushed tag whose version disagrees with `Cargo.toml`, then `verify`
    fails before any build runs.
 
@@ -274,7 +287,11 @@ that is still uncertain should land **before** this tag, not after.
 - **`1.0.0`.** A later decision, taken on evidence from this release.
 - **Adding Linux targets.** Deferred; see the folder [index](./index.md).
 - **Code signing and notarisation.** Still deferred, still unowned.
-- **Publishing anything to npm.** The name stays a deprecated placeholder.
+- **npm, in any form.** Nothing here publishes, deprecates or touches the
+  registry. The earlier wording called the name "a deprecated placeholder",
+  which presupposed a `02` step that has not run — and `@askviraj/claude-status`
+  404s to an anonymous fetch anyway, which cannot distinguish never-published
+  from since-removed. §9's fifth amendment already records it as unverified.
 - **The website's own release.** [website/01](../2026-08-23-website/01-site.md)
   ships on a separate `site-v*` tag, deliberately decoupled from this one.
 
