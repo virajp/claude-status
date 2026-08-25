@@ -27,13 +27,16 @@ puts the binary on `$PATH`, and `claude-status --configure` does the wiring that
 the npm installer used to do.
 
 **This is only cheap because nothing has been released.** No git tag, no GitHub
-Release, and the only thing on the registry is a `0.0.1` placeholder holding the
-name. There are no users, so there is no migration, no deprecation window and no
-compatibility to keep. The `installer/` directory is deleted rather than ported.
+Release, and nothing on the npm registry at all. There are no users, so there is
+no migration, no deprecation window and no compatibility to keep. The
+`installer/` directory is deleted rather than ported.
 
-**The npm name is kept, not unpublished.** `@askviraj/claude-status@0.0.1` stays
-where it is. It costs nothing, it stops someone else taking the name, and npm
-does not allow unpublishing after 72 hours anyway.
+**The npm name was never taken.** This folder recorded a `0.0.1` placeholder
+holding `@askviraj/claude-status`; that was wrong — the registry returns 404 and
+always did. So there is nothing to deprecate and nothing to unpublish, and
+[plan 2](./02-homebrew-formula.md) drops the `npm deprecate` step it carried for
+that reason. The name is unreserved; claiming it is a separate decision nobody
+has made.
 
 ## Order
 
