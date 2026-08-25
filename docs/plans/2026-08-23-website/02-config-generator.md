@@ -729,3 +729,51 @@ reviewed end to end.** Reviewer A covered[0m [38;2;131;148;150m 89[0m
 nobody read the download path or the[0m [38;2;131;148;150m 90[0m
 [38;2;131;148;150m│[0m [38;2;248;248;242m sanitising in full.[0m
 [38;2;131;148;150m─────┴──────────────────────────────────────────────────────────────────────────[0m
+[38;2;131;148;150m─────┬──────────────────────────────────────────────────────────────────────────[0m
+[38;2;131;148;150m│ [0m[1mSTDIN[0m
+[38;2;131;148;150m─────┼──────────────────────────────────────────────────────────────────────────[0m
+[38;2;131;148;150m 1[0m [38;2;131;148;150m│[0m [38;2;131;148;150m 2[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m#### Late findings, recovered after
+the fix rounds — not fixed[0m [38;2;131;148;150m 3[0m
+[38;2;131;148;150m│[0m [38;2;131;148;150m 4[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mTwo stalled reviewers were recovered from context after their
+runs dropped.[0m [38;2;131;148;150m 5[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mMost of what they held was already fixed; these two were
+not.[0m [38;2;131;148;150m 6[0m [38;2;131;148;150m│[0m [38;2;131;148;150m
+7[0m [38;2;131;148;150m│[0m [38;2;248;248;242m- **Nothing prunes
+`site/static/`.** `site:assets` only ever copies in — it[0m [38;2;131;148;150m
+8[0m [38;2;131;148;150m│[0m [38;2;248;248;242m never removes a file it no
+longer stages. A local `site/static/stale.json`[0m [38;2;131;148;150m 9[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m left by an earlier build survives,
+is copied into `site/public/` by zola, and[0m [38;2;131;148;150m 10[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m shows as `??` (neither gitignored
+nor dprint-excluded, since both name the[0m [38;2;131;148;150m 11[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m staged paths exactly). **The deploy
+half is contained**: CI always builds from[0m [38;2;131;148;150m 12[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m a fresh `actions/checkout`, so
+nothing stale can reach production — which is[0m [38;2;131;148;150m 13[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m why this is a nit rather than the
+severity of the staging drift fixed above.[0m [38;2;131;148;150m 14[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m A `rm` of the staged set before
+copying would close it.[0m [38;2;131;148;150m 15[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m- **`.config/grype.yaml` does not exist**, and `code:sec`
+guards on its presence[0m [38;2;131;148;150m 16[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242m — so grype runs with no config and **no severity
+threshold**. Whether that is[0m [38;2;131;148;150m 17[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m deliberate or a gap left by an
+earlier cycle could not be determined, and it[0m [38;2;131;148;150m 18[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m is outside this cycle's blast
+radius either way. Worth settling deliberately,[0m [38;2;131;148;150m 19[0m
+[38;2;131;148;150m│[0m [38;2;248;248;242m because `code:sec` currently cannot
+fail on severity alone.[0m [38;2;131;148;150m 20[0m [38;2;131;148;150m│[0m
+[38;2;131;148;150m 21[0m [38;2;131;148;150m│[0m [38;2;248;248;242mBoth were
+raised by the blast-radius reviewer, whose verification table also[0m
+[38;2;131;148;150m 22[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mre-confirmed every prose fix in this cycle by re-running the
+thing each comment[0m [38;2;131;148;150m 23[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mcites — the citation in `site/templates/generate.html` is now
+correct in the[0m [38;2;131;148;150m 24[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mdemonstrable sense: breaking its `<script>` turns the test it
+names red, and[0m [38;2;131;148;150m 25[0m [38;2;131;148;150m│[0m
+[38;2;248;248;242mleaves the test it used to name green.[0m
+[38;2;131;148;150m─────┴──────────────────────────────────────────────────────────────────────────[0m
