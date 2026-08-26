@@ -264,6 +264,40 @@ for the decision record, applied to three things it did not list.
 Recorded here rather than acted on silently, because a gate that quietly widens
 the next step is how a plan stops describing what happened.
 
+## Step 2 — the decision harvest, walked 2026-08-26
+
+`docs/decisions.md` is written. Every dated amendment block in the spec was
+walked in order rather than recalled, and each is either transcribed as an entry
+or listed under **§14 Amendments that carried no decision** with where its
+behaviour now lives — so nothing was dropped silently.
+
+**The step-1 widening is discharged.** The five invariants (§1), §2's "every
+field is optional, parse defensively", and §4a's escape rule are all carried, as
+§2, §3 and §6 of the new file.
+
+**The two 2026-08-26 amendments are carried**: the `project` segment's fallback
+to the git root's directory name, and `typeSymbols._default` moving from U+F544
+to U+F1B2.
+
+Four things the plan's own minimum list got slightly wrong, recorded because a
+step that quietly re-scopes itself is the failure this cycle exists to fix:
+
+| Plan says                                             | What the spec actually carries                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "JSON over YAML"                                      | **No such standalone decision exists.** The nearest is the `caps` cycle deleting the `<cwd>/.config/vwf.yaml` line-scrape rather than keeping it as a second source. Transcribed there, under *Caps become config* — not invented as a config-format decision.                           |
+| "the Linux deferral and the credentials-file blocker" | The credentials file is what **unblocks** Linux, not what blocks it: `from_keychain()` guards on `cfg!(target_os = "macos")` and falls back to it, so credentials degrade rather than break. Linux was surveyed, came back **viable**, and was declined on cost. Transcribed as written. |
+| "the nine amendment blocks"                           | There are **thirty-six** dated amendment, correction, reversal and supersession markers as of today; the nine were the count when the plan was written. All are accounted for.                                                                                                           |
+| §12's payloads are step 4's                           | Unchanged — but §2's payload *shape* is the executable half of what step 1 sent to step 2. Only the "parse defensively" **rule** is a decision, and only it was transcribed. The shapes stay for step 4.                                                                                 |
+
+Nothing was deleted. Steps 3–7 are untouched.
+
 ## Gaps surfaced during execution
 
-*(filled in during execution)*
+1. **The commit-scope list has no home for the two documents this cycle
+   creates.** `.config/git-conventional-commits.yaml` maps scopes to paths, and
+   `docs/decisions.md` (step 2) and `docs/usage-mirror-contract.md` (step 3)
+   fall under none of them — `spec` is `./docs/spec`, which step 6 deletes. Step
+   2 committed under `spec` because the harvest's source is the spec, but that
+   scope stops existing four steps later. **Step 5 or step 7 has to decide what
+   replaces it**, and doing nothing leaves a `docs` scope that the hook rejects.
+   Not fixed here: editing the convention config is not step 2's.
