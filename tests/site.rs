@@ -572,6 +572,58 @@ fn the_readme_is_a_pointer_and_not_a_second_configuration_reference() {
     assert!(readme.contains("https://claude-status.virajp.dev"), "readme.md no longer links to the site");
 }
 
+/// **Every image the readme shows is in this repository, and resolves.**
+///
+/// Both used to be absolute URLs on `cdn.virajp.dev`, chosen when
+/// `claude-status.virajp.dev` did not resolve. Two things retired that: the
+/// domain resolves now, and the site's own copies are FINGERPRINTED at build
+/// time, so their URLs change every release and a readme pointing at one would
+/// rot on the next deploy. The tracked copies under `assets/` are the stable
+/// address, and this is what keeps them that way.
+///
+/// It checks both directions, because each fails differently and silently: an
+/// external host is a picture that vanishes when someone else's CDN changes,
+/// and a relative path with no file behind it is a broken image on the
+/// project's front page — which no test reading only markdown would notice.
+#[test]
+fn every_readme_image_is_tracked_in_this_repository() {
+    let readme = read("readme.md");
+
+    // `![alt](path)` across newlines — the bar's alt text is five lines long —
+    // and `<img src="path">`, which the lockup uses because it needs a width.
+    let mut referenced = Vec::new();
+    for (open, close) in [("](", ")"), ("<img src=\"", "\"")] {
+        let mut rest = readme.as_str();
+        while let Some(at) = rest.find(open) {
+            rest = &rest[at + open.len()..];
+            let Some(end) = rest.find(close) else { break };
+            let target = &rest[..end];
+            if target.ends_with(".png") || target.ends_with(".svg") || target.ends_with(".jpg") {
+                referenced.push(target.to_string());
+            }
+        }
+    }
+
+    assert!(
+        referenced.len() >= 2,
+        "found {} image(s) in readme.md — it carries at least the lockup and the bar, so this scan has stopped matching",
+        referenced.len()
+    );
+
+    for target in referenced {
+        assert!(
+            !target.starts_with("http://") && !target.starts_with("https://"),
+            "readme.md shows {target} from another host. The tracked copy under `assets/` is the one \
+             that cannot rot — the site's copies are fingerprinted and change address every release"
+        );
+        assert!(
+            root().join(&target).is_file(),
+            "readme.md shows {target}, which is not a file in this repository — the project's front page \
+             renders a broken image"
+        );
+    }
+}
+
 /// The site is where users are sent, so the two places that send them there
 /// have to agree on the address. `--help`'s copy is pinned by `src/_runtime/`
 /// and by `tests/e2e.rs`; this is the pair the *docs* own.

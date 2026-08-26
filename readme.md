@@ -19,7 +19,7 @@ date.
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
 4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
 session cost. The second shows the project name and the git branch with a dirty
-marker.](https://cdn.virajp.dev/claude-status/statusline.png)
+marker.](assets/statusline.png)
 
 ## Install
 
