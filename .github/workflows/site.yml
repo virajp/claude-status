@@ -67,17 +67,28 @@ name: Site
 # BEFORE THE FIRST TAG
 # ---------------------------------------------------------------------------
 #
-#   1. Create the Cloudflare Pages project (`claude-status`, direct upload —
-#      NOT connected to this git repository, see above).
-#   2. Point `claude-status.virajp.dev` at it. The zone is already on
-#      Cloudflare (`dig NS virajp.dev` → celine/harvey.ns.cloudflare.com), but
-#      neither `virajp.dev` nor the subdomain resolves today.
-#   3. Add two repository secrets:
+#   1. DONE. The Cloudflare Pages project exists, direct upload, NOT connected
+#      to this git repository (see above). It is named
+#      `claude-status-virajp-dev` — after the domain, so the two are
+#      identifiable as a pair. It is NOT named `claude-status`, which is what
+#      the deploy step below said until 2026-08-26; nothing tests the project
+#      name, so that would have failed at the first tag and nowhere earlier.
+#   2. DONE. `claude-status.virajp.dev` is attached and resolves, alongside the
+#      project's own `claude-status-site.pages.dev`. Both serve.
+#   3. STILL OUTSTANDING — this is the only thing between here and a deploy.
+#      Add two repository secrets:
 #        CLOUDFLARE_API_TOKEN    scoped to "Cloudflare Pages: Edit" on this
 #                                project ALONE — an account-wide token is a far
 #                                larger thing to leak than what this needs
 #        CLOUDFLARE_ACCOUNT_ID   the account id
+#      `gh api repos/virajp/claude-status/actions/secrets` currently lists only
+#      APP_ID and APP_KEY.
 #   4. Push `site-v1`.
+#
+#   Preview deploys, meanwhile, are being made from a workstation with
+#   `wrangler pages deploy site/public --project-name=claude-status-virajp-dev
+#   --branch=<branch>`. Any branch but the production one is a preview, and
+#   they sit behind Cloudflare Access.
 #
 # Until step 3 is done the deploy job will fail on an empty token rather than
 # doing something surprising, which is the failure mode to want.
@@ -173,7 +184,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=claude-status
+          command: pages deploy public --project-name=claude-status-virajp-dev
             --branch=main
 
       - name: Where it went
