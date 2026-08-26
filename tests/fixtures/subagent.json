@@ -1,0 +1,13 @@
+{
+  "columns": 120,
+  "tasks": [
+    {
+      "id": "t1",
+      "name": "reviewer",
+      "type": "review",
+      "status": "running",
+      "description": "Auditing auth flow",
+      "tokenCount": 18234
+    }
+  ]
+}

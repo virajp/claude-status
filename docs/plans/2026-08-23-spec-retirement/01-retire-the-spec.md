@@ -319,6 +319,49 @@ doc, because assuming otherwise is how a cross-repo contract rots quietly.
 — the corrections were made by reading this repository, and whether
 `context-caps.js` copes with each shape is not decidable from here.
 
+## Step 4 — the payloads made executable, walked 2026-08-27
+
+`tests/fixtures/main-bar.json` and `tests/fixtures/subagent.json` exist, with
+`tests/fixtures/README.md` documenting each one's invocation and what it
+produces. `tests/e2e.rs` reads both with `include_str!`.
+
+**There were three copies of this JSON, not two.** §12's shell examples, and a
+`const` per payload inside `tests/e2e.rs`. Making the files real without
+deleting the consts would have made four, so the consts now read the files —
+which is what "executed instead of transcribed" has to mean if it means
+anything.
+
+**The broken invocation is fixed and pinned as a control.**
+`the_reference_payload_without_its_flag_is_the_missing_flag_error_and_not_a_bar`
+pipes the payload with no flag and asserts the one-line missing-flag error.
+Without it the neighbouring test proves the *payload* renders but not that the
+**flag** is what makes it — and the flag is the half §12 documented wrong.
+
+**Both new guards were proved able to fail:**
+
+| Guard                                                    | Control                                         | Result                                           |
+| -------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| the missing-flag control                                 | pass `--statusline` instead of no flag          | FAILED as required, then passed on revert        |
+| `every_reference_payload_is_named_in_the_fixture_readme` | drop an undocumented `.json` into the directory | FAILED naming the file, then passed once removed |
+
+**The three documented invocations were also run by hand** against the built
+binary, not only through the harness: the bar renders, the panel's row survives
+`jq -r .content`, and the no-flag case prints the error.
+
+**One claim in the new README was wrong when written and is corrected.** It said
+the main-bar payload produces "the two-line powerline bar". It produces **one
+line**: the payload's `current_dir` is `/tmp/demo`, which is not a git
+repository, so `project`, `worktree` and `branch` all omit and an all-empty line
+is dropped. Caught by running it rather than by reading it — the same way §12's
+own error would have been caught at any point in the years it stood.
+
+Test count is **584**, up two from 582.
+
+**On website/02's consumption:** the plan says it reads these payloads as the JS
+preview's measurement set. Checked — website/02 measures the preview against
+`tests/golden/*.txt`, not against the payload files, and the site transcribes no
+payload of its own. Nothing to re-point; no gap.
+
 ## Gaps surfaced during execution
 
 1. **The commit-scope list has no home for the two documents this cycle

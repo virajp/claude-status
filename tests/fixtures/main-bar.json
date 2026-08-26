@@ -1,0 +1,17 @@
+{
+  "session_id": "abc123",
+  "session_name": "users-and-groups",
+  "model": { "display_name": "Opus 4.8" },
+  "effort": { "level": "high" },
+  "workspace": { "current_dir": "/tmp/demo" },
+  "cost": { "total_cost_usd": 46.51, "total_duration_ms": 33540000 },
+  "context_window": {
+    "used_percentage": 26,
+    "context_window_size": 1000000,
+    "total_input_tokens": 259000
+  },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 7, "resets_at": 1774200000 },
+    "seven_day": { "used_percentage": 1.0, "resets_at": 1774600000 }
+  }
+}

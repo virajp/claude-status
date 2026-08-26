@@ -42,13 +42,13 @@ const CLOSED_PORT_URL: &str = "http://127.0.0.1:1/never";
 /// test thought it was exercising a mode and was not.
 const MISSING_FLAG_LINE: &str = "missing --statusline or --subagent";
 
-/// The reference payload from contract §12.
-const FIXTURE: &str = r#"{"model":{"display_name":"Opus 4.8"},"effort":{"level":"high"},
-"session_id":"abc123","session_name":"users-and-groups","workspace":{"current_dir":"/tmp/demo"},
-"cost":{"total_cost_usd":46.51,"total_duration_ms":33540000},
-"context_window":{"used_percentage":26,"context_window_size":1000000,"total_input_tokens":259000},
-"rate_limits":{"five_hour":{"used_percentage":7,"resets_at":1774200000},
-"seven_day":{"used_percentage":1.0,"resets_at":1774600000}}}"#;
+/// The reference main-bar payload, read from the file rather than transcribed.
+///
+/// It used to be a `const` here **and** a shell example in the contract's §12,
+/// and the two drifted: §12's copy documented piping to a bare `claude-status`,
+/// which prints the missing-flag line instead of a bar. One file, read by the
+/// suite that proves it works — see `tests/fixtures/README.md`.
+const FIXTURE: &str = include_str!("fixtures/main-bar.json");
 
 struct Home {
     dir: TempDir,
@@ -139,9 +139,56 @@ fn the_fixture_renders_a_bar_on_stdout_and_nothing_on_stderr() {
     assert_eq!(stderr(&out), "", "a clean render says nothing");
 }
 
-/// The reference subagent payload from contract §12.
-const SUBAGENT_FIXTURE: &str = r#"{"columns":120,"tasks":[{"id":"t1","name":"reviewer",
-"type":"review","status":"running","description":"Auditing auth flow","tokenCount":18234}]}"#;
+/// **The invocation §12 got wrong, pinned as a control.**
+///
+/// §12's main-bar example piped this payload to a bare `claude-status`, which
+/// resolves to the missing-flag mode and prints an error line rather than a
+/// bar. The example was wrong for as long as it existed and nothing could tell
+/// you: the document was the only place the invocation was written down.
+///
+/// This is the control for the assertion above. Without it,
+/// `the_fixture_renders_a_bar_on_stdout_and_nothing_on_stderr` proves the
+/// payload renders but not that the **flag** is what makes it render — and the
+/// flag is the half that was documented wrong.
+#[test]
+fn the_reference_payload_without_its_flag_is_the_missing_flag_error_and_not_a_bar() {
+    let home = Home::new(&safe_config());
+    let out = run(&home, &[], FIXTURE, &[]);
+
+    let stdout = stdout(&out);
+    assert!(stdout.contains(MISSING_FLAG_LINE), "got: {}", stdout.escape_debug());
+    assert!(!stdout.contains("Opus 4.8"), "a bar was rendered without the flag: {}", stdout.escape_debug());
+    assert_eq!(stdout.lines().count(), 1, "one line fits the bar; twenty lines of usage do not");
+}
+
+/// Every reference payload has a documented invocation.
+///
+/// The failure this closes is the one that produced §12's broken example: a
+/// payload and the command that runs it lived in different places, so one could
+/// be changed without the other. A file added to `tests/fixtures/` and never
+/// written into its README is a payload nobody knows how to run.
+#[test]
+fn every_reference_payload_is_named_in_the_fixture_readme() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures");
+    let readme = std::fs::read_to_string(dir.join("README.md")).expect("tests/fixtures/README.md exists");
+
+    let mut payloads: Vec<String> = std::fs::read_dir(&dir)
+        .expect("the fixture directory exists")
+        .filter_map(|entry| entry.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .filter(|name| name.ends_with(".json"))
+        .collect();
+    payloads.sort();
+
+    // A scan of nothing passes, so say what the floor is. Two payloads today:
+    // the main bar and the subagent panel.
+    assert!(payloads.len() >= 2, "only {} payload(s) found — the scan would be vacuous", payloads.len());
+
+    let undocumented: Vec<&String> = payloads.iter().filter(|name| !readme.contains(name.as_str())).collect();
+    assert!(undocumented.is_empty(), "payloads with no row in tests/fixtures/README.md: {undocumented:?}");
+}
+
+/// The reference subagent payload, read from the file for the same reason.
+const SUBAGENT_FIXTURE: &str = include_str!("fixtures/subagent.json");
 
 #[test]
 fn the_subagent_fixture_renders_ndjson_that_survives_a_json_parser() {
