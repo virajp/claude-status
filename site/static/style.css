@@ -1212,6 +1212,77 @@ pre {
   color: var(--text-muted);
 }
 
+/* Inline code inside a hint is the schema's own markdown, rendered rather than
+ * printed — it used to arrive as literal backticks on 48 hints. */
+.gen-hint code {
+  font-size: 0.95em;
+}
+
+/* ---- generator: disclosures ------------------------------------------- */
+
+/*
+ * `.gen-more` is a group's reference prose, folded away so the first sentence
+ * can act as form help. `.gen-collapse` is the group's fields.
+ *
+ * Both are native `<details>`, so they are keyboard operable with no script of
+ * ours, and find-in-page opens them in modern browsers.
+ */
+.gen-more,
+.gen-collapse {
+  display: block;
+}
+
+.gen-more > summary,
+.gen-collapse > summary {
+  cursor: pointer;
+  font: var(--fw-regular) var(--fs-code-sm) / 1.4 var(--font-mono);
+  color: var(--text-muted);
+  transition: color var(--dur-2) var(--ease-standard);
+}
+
+.gen-more > summary:hover,
+.gen-collapse > summary:hover {
+  color: var(--text-hi);
+}
+
+.gen-more > summary:focus-visible,
+.gen-collapse > summary:focus-visible {
+  outline: 2px solid var(--surface-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+
+.gen-more {
+  margin-top: var(--space-3);
+}
+
+.gen-more-body {
+  display: block;
+  margin-top: var(--space-3);
+  padding-left: var(--space-5);
+  border-left: 2px solid var(--border-hairline);
+}
+
+.gen-collapse {
+  margin-top: var(--space-4);
+}
+
+.gen-collapse-count {
+  letter-spacing: var(--tracking-label);
+  text-transform: lowercase;
+}
+
+/* The count of what a collapsed group is hiding. Amber because it is the one
+ * thing on a closed group that says "you changed something in here". */
+.gen-changed {
+  margin-left: var(--space-5);
+  color: var(--surface-accent);
+}
+
+.gen-changed[hidden] {
+  display: none;
+}
+
 .gen-fields input,
 .gen-fields select,
 .gen-fields textarea {
