@@ -102,14 +102,41 @@ print_header "Rewriting self-links to root-relative ..."
 # on both, and perl is preinstalled on macOS and on ubuntu-24.04 (it is what
 # `shasum` is written in, which the release workflow already depends on).
 # `\Q…\E` quotes the URL so its `/` and `:` are literal.
-find "${SITE_DIR}/public" -name '*.html' -exec perl -pi -e "s|\Q${BASE_URL}\E/|/|g" {} +
+#
+# SCOPED TO `href` AND `src`, and not to the whole file. The OpenGraph and
+# Twitter tags in `base.html` carry the same base_url inside `content="…"` and
+# MUST stay absolute: a crawler unfurling a shared link resolves them against
+# nothing, so a root-relative `og:image` is a preview with no picture. An
+# unscoped rewrite ate them, which is why this is two narrow passes rather than
+# one wide one.
+for attr in href src; do
+  find "${SITE_DIR}/public" -name '*.html' \
+    -exec perl -pi -e "s|${attr}=\"\Q${BASE_URL}\E/|${attr}=\"/|g" {} +
+done
 
-remaining="$(grep -rl "${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | wc -l | tr -d ' ')"
+remaining=0
+for attr in href src; do
+  n="$(grep -rlF "${attr}=\"${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | wc -l | tr -d ' ')"
+  remaining=$((remaining + n))
+done
 if [ "${remaining}" != "0" ]; then
   print_error "${remaining} built page(s) still carry an absolute self-link"
-  grep -rn "${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | head -5
+  for attr in href src; do
+    grep -rnF "${attr}=\"${BASE_URL}" "${SITE_DIR}/public" --include='*.html' | head -5
+  done
   exit 1
 fi
+
+# The other direction for the PAGES: the link-preview tags must have survived.
+# If the rewrite ever widens again this is what says so, rather than a silently
+# picture-less preview nobody notices until they share a link.
+for og in og:url og:image; do
+  if ! grep -qF "property=\"${og}\" content=\"${BASE_URL}" "${SITE_DIR}/public/index.html"; then
+    print_error "${og} is no longer absolute — the self-link rewrite was too wide"
+    grep -nF "${og}" "${SITE_DIR}/public/index.html" | head -3
+    exit 1
+  fi
+done
 
 # The other direction: the rewrite must NOT have reached the two files whose
 # whole job is to carry absolute URLs.
@@ -119,5 +146,133 @@ for must_keep in sitemap.xml robots.txt; do
     exit 1
   fi
 done
+
+# ---------------------------------------------------------------------------
+# FINGERPRINTING
+# ---------------------------------------------------------------------------
+#
+# Every asset that can change between releases ships as `name.<hash>.ext`, and
+# every reference to it is rewritten to match.
+#
+# WHY, precisely: Cloudflare Pages serves the HTML `max-age=0,
+# must-revalidate` and static assets with a lifetime of their own. Those are
+# not the same freshness, so a returning reader gets the NEW html against an
+# OLD stylesheet, and nothing requires the two to be compatible. That is not
+# hypothetical -- it is how the first production deploy of the redesign looked
+# broken to everyone who had visited before, and correct to everyone who had
+# not: a blank logo (the old stylesheet defined no `--surface-accent`, so the
+# mark's `fill="var(--surface-accent)"` resolved to nothing) and a screenshot
+# running off the side of the page (no `.hero-shot img { width: 100% }`).
+#
+# A hash in the FILENAME removes the failure rather than shortening it. Changed
+# bytes are a different file at a different address, so the old one can be held
+# forever and still never be served against HTML that does not ask for it --
+# which is what makes the `immutable` year in `_headers` below safe.
+#
+# A query string (`style.css?h=...`) busts a cache too, but the path stays
+# stable, so `immutable` on it would be a promise about a URL whose content CAN
+# change. The filename form is the one that makes the header honest.
+#
+# ORDER MATTERS. Fonts are named inside `style.css`, so they are fingerprinted
+# first; hashing them rewrites the stylesheet, which changes the bytes the
+# stylesheet's OWN hash is taken over. Doing it the other way round ships a
+# stylesheet whose hash does not match its contents.
+#
+# NOT FINGERPRINTED, deliberately: `claude-status.schema.json` and
+# `claude-status.defaults.json`. `config-generator.js` fetches them by relative
+# name at runtime (`new URL(name, import.meta.url)`), so renaming them breaks
+# the form with a 404 that nothing here would catch. They are marked
+# must-revalidate in `_headers` instead, which is the correct answer for data
+# that is fetched by a stable name.
+print_header "Fingerprinting assets ..."
+
+PUB="${SITE_DIR}/public"
+
+fingerprint() {
+  rel="$1"
+  src="${PUB}/${rel}"
+  if [ ! -f "${src}" ]; then
+    print_error "fingerprint: ${rel} is not in the build output"
+    exit 1
+  fi
+
+  # 12 hex chars. Collision is not the threat model here -- serving the wrong
+  # cached file is, and 48 bits is far past what a handful of assets needs.
+  hash="$(shasum -a 256 "${src}" | cut -c1-12)"
+  dir="$(dirname "${rel}")"
+  base="$(basename "${rel}")"
+  name="${base%.*}"
+  ext="${base##*.}"
+  if [ "${dir}" = "." ]; then
+    newrel="${name}.${hash}.${ext}"
+  else
+    newrel="${dir}/${name}.${hash}.${ext}"
+  fi
+
+  mv "${src}" "${PUB}/${newrel}"
+
+  # Rewritten in html AND css: the stylesheet is where the font faces are
+  # named, and the pages are where everything else is.
+  find "${PUB}" \( -name '*.html' -o -name '*.css' \) \
+    -exec perl -pi -e "s|\Q${rel}\E|${newrel}|g" {} +
+
+  echo "  ${rel} -> ${newrel}"
+}
+
+# Fonts first -- see ORDER MATTERS above.
+for font in "${PUB}"/fonts/*.woff2; do
+  [ -e "${font}" ] || { print_error "no fonts in the build output"; exit 1; }
+  fingerprint "fonts/$(basename "${font}")"
+done
+
+for asset in style.css copy-code.js config-generator.js statusline.png og-card.png favicon.svg; do
+  fingerprint "${asset}"
+done
+
+# Nothing may still point at an un-fingerprinted name. A rewrite that missed
+# would 404 in production and pass every check that only reads the source.
+for asset in style.css copy-code.js config-generator.js statusline.png og-card.png favicon.svg; do
+  if grep -rqF "/${asset}" "${PUB}" --include='*.html' --include='*.css'; then
+    print_error "a reference to un-fingerprinted /${asset} survived the rewrite"
+    grep -rnF "/${asset}" "${PUB}" --include='*.html' --include='*.css' | head -5
+    exit 1
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# `_headers` -- Cloudflare Pages reads this from the root of the output.
+# ---------------------------------------------------------------------------
+#
+# It is generated rather than committed under `static/` so it cannot drift from
+# what is actually fingerprinted above.
+print_header "Writing _headers ..."
+cat > "${PUB}/_headers" <<'HEADERS'
+# Generated by .config/mise/tasks/site/build. Do not edit by hand.
+
+# The default: revalidate every time. HTML must never be held, because it is
+# what names the fingerprinted assets.
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Fingerprinted assets. The hash is in the filename, so these bytes can never
+# change at this address -- which is what makes a year and `immutable` safe.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.png
+  Cache-Control: public, max-age=31536000, immutable
+/*.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+# NOT fingerprinted: the config generator fetches these two by relative name at
+# runtime, so they keep a stable address and must therefore be revalidated.
+/claude-status.schema.json
+  Cache-Control: public, max-age=0, must-revalidate
+/claude-status.defaults.json
+  Cache-Control: public, max-age=0, must-revalidate
+HEADERS
 
 print_header "Site built into ${SITE_DIR}/public"

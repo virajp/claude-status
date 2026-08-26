@@ -849,49 +849,122 @@ fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
     }
 }
 
-/// **Every asset the templates link is cache-busted.**
+/// **Every page carries link-preview tags, and their URLs are absolute.**
 ///
-/// Cloudflare Pages serves the HTML as `max-age=0, must-revalidate` and every
-/// static asset as `max-age=14400`. The two are not the same freshness, so a
-/// returning reader gets the NEW html alongside a stylesheet up to four hours
-/// old — and nothing requires those two to be compatible.
+/// The tags live in `base.html`, which every template extends, so this is a
+/// check on one file rather than on eight.
+///
+/// **Absolute is the whole point.** Every other URL in that file is piped
+/// through `replace(from=config.base_url)` to come out root-relative, which is
+/// right for a browser that already has an origin and useless to a crawler
+/// that does not: `/og-card.png` is not an address WhatsApp can fetch. So
+/// `og:image` and `og:url` must NOT carry the filter, and that is exactly the
+/// edit a tidying pass would make — it looks inconsistent, and the cost of
+/// making it consistent is a preview with no picture, visible only to someone
+/// sharing a link.
+///
+/// `site:build` asserts the same property against the BUILT html, where the
+/// self-link rewrite could also eat it. This is the source half.
+#[test]
+fn every_page_carries_absolute_link_preview_tags() {
+    let base = code("site/templates/base.html");
+
+    for tag in ["og:type", "og:title", "og:description", "og:url", "og:image", "og:image:width", "og:image:height"] {
+        assert!(base.contains(&format!("\"{tag}\"")), "base.html has no {tag} — a shared link unfurls with nothing");
+    }
+    for tag in ["twitter:card", "twitter:title", "twitter:image"] {
+        assert!(base.contains(&format!("\"{tag}\"")), "base.html has no {tag}");
+    }
+
+    // The two that must stay absolute. `get_url` without the root-relative
+    // filter is what makes them so.
+    for line in base.lines().filter(|l| l.contains("og:image") || l.contains("twitter:image")) {
+        if line.contains("get_url") {
+            assert!(
+                !line.contains("replace(from=config.base_url"),
+                "the preview image URL is made root-relative, so a crawler has nothing to resolve it against: {}",
+                line.trim()
+            );
+        }
+    }
+
+    // The card itself: a real PNG at the size the tags promise. A missing or
+    // mis-sized image is a preview that silently renders as a grey box.
+    let card = root().join("site/static/og-card.png");
+    let bytes = std::fs::read(&card).expect("site/static/og-card.png is missing — regenerate it with .config/og-card.py");
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "og-card.png is not a PNG");
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+    assert_eq!(
+        (width, height),
+        (1200, 630),
+        "og-card.png is {width}x{height}, but base.html declares 1200x630 — the tags and the file must agree"
+    );
+}
+
+/// **Every asset that can change between releases is fingerprinted, and the
+/// two that cannot be are not.**
+///
+/// Cloudflare Pages serves the HTML `max-age=0, must-revalidate` and static
+/// assets with a lifetime of their own. Those are not the same freshness, so a
+/// returning reader gets the NEW html against an OLD stylesheet, and nothing
+/// requires the two to be compatible.
 ///
 /// **This is not hypothetical.** The first production deploy of the redesign
-/// looked broken to anyone who had visited before: the previous stylesheet
-/// defined no `--surface-accent`, so the logo's `fill="var(--surface-accent)"`
-/// resolved to nothing and the mark rendered blank; and it had no
-/// `.hero-shot img { width: 100% }`, so the 2294px screenshot ran off the side
-/// of the page. Two symptoms, one stale file. It looked like a browser bug and
-/// like a CDN bug before it looked like what it was.
+/// looked broken to anyone who had visited before and correct to anyone who
+/// had not: the previous stylesheet defined no `--surface-accent`, so the
+/// logo's `fill="var(--surface-accent)"` resolved to nothing and the mark
+/// rendered blank; and it had no `.hero-shot img { width: 100% }`, so the
+/// 2294px screenshot ran off the side of the page. Two symptoms, one stale
+/// file. It read as a browser bug, then as a CNAME bug, before it read as what
+/// it was.
 ///
-/// `cachebust=true` makes the URL carry zola's content hash, so a changed file
-/// is a new URL and the asset cache cannot serve it against HTML it predates.
-/// Dropping it from any one of these would restore the four-hour window
-/// silently — the site would build, deploy, and look correct to whoever
-/// checked, because they would be the ones with a warm cache.
+/// A hash in the FILENAME is what makes the year-long `immutable` in
+/// `_headers` honest: changed bytes are a different address, so the old file
+/// can be held forever and never served against HTML that does not ask for it.
+///
+/// **The negative half matters as much as the positive half.**
+/// `config-generator.js` fetches the schema and the defaults by relative name
+/// at runtime, so fingerprinting those two would 404 the form — and would do
+/// it only in the built output, where no source-reading test would see it.
 #[test]
-fn every_linked_asset_that_can_change_is_cache_busted() {
-    const LINKED: &[(&str, &str)] = &[
-        ("site/templates/base.html", "style.css"),
-        ("site/templates/base.html", "copy-code.js"),
-        ("site/templates/generate.html", "config-generator.js"),
-    ];
+fn the_build_fingerprints_every_asset_that_can_change() {
+    let build = read(".config/mise/tasks/site/build");
 
-    for (rel, asset) in LINKED {
-        // Tera comments stripped, for the reason the script allowlist already
-        // records: the comment above this rule quotes the bad form.
-        let text = code(rel);
-        let needle = format!("get_url(path='{asset}'");
-        let at = text
-            .find(&needle)
-            .unwrap_or_else(|| panic!("{rel} no longer links {asset} through get_url — this guard is scanning for nothing"));
-        let end = text[at..].find(')').map(|e| at + e).unwrap_or(text.len());
+    let fingerprinted = build
+        .find("for asset in style.css")
+        .map(|at| {
+            let end = build[at..].find('\n').map(|e| at + e).unwrap_or(build.len());
+            build[at..end].to_string()
+        })
+        .expect("the build no longer has a fingerprint list — this guard is scanning for nothing");
+
+    for asset in ["style.css", "copy-code.js", "config-generator.js", "statusline.png", "og-card.png"] {
         assert!(
-            text[at..end].contains("cachebust=true"),
-            "{rel} links {asset} without `cachebust=true`, so a reader with a warm asset cache gets it \
-             against HTML it does not match — for up to the four hours Pages caches it"
+            fingerprinted.contains(asset),
+            "{asset} is not fingerprinted by site:build, so it ships at a stable address with an \
+             `immutable` year on it — a changed file that no cache will ever go back for"
         );
     }
+
+    assert!(
+        build.contains("for font in \"${PUB}\"/fonts/*.woff2"),
+        "the fonts are no longer fingerprinted; they are named inside style.css and must be hashed before it"
+    );
+
+    // The two that must keep a stable name, because the generator fetches them
+    // by relative name at runtime.
+    for pinned in ["claude-status.schema.json", "claude-status.defaults.json"] {
+        assert!(
+            !fingerprinted.contains(pinned),
+            "{pinned} is in the fingerprint list, but `config-generator.js` fetches it by relative \
+             name — renaming it 404s the form in the built output only"
+        );
+    }
+
+    // And the header file that the whole scheme exists to make safe.
+    assert!(build.contains("_headers"), "site:build no longer writes _headers, so nothing sets the immutable year");
+    assert!(build.contains("immutable"), "_headers no longer marks the fingerprinted assets immutable");
 }
 
 // ---------------------------------------------------------------------------

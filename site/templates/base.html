@@ -43,6 +43,56 @@
       name="description"
       content="{% block description %}{{ config.description }}{% endblock description %}"
     />
+    {#
+      Link previews — WhatsApp, Slack, iMessage, Twitter, anything that unfurls
+      a URL.
+
+      THESE URLS ARE ABSOLUTE, and are the one deliberate exception to rule 3
+      above. Every other `get_url` here is piped through `replace(...)` to come
+      out root-relative; these are not, because a crawler resolves them against
+      nothing. `/og-card.png` is not an address anyone else can fetch, and a
+      root-relative `og:image` is simply a preview with no picture.
+
+      `page` / `section` rather than the `title` block: a Tera variable set out
+      here is not reliably visible inside a block a CHILD template overrode, so
+      reading the same two fields the blocks read is the form that actually
+      works. The duplication is deliberate and is why the fallbacks match
+      `page.html`'s exactly — `page.description` falling back to
+      `config.description`.
+    #}
+    {%- if page %}
+      {%- set og_title = page.title ~ " — " ~ config.title %}
+      {%- set og_description = page.description | default(value=config.description) %}
+      {%- set og_url = page.permalink %}
+    {%- elif section %}
+      {%- set og_title = config.title %}
+      {%- set og_description = config.description %}
+      {%- set og_url = section.permalink %}
+    {%- else %}
+      {%- set og_title = config.title %}
+      {%- set og_description = config.description %}
+      {%- set og_url = config.base_url %}
+    {%- endif %}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{ config.title }}" />
+    <meta property="og:title" content="{{ og_title }}" />
+    <meta property="og:description" content="{{ og_description }}" />
+    <meta property="og:url" content="{{ og_url }}" />
+    <meta property="og:locale" content="en_GB" />
+    {# WhatsApp will not render an SVG and crops toward the centre, so this is a
+       1200x630 PNG with nothing load-bearing near an edge. The dimensions are
+       declared because WhatsApp uses them to reserve the thumbnail before the
+       image has finished arriving. Regenerate with `.config/og-card.py`. #}
+    <meta property="og:image" content="{{ get_url(path='og-card.png') }}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="claude-status — {{ config.description }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{ og_title }}" />
+    <meta name="twitter:description" content="{{ og_description }}" />
+    <meta name="twitter:image" content="{{ get_url(path='og-card.png') }}" />
+
     {# The brand mark, from the design system's `assets/favicon.svg`. #}
     <link rel="icon" href="{{ get_url(path='favicon.svg') | replace(from=config.base_url, to='') }}" type="image/svg+xml" />
     {# Both faces preloaded: they are self-hosted beside the stylesheet, so the
@@ -52,22 +102,25 @@
       href="{{ get_url(path='fonts/ibm-plex-sans-var.woff2') | replace(from=config.base_url, to='') }}" />
     <link rel="preload" as="font" type="font/woff2" crossorigin
       href="{{ get_url(path='fonts/ibm-plex-mono-500.woff2') | replace(from=config.base_url, to='') }}" />
-    {# `cachebust=true` appends zola's content hash, so the URL changes when the
-       file does. It is load-bearing, not tidiness.
+    {# Written as the plain name. `site:build` FINGERPRINTS it afterwards, so
+       what ships is `style.<hash>.css` and this href is rewritten to match.
 
-       Cloudflare Pages serves the HTML as `max-age=0, must-revalidate` and
-       every static asset as `max-age=14400`. A returning reader therefore gets
-       the NEW html with a stylesheet up to four hours old, and the two do not
-       have to be compatible — which is exactly how the first production deploy
-       looked broken: the previous stylesheet defined no `--surface-accent`, so
-       the logo's `fill="var(--surface-accent)"` resolved to nothing and the
-       mark rendered blank, and it had no `.hero-shot img { width: 100% }`, so
-       the 2294px screenshot ran off the side of the page. Both symptoms were
-       one stale file, and both would recur on every future deploy.
+       That is load-bearing, not tidiness. Cloudflare Pages serves the HTML as
+       `max-age=0, must-revalidate` and static assets with a lifetime of their
+       own, so a returning reader can get the NEW html against an OLD
+       stylesheet — and nothing requires those two to be compatible. It is
+       exactly how the first production deploy looked broken: the previous
+       stylesheet defined no `--surface-accent`, so the logo's
+       `fill="var(--surface-accent)"` resolved to nothing and the mark rendered
+       blank, and it had no `.hero-shot img { width: 100% }`, so the 2294px
+       screenshot ran off the side of the page.
 
-       Hashing the URL ends that: new CSS is a new URL, so the four-hour cache
-       can never serve it against HTML it does not match. #}
-    <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) | replace(from=config.base_url, to='') }}" />
+       A content hash IN THE FILENAME ends that permanently: changed bytes are
+       a different file at a different address, so a cache can hold the old one
+       forever without ever being able to serve it against HTML that does not
+       ask for it. Which is what lets `_headers` mark these `immutable` for a
+       year instead of four hours. #}
+    <link rel="stylesheet" href="{{ get_url(path='style.css') | replace(from=config.base_url, to='') }}" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -162,7 +215,7 @@
        fails. #}
     <script
       type="module"
-      src="{{ get_url(path='copy-code.js', cachebust=true) | replace(from=config.base_url, to='') }}"
+      src="{{ get_url(path='copy-code.js') | replace(from=config.base_url, to='') }}"
     ></script>
 
     {# Empty for every page but one. `generate.html` fills it with the config
