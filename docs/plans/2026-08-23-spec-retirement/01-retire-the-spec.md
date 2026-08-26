@@ -233,6 +233,37 @@ excludes `docs/plans/archived/` for this reason.
   work with no reader.
 - **Retiring `docs/plans/index.md` or the plan tree.** Unrelated.
 
+## Step 1 — the coverage gate, walked 2026-08-26
+
+**Verdict: the gate PASSES, with one correction to the plan's own framing.**
+
+The plan assumes §1–§7 are user-facing and therefore belong on the site. Walking
+them, that is true of most but not all. Three parts are **not** user-facing, are
+correctly absent from the site, and would have been dropped silently if "is it
+on the site?" had been the only question asked.
+
+| Section            | Covered by                                                       | Verdict                                                                                                                                                                                            |
+| ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §1 What it is      | `_index.md` (landing), `segments.md`                             | **Covered.**                                                                                                                                                                                       |
+| §1 Five invariants | — nothing on the site, correctly                                 | **Not site material.** Implementation constraints, addressed to whoever writes the binary. Behaviour is held by tests; the *reasoning* goes to `docs/decisions.md`.                                |
+| §2 Input contracts | — the site names "the payload", never its shape                  | **Not site material.** Nobody authors this payload; Claude Code sends it. The shape belongs in `tests/fixtures/` (step 4), executable; "every field is optional, parse defensively" is a decision. |
+| §3 Configuration   | `configure.md`, `repo-config.md`, `generate.md`                  | **Covered**, and more usably — the generator builds a config from the live schema.                                                                                                                 |
+| §4 Rendering model | `segments.md` (catalogue), `configure.md` (powerline, colours)   | **Covered.**                                                                                                                                                                                       |
+| §4a Escapes        | — nothing on the site                                            | **Not site material.** A security property a reader benefits from and never acts on. Held by `_shared::text` and its tests; the reasoning goes to `docs/decisions.md`.                             |
+| §5 CLI surface     | `install.md` (the surfaces table), `diagnosing.md`, and `--help` | **Covered twice.** `--help` is pinned by `cli.rs`'s own tests.                                                                                                                                     |
+| §6 Git resolution  | `segments.md` (branch, worktree, dirty markers)                  | **Covered.**                                                                                                                                                                                       |
+| §7 Spend           | `segments.md` (the four gates), `configure.md`, `diagnosing.md`  | **Covered.**                                                                                                                                                                                       |
+
+**So the deletion is not blocked**, but step 2's scope is wider than the plan
+states: it must also carry the five invariants, §2's defensive-parsing rule and
+§4a's escape rule, none of which are decisions in the "why npm" sense and none
+of which the site should hold. They are cross-cutting engineering constraints
+whose *reasoning* has no other home — which is the same argument the plan makes
+for the decision record, applied to three things it did not list.
+
+Recorded here rather than acted on silently, because a gate that quietly widens
+the next step is how a plan stops describing what happened.
+
 ## Gaps surfaced during execution
 
 *(filled in during execution)*
