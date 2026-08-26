@@ -52,7 +52,7 @@ status.missing_tools = "always"
 # manifests and `node_modules`, none of which this adds.
 [tools]
 "core:rust"    = { profile = "default", version = "latest" }
-"npm:wrangler" = { version = "latest" }
+"npm:wrangler" = { allow_builds = [ "esbuild", "workerd" ], version = "latest" }
 zola           = { version = "latest" }
 # In the BASE and not `mise.dev.toml`, for the same reason zola is: the test
 # suite shells out to it (`tests/schema.rs`'s formatting check) and that suite
