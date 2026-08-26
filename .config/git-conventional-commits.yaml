@@ -28,7 +28,12 @@ convention:
     - installer # npm platform packages, install/uninstall, receipts
     - plans # ./docs/plans
     - site # ./site — the zola sources behind claude-status.virajp.dev
-    - spec # ./docs/spec
+    # `spec` is a dead scope, on the same terms as `installer` above —
+    # `spec-retirement` deleted ./docs/spec, including the commits of that cycle
+    # which used this scope. It stays listed so they remain valid; use
+    # `decisions` for what replaced it.
+    - spec # ./docs/spec — deleted
+    - decisions # ./docs/decisions.md, ./docs/usage-mirror-contract.md
 
 changelog:
   commitTypes:

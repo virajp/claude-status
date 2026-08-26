@@ -19,14 +19,18 @@ held is the thing that drifted.
 
 ## Active
 
-Ten plans in four folders. **Nine have landed; one is left** —
-[retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md), which was
-always last because every other plan writes into the document it deletes.
+Ten plans in four folders. **All ten have landed.**
 
-The nine are marked `status: done` in their own front matter, and the three
-cycles holding them with them. They stayed `active` long after they shipped,
-which made `retire-the-spec` look gated on work that was already finished — the
-gate was bookkeeping, not a dependency.
+[retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md) was always
+last, because every other plan wrote into the document it deletes. It ran on
+2026-08-26/27 and the document is gone; what it carried is split across the
+site, [the decision record](../decisions.md),
+[the usage-mirror contract](../usage-mirror-contract.md) and `tests/fixtures/`.
+
+All ten are marked `status: done` in their own front matter, and the four cycles
+holding them with them. The nine stayed `active` long after they shipped, which
+made `retire-the-spec` look gated on work that was already finished — the gate
+was bookkeeping, not a dependency.
 
 ### [config-and-cli](./2026-08-23-config-and-cli/index.md)
 

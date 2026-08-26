@@ -64,3 +64,34 @@ knowledge-graph tool like graphify — no vwf-specific reader required.
 
 Re-run `/vwf:setup` after upgrading vwf to migrate the docs to the latest
 format.
+
+## Where a fact belongs
+
+**No document restates behaviour that a test already holds.** That restatement
+is what drifted, and the `spec-retirement` cycle exists because of it: one
+behaviour contract accumulated fourteen sections and thirty-six amendments, and
+five of its claims were actively wrong by the time it was audited — including a
+reference invocation that printed an error instead of a bar.
+
+Four homes, and the boundaries are the point:
+
+| The fact                                  | Lives in                                 |
+| ----------------------------------------- | ---------------------------------------- |
+| **What the binary does**                  | the test that pins it                    |
+| **Why the code is shaped that way**       | the comment beside it, citing that test  |
+| **Why a decision was taken, or reversed** | [`docs/decisions.md`](docs/decisions.md) |
+| **What a user needs**                     | the site, under `site/`                  |
+
+Two things sit outside that table, deliberately:
+
+- [`docs/usage-mirror-contract.md`](docs/usage-mirror-contract.md) — the usage
+  mirror, because its consumer lives in another repository and **this repo's
+  tests cannot verify it**. It is the one place a document is the authority.
+- `docs/plans/` — cycle plans, which are proposals and records of what was true
+  when they ran, not descriptions of the tree.
+
+**When you change behaviour, change the test.** If you find yourself writing a
+paragraph that describes what the code does, ask what test it duplicates — and
+either write that test or cite it. If the thing you want to record is *why*, it
+is a decision: put it in `docs/decisions.md` with its date and its reasoning,
+and if it reverses something, keep both halves.

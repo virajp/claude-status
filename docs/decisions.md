@@ -9,11 +9,13 @@ them — and the failure this file exists to prevent is a decision surviving onl
 as its conclusion, so that the next person to look at it sees an arbitrary
 choice and re-takes it from scratch.
 
-This record was harvested from `docs/spec/statusline-behaviour.md` before that
-document was retired. That document had accumulated fourteen sections and eleven
-amendment blocks, and had stopped being reliable as a description of behaviour —
-the audit that justified retiring it found five claims that were actively wrong.
-Its *decisions* were not wrong; they were the only part with nowhere else to go.
+This record was harvested from the behaviour contract —
+`docs/spec/statusline-behaviour.md`, deleted 2026-08-27 and kept in git history
+— before that document was retired. That document had accumulated fourteen
+sections and eleven amendment blocks, and had stopped being reliable as a
+description of behaviour — the audit that justified retiring it found five
+claims that were actively wrong. Its *decisions* were not wrong; they were the
+only part with nowhere else to go.
 
 ## How to read this
 
@@ -1682,8 +1684,10 @@ actually lives now.
 
 ## Provenance
 
-Harvested 2026-08-26 from `docs/spec/statusline-behaviour.md`, working through
-its amendment blocks section by section rather than from memory, as step 2 of
-the `retire-the-spec` cycle. The spec was deleted four steps later, deliberately
-— **this file had to exist first, because reasoning is not recoverable from
-tests the way behaviour is.** Both documents remain in git history.
+Harvested 2026-08-26 from the behaviour contract
+(`docs/spec/statusline-behaviour.md`, since deleted; git history holds it),
+working through its amendment blocks section by section rather than from memory,
+as step 2 of the `retire-the-spec` cycle. The spec was deleted four steps later,
+deliberately — **this file had to exist first, because reasoning is not
+recoverable from tests the way behaviour is.** Both documents remain in git
+history.

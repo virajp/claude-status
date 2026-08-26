@@ -4,7 +4,7 @@ title: spec-retirement — 2026-08-23
 description: One plan that retires the behaviour contract by rehoming the
   decision record, the ai-plugins contract and the reference payloads, then
   deleting the document.
-status: active
+status: done
 covers: [
   docs/decisions.md,
   docs/usage-mirror-contract.md,

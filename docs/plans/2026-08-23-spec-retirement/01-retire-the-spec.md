@@ -4,7 +4,7 @@ title: retire-the-spec — 2026-08-23
 description: Cycle plan (a diff) retiring docs/spec/statusline-behaviour.md by
   rehoming the three things only it carries — the decision record, the
   ai-plugins contract and the reference payloads — and deleting the rest.
-status: active
+status: done
 covers: [
   docs/decisions.md,
   docs/usage-mirror-contract.md,
@@ -414,13 +414,37 @@ stays. What that leaves:
 
 Suite unchanged at **584**; the site builds.
 
+## Steps 6 and 7 — the deletion and the discipline, walked 2026-08-27
+
+**`docs/spec/` is gone**, both files, and with them the directory. Git history
+holds each. The gate for this was step 1, walked on 2026-08-26 and recorded
+above; nothing since weakened it, and steps 2–5 moved everything the audit said
+only this document carried.
+
+**Acceptance re-checked after the deletion:**
+
+| Criterion                                | Result                                                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1 — no `statusline-behaviour` references | **Met as resolved in step 5.** Nothing outside `docs/` names it; inside, only `docs/plans/` records and two provenance lines |
+| 2 — every amendment in `decisions.md`    | Met — all thirty-six, transcribed or listed under its §14                                                                    |
+| 3 — the mirror's three omissions         | Met, each its own section, and two of the three were themselves corrected against the code                                   |
+| 4 — payloads produce what they claim     | Met, executed by the suite **and** by hand; the README's own first claim was wrong and was fixed                             |
+| 5 — §1–§7 reachable from the site        | Met at step 1, with three parts correctly not site material                                                                  |
+| 6 — `code:all` passes                    | Met — **584**, up two from the 582 this cycle started at                                                                     |
+| 7 — no `covers:` names a missing file    | Met — 18 entries across the tree, all resolving                                                                              |
+
+**Step 7 is in `CLAUDE.md`** as *Where a fact belongs*: four homes, the rule
+that no document restates behaviour a test already holds, and the two deliberate
+exceptions — the usage mirror, whose consumer this repo cannot test, and
+`docs/plans/`, which is proposals and records rather than a description of the
+tree.
+
+**Gap 1 is closed here rather than left open.** The commit-scope list now marks
+`spec` dead on the same terms `installer` already was — kept so this cycle's own
+commits stay valid under the config — and adds `decisions` for the two documents
+that replaced it.
+
 ## Gaps surfaced during execution
 
-1. **The commit-scope list has no home for the two documents this cycle
-   creates.** `.config/git-conventional-commits.yaml` maps scopes to paths, and
-   `docs/decisions.md` (step 2) and `docs/usage-mirror-contract.md` (step 3)
-   fall under none of them — `spec` is `./docs/spec`, which step 6 deletes. Step
-   2 committed under `spec` because the harvest's source is the spec, but that
-   scope stops existing four steps later. **Step 5 or step 7 has to decide what
-   replaces it**, and doing nothing leaves a `docs` scope that the hook rejects.
-   Not fixed here: editing the convention config is not step 2's.
+*None outstanding.* The one raised during step 2 — that neither document this
+cycle creates had a permitted commit scope — is closed above.

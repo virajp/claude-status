@@ -219,8 +219,9 @@ gone.
 
 ## Provenance
 
-Lifted from §8 of `docs/spec/statusline-behaviour.md` on 2026-08-27, as step 3
-of the `retire-the-spec` cycle, and corrected against `src/modules/usage.rs`,
+Lifted from §8 of the behaviour contract (`docs/spec/statusline-behaviour.md`,
+deleted later the same day; git history holds it) on 2026-08-27, as step 3 of
+the `retire-the-spec` cycle, and corrected against `src/modules/usage.rs`,
 `src/_runtime/app.rs` and `src/modules/caps/mod.rs` as it moved. The three
 corrections above are the audit's findings; the spec was deleted three steps
 later. The reasoning behind the decisions this contract encodes lives in
