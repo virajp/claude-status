@@ -4,7 +4,7 @@ title: config-and-cli — 2026-08-23
 description: Four ordered plans that give the config real types, move it to
   ~/.config/claude-status/ storing only non-defaults, reshape the CLI around
   --configure, and make the types generate the schema.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

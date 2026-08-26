@@ -4,7 +4,7 @@ title: typed-config — 2026-08-23
 description: Cycle plan (a diff) replacing the untyped Value-and-dotted-paths
   config with deserialized Rust types, preserving every forgiving coercion and
   changing no rendered byte.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

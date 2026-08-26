@@ -14,7 +14,14 @@ something runnable.
 
 ## Active
 
-Ten plans in four folders.
+Ten plans in four folders. **Nine have landed; one is left** —
+[retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md), which was
+always last because every other plan writes into the document it deletes.
+
+The nine are marked `status: done` in their own front matter, and the three
+cycles holding them with them. They stayed `active` long after they shipped,
+which made `retire-the-spec` look gated on work that was already finished — the
+gate was bookkeeping, not a dependency.
 
 ### [config-and-cli](./2026-08-23-config-and-cli/index.md)
 
@@ -74,16 +81,19 @@ Two, and both are easy to miss because the folders read as independent:
 
 The soft ordering recorded here — that `website/01` should land before
 `distribution/02` so the formula's caveats do not link a site that does not
-exist — **has been overtaken and did not do its job.** Both website plans have
-landed, and `claude-status.virajp.dev` still does not resolve: the Pages project
-and DNS record were never created, so `dig` returns nothing and `curl` exits 6.
-A dead name is a worse first impression than a 404.
+exist — was overtaken once and is now **resolved**.
 
-So this is a **precondition for `distribution/02`, not a sequencing note**:
-either the record is live, or the caveats name something that resolves.
-Cloudflare Pages' own `*.pages.dev` domain needs no DNS work and is the obvious
-interim. Note the repo has already accepted printing the unresolvable URL once —
-`cli.rs`'s help text does, with a test pinning it.
+It was recorded here as a live defect: both website plans had landed and
+`claude-status.virajp.dev` still did not resolve, because the Pages project and
+DNS record were never created. That is no longer true. The project exists
+(`claude-status-virajp-dev`, direct upload), and it serves both
+`claude-status.virajp.dev` and `claude-status-site.pages.dev`. The formula's
+caveats point at the `pages.dev` name, which was the interim this note proposed
+and is still what ships.
+
+Two things that outlived the problem and are worth keeping in view: the caveats
+were never repointed at the vanity domain now that it resolves, and `cli.rs`'s
+help text names it too, with a test pinning it.
 
 Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — currently
 empty.

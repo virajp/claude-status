@@ -4,7 +4,7 @@ title: distribution — 2026-08-23
 description: Three ordered plans that delete the npm installer, ship a Homebrew
   tap pointing at the website, and cut the first release through the whole
   chain.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

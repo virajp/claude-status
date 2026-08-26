@@ -3,7 +3,7 @@ type: vwf-plan
 title: drop-npm — 2026-08-23
 description: Cycle plan (a diff) deleting the npm installer and its publish
   path, and adding the tarball release asset a Homebrew formula consumes.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

@@ -4,7 +4,7 @@ title: config-generator — 2026-08-23
 description: Cycle plan (a diff) adding a schema-driven config form to the site
   with a live powerline preview, gated in CI against the same golden fixtures
   the Rust renderer is tested with.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

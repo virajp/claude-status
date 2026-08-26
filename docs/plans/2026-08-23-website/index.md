@@ -4,7 +4,7 @@ title: website — 2026-08-23
 description: Two ordered plans that build claude-status.virajp.dev as a Zola
   static site on Cloudflare Pages, then add a schema-driven config generator
   with a live bar preview.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

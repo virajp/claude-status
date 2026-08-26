@@ -5,7 +5,7 @@ description: Cycle plan (a diff) cutting v0.1.0 — the first tag this project
   has
   ever pushed — exercising the release, the tarball asset and the formula bump
   end to end.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

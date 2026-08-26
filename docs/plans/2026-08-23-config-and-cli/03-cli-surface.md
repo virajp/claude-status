@@ -4,7 +4,7 @@ title: cli-surface — 2026-08-23
 description: Cycle plan (a diff) reshaping the binary's flags — --refresh
   renamed, --configure added to wire Claude Code, --help documenting the repo
   layer, and --debug reporting a missing config as normal.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

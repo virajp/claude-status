@@ -4,7 +4,7 @@ title: site — 2026-08-23
 description: Cycle plan (a diff) building claude-status.virajp.dev as a Zola
   static site in site/, deployed to Cloudflare Pages from Actions on a site-v*
   tag, with the readme shrinking to a pointer.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

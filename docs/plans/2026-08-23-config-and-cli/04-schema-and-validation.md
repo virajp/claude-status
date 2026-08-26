@@ -4,7 +4,7 @@ title: schema-and-validation — 2026-08-23
 description: Cycle plan (a diff) making the Rust config types generate the JSON
   schema, adding a validation section to --debug, and publishing the schema for
   the website's generator to consume.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]

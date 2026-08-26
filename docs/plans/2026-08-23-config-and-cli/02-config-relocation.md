@@ -4,7 +4,7 @@ title: config-relocation — 2026-08-23
 description: Cycle plan (a diff) moving the user config into
   ~/.config/claude-status/, storing only non-defaults, narrowing the repo layer
   to projectName, and deleting the render path's ability to write files.
-status: active
+status: done
 covers: [
   docs/spec/statusline-behaviour.md,
 ]
