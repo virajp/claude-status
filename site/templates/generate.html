@@ -1,10 +1,11 @@
-{# The config generator, and the ONLY page on this site that loads a script.
+{# The config generator, and the only PAGE-SPECIFIC script on this site.
 
-   `tests/site.rs::exactly_one_tracked_path_under_site_may_carry_a_script`
-   allowlists this one path by name, and fails if the entry ever goes stale. Every other tracked `.html`, `.css` and
-   `.md` under `site/` must still be script-free, so a second `<script>`
-   anywhere — including in markdown, which the scan did not used to read —
-   fails the suite.
+   `tests/site.rs::only_allowlisted_paths_under_site_may_carry_a_script`
+   allowlists this path by name, and fails if the entry ever goes stale. The
+   only other allowlisted path is `base.html`, which loads the copy buttons for
+   every page. Every other tracked `.html`, `.css` and `.md` under `site/` must
+   still be script-free, so a third `<script>` anywhere — including in markdown,
+   which the scan did not used to read — fails the suite.
 
    The page it renders is a complete reference WITHOUT the script. The markdown
    carries the paths, the rules, the colour forms, the open-map table and the

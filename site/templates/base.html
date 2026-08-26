@@ -134,9 +134,24 @@
       </p>
     </footer>
 
+    {# The copy buttons, on every page because every page has code blocks.
+
+       It builds each button at runtime and writes none into the HTML, so with
+       scripting off there is no dead control to click — see the header of
+       `copy-code.js`. A module script is deferred by definition, so `defer` is
+       neither needed nor written.
+
+       This file and `generate.html` are the TWO paths under `site/` allowed to
+       load a script, and `tests/site.rs` names both. A `<script>` written
+       anywhere else — any other template, any `.css`, any content page — still
+       fails. #}
+    <script
+      type="module"
+      src="{{ get_url(path='copy-code.js') | replace(from=config.base_url, to='') }}"
+    ></script>
+
     {# Empty for every page but one. `generate.html` fills it with the config
-       generator's module, and `tests/site.rs` allowlists that single template
-       path — a `<script>` written anywhere else, this file included, fails.
+       generator's module.
 
        At the end of the body rather than in the head: nothing on this site
        needs a script to lay out or to navigate, so nothing should be allowed

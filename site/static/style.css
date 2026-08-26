@@ -599,14 +599,21 @@ main {
   gap: var(--space-5);
 }
 
+/* The marker is positioned OUT of the flow rather than laid beside the content
+ * with flex. A flex `li` makes every inline child its own flex item — each
+ * `strong`, `code`, `em` and text run becomes a column — and `code` then
+ * shrinks to its min-content width, which `overflow-wrap: anywhere` makes one
+ * character. The catalogue list rendered as a row of one-letter towers. */
 .prose ul > li {
-  display: flex;
-  gap: var(--space-5);
+  position: relative;
+  padding-left: var(--space-8);
 }
 
 .prose ul > li::before {
   content: "—";
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0;
   font-family: var(--font-mono);
   color: var(--surface-accent);
 }
@@ -650,6 +657,78 @@ pre {
    * phone. */
   overflow-x: auto;
   line-height: var(--lh-snug);
+}
+
+/* ---- copy buttons ------------------------------------------------------ */
+
+/*
+ * Every rule here styles markup that `copy-code.js` creates at runtime. With
+ * scripting off none of it has anything to match, which is the intent — the
+ * button is an enhancement and never ships in the HTML.
+ *
+ * The wrapper exists because `pre` scrolls horizontally, and a button
+ * positioned against a scrolling box travels sideways with the code.
+ */
+.code-block {
+  position: relative;
+}
+
+.code-copy {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code-sm);
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-chip);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  /* Dimmed rather than hidden. Revealing it on hover would put it out of reach
+   * on a touch screen, where there is no hover to reveal it with. */
+  opacity: 0.55;
+  transition:
+    opacity var(--dur-2) var(--ease-standard),
+    color var(--dur-2) var(--ease-standard);
+}
+
+.code-block:hover .code-copy,
+.code-copy:focus-visible,
+.code-copy.is-copied {
+  opacity: 1;
+}
+
+.code-copy:hover {
+  color: var(--text-hi);
+}
+
+.code-copy.is-copied {
+  color: var(--surface-accent);
+}
+
+.code-copy:focus-visible {
+  outline: 2px solid var(--surface-accent);
+  outline-offset: 2px;
+}
+
+/* Reachable by assistive technology, absent from the rendered page. Carries
+ * the copy button's name and its copied announcement. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---- tables ------------------------------------------------------------ */

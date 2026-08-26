@@ -628,7 +628,7 @@ fn the_layout_carries_the_static_marks_of_a_readable_phone_page() {
     // true. What the criterion was ever about is right here — the usual mobile
     // nav failure is a hamburger behind a script, and a nav that cannot be
     // opened without one is broken for everybody the script fails for.
-    // `exactly_one_tracked_path_under_site_may_carry_a_script` holds the rest.
+    // `only_allowlisted_paths_under_site_may_carry_a_script` holds the rest.
     assert!(
         !nav.contains("<script"),
         "the nav has grown a script — a hamburger behind JavaScript is the failure this criterion names: {nav}"
@@ -645,19 +645,27 @@ fn the_layout_carries_the_static_marks_of_a_readable_phone_page() {
 ///
 /// So it is stronger than what it replaced, in three ways:
 ///
-/// 1. **One allowlisted path**, named below. Every other tracked file fails.
+/// 1. **A named allowlist**, below. Every other tracked file fails.
 /// 2. **Markdown is scanned too.** The old version read `.html` and `.css`
 ///    only, so a `<script>` written into a content page — which zola passes
 ///    through verbatim — went straight past it. That hole is closed here.
-/// 3. **The allowlisted file must actually carry one.** An allowlist entry
+/// 3. **Each allowlisted file must actually carry one.** An allowlist entry
 ///    that has gone stale is a permission nobody is using and nobody will
 ///    notice widening.
+///
+/// It held ONE path until the copy buttons arrived. A button on every code
+/// block needs a script on every page, so "one script, one page" was going to
+/// end whichever way that was built; what survives is the property that
+/// actually matters, which is that no script arrives unnoticed. The entry was
+/// added deliberately, and the count is not the point — the review is.
 #[test]
-fn exactly_one_tracked_path_under_site_may_carry_a_script() {
-    /// The config generator's module tag, and nothing else. It lives in a
-    /// template rather than in markdown so the content stays script-free and
-    /// the exception is one file a reviewer can read in full.
-    const ALLOWED: &[&str] = &["site/templates/generate.html"];
+fn only_allowlisted_paths_under_site_may_carry_a_script() {
+    /// Both entries are templates rather than markdown, so the content stays
+    /// script-free and every exception is a file a reviewer can read in full.
+    ///
+    /// - `base.html` — the copy buttons, on every page.
+    /// - `generate.html` — the config generator's module.
+    const ALLOWED: &[&str] = &["site/templates/base.html", "site/templates/generate.html"];
 
     let mut sources: Vec<String> = tracked_under("site/", ".html");
     sources.extend(tracked_under("site/", ".css"));
@@ -677,8 +685,8 @@ fn exactly_one_tracked_path_under_site_may_carry_a_script() {
     assert_eq!(
         offenders,
         Vec::<String>::new(),
-        "a second script arrived under site/. The layout, the nav and every page's content are supposed \
-         to work without JavaScript; exactly one path is allowed to load any, and it is {ALLOWED:?}"
+        "an unallowlisted script arrived under site/. The layout, the nav and every page's content are \
+         supposed to work without JavaScript; only these paths may load any, and they are {ALLOWED:?}"
     );
 
     // The other direction. Without this the allowlist could name a file that
