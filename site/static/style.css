@@ -486,7 +486,30 @@ main {
  * headings carry the same voice while the reading text stays in a face built
  * for paragraphs.
  */
+/*
+ * The measure is on the TEXT, not on the container.
+ *
+ * It used to be on `.prose` itself, which capped tables and code blocks at a
+ * reading measure too — and the segment catalogue is a three-column table of
+ * code, which is not prose and does not want a prose width. Squeezed into
+ * 68ch it broke `context` across two lines as `contex` / `t`, and split the
+ * chip backgrounds into two boxes per cell.
+ *
+ * Paragraphs still stop at the measure. Tables and `pre` get the whole column
+ * and scroll inside it if they still need to.
+ */
 .prose {
+  max-width: none;
+}
+
+.prose > p,
+.prose > ul,
+.prose > ol,
+.prose > blockquote,
+.prose > h1,
+.prose > h2,
+.prose > h3,
+.prose > .lede {
   max-width: var(--measure);
 }
 
@@ -650,6 +673,26 @@ pre {
   vertical-align: top;
   padding: var(--space-4) var(--space-6) var(--space-4) 0;
   border-bottom: 1px solid var(--border-hairline);
+}
+
+/*
+ * Inline code inside a table does NOT break anywhere.
+ *
+ * The global rule lets long identifiers break mid-token so a config path
+ * cannot push the page wider than a phone. In a table cell that rule turned
+ * `context` into `contex` / `t` and cut chip backgrounds in half. The table is
+ * already `overflow-x: auto`, so the right answer for a cell that does not fit
+ * is to scroll the table, not to hyphenate an identifier.
+ */
+.prose td > code,
+.prose th > code {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+/* The first column of a reference table is an identifier, never a sentence. */
+.prose td:first-child {
+  white-space: nowrap;
 }
 
 .prose th {
@@ -866,8 +909,15 @@ pre {
 }
 
 @media (min-width: 64rem) {
+  /*
+   * The article takes the remaining width and the rail is fixed, rather than
+   * the article being pinned to the measure and the rail taking the rest. The
+   * old split left the article at 68ch, which is right for a paragraph and far
+   * too narrow for the segment catalogue's three columns of code — and the
+   * measure is on the text now, so a wider column costs the prose nothing.
+   */
   .doc-with-toc {
-    grid-template-columns: minmax(0, var(--measure)) 1fr;
+    grid-template-columns: minmax(0, 1fr) 13rem;
     gap: var(--space-11);
   }
 
