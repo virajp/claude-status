@@ -23,6 +23,6 @@
 {% block scripts %}
   <script
     type="module"
-    src="{{ get_url(path='config-generator.js') | replace(from=config.base_url, to='') }}"
+    src="{{ get_url(path='config-generator.js', cachebust=true) | replace(from=config.base_url, to='') }}"
   ></script>
 {% endblock scripts %}

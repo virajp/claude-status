@@ -849,6 +849,51 @@ fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
     }
 }
 
+/// **Every asset the templates link is cache-busted.**
+///
+/// Cloudflare Pages serves the HTML as `max-age=0, must-revalidate` and every
+/// static asset as `max-age=14400`. The two are not the same freshness, so a
+/// returning reader gets the NEW html alongside a stylesheet up to four hours
+/// old — and nothing requires those two to be compatible.
+///
+/// **This is not hypothetical.** The first production deploy of the redesign
+/// looked broken to anyone who had visited before: the previous stylesheet
+/// defined no `--surface-accent`, so the logo's `fill="var(--surface-accent)"`
+/// resolved to nothing and the mark rendered blank; and it had no
+/// `.hero-shot img { width: 100% }`, so the 2294px screenshot ran off the side
+/// of the page. Two symptoms, one stale file. It looked like a browser bug and
+/// like a CDN bug before it looked like what it was.
+///
+/// `cachebust=true` makes the URL carry zola's content hash, so a changed file
+/// is a new URL and the asset cache cannot serve it against HTML it predates.
+/// Dropping it from any one of these would restore the four-hour window
+/// silently — the site would build, deploy, and look correct to whoever
+/// checked, because they would be the ones with a warm cache.
+#[test]
+fn every_linked_asset_that_can_change_is_cache_busted() {
+    const LINKED: &[(&str, &str)] = &[
+        ("site/templates/base.html", "style.css"),
+        ("site/templates/base.html", "copy-code.js"),
+        ("site/templates/generate.html", "config-generator.js"),
+    ];
+
+    for (rel, asset) in LINKED {
+        // Tera comments stripped, for the reason the script allowlist already
+        // records: the comment above this rule quotes the bad form.
+        let text = code(rel);
+        let needle = format!("get_url(path='{asset}'");
+        let at = text
+            .find(&needle)
+            .unwrap_or_else(|| panic!("{rel} no longer links {asset} through get_url — this guard is scanning for nothing"));
+        let end = text[at..].find(')').map(|e| at + e).unwrap_or(text.len());
+        assert!(
+            text[at..end].contains("cachebust=true"),
+            "{rel} links {asset} without `cachebust=true`, so a reader with a warm asset cache gets it \
+             against HTML it does not match — for up to the four hours Pages caches it"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // website/02-config-generator — the schema-driven form
 // ---------------------------------------------------------------------------

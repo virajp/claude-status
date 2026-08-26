@@ -52,7 +52,22 @@
       href="{{ get_url(path='fonts/ibm-plex-sans-var.woff2') | replace(from=config.base_url, to='') }}" />
     <link rel="preload" as="font" type="font/woff2" crossorigin
       href="{{ get_url(path='fonts/ibm-plex-mono-500.woff2') | replace(from=config.base_url, to='') }}" />
-    <link rel="stylesheet" href="{{ get_url(path='style.css') | replace(from=config.base_url, to='') }}" />
+    {# `cachebust=true` appends zola's content hash, so the URL changes when the
+       file does. It is load-bearing, not tidiness.
+
+       Cloudflare Pages serves the HTML as `max-age=0, must-revalidate` and
+       every static asset as `max-age=14400`. A returning reader therefore gets
+       the NEW html with a stylesheet up to four hours old, and the two do not
+       have to be compatible — which is exactly how the first production deploy
+       looked broken: the previous stylesheet defined no `--surface-accent`, so
+       the logo's `fill="var(--surface-accent)"` resolved to nothing and the
+       mark rendered blank, and it had no `.hero-shot img { width: 100% }`, so
+       the 2294px screenshot ran off the side of the page. Both symptoms were
+       one stale file, and both would recur on every future deploy.
+
+       Hashing the URL ends that: new CSS is a new URL, so the four-hour cache
+       can never serve it against HTML it does not match. #}
+    <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) | replace(from=config.base_url, to='') }}" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -147,7 +162,7 @@
        fails. #}
     <script
       type="module"
-      src="{{ get_url(path='copy-code.js') | replace(from=config.base_url, to='') }}"
+      src="{{ get_url(path='copy-code.js', cachebust=true) | replace(from=config.base_url, to='') }}"
     ></script>
 
     {# Empty for every page but one. `generate.html` fills it with the config
