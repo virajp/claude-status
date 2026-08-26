@@ -1,3 +1,9 @@
+<!-- Repo-relative, not the CDN the screenshot below uses: the site's copies are
+     fingerprinted at build time, so their URLs change every release. Drawn at
+     760px and shown at 380 so it stays crisp on a retina display. Regenerate
+     with `.config/og-card.py`. -->
+<img src="assets/lockup.png" alt="claude-status" width="380" />
+
 # Statusline for Claude Code
 
 Know what your Claude Code session is up to — at a glance, without breaking

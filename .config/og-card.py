@@ -39,6 +39,11 @@ from fontTools.ttLib import TTFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "site/static/og-card.png")
+# The readme's lockup. In `assets/` beside the tracked screenshot, because the
+# readme references it by RELATIVE path -- the site's copies are fingerprinted
+# at build time, so their URLs change every release and a readme pointing at one
+# would rot on the next deploy.
+LOCKUP = os.path.join(ROOT, "assets/lockup.png")
 
 # 1200x630 is the size every consumer of `og:image` is tuned for; WhatsApp
 # crops toward the centre, so nothing that matters goes near an edge.
@@ -62,6 +67,31 @@ def face(rel, tmp):
     f.flavor = None
     f.save(dst)
     return dst
+
+
+# The mark's geometry, straight from `base.html`'s inline SVG (viewBox
+# 0 0 72 24). Carrying the real point list rather than an exported bitmap is
+# what keeps the drawn mark and the rendered one from drifting.
+MARK_BOX = (72, 24)
+MARK_POINTS = [(10, 12), (22, 12), (27, 5), (33, 19), (39, 12), (62, 12)]
+
+
+def draw_lockup(d, ox, oy, scale, amber, ink, text_body, font_light, font_bold, size):
+    """The mark plus the wordmark. Returns the width it drew."""
+    w, h = MARK_BOX
+    d.rounded_rectangle([ox, oy, ox + w * scale, oy + h * scale],
+                        radius=12 * scale, fill=amber)
+    d.line([(ox + x * scale, oy + y * scale) for x, y in MARK_POINTS],
+           fill=ink, width=max(1, int(2.6 * scale)), joint="curve")
+
+    gap = round(12 * scale)
+    wx = ox + w * scale + gap
+    wy = oy + (h * scale - size) / 2 - size * 0.09
+    d.text((wx, wy), "claude", font=font_light, fill=text_body)
+    wx += d.textlength("claude", font=font_light)
+    d.text((wx, wy), "status", font=font_bold, fill=amber)
+    wx += d.textlength("status", font=font_bold)
+    return wx - ox
 
 
 def main():
@@ -95,23 +125,10 @@ def main():
         img = Image.new("RGB", (W, H), ink_page)
         d = ImageDraw.Draw(img)
 
-        # ---- the mark, from base.html's inline SVG (viewBox 0 0 72 24) ----
-        # Scaled 2.4x. The polyline is the same point list; carrying the real
-        # geometry rather than an approximation is why this is drawn and not
-        # pasted from an export that could drift.
+        # ---- the lockup: mark plus wordmark ----
         s = 2.4
         ox, oy = MARGIN, MARGIN
-        d.rounded_rectangle([ox, oy, ox + 72 * s, oy + 24 * s], radius=12 * s, fill=amber)
-        pts = [(10, 12), (22, 12), (27, 5), (33, 19), (39, 12), (62, 12)]
-        d.line([(ox + x * s, oy + y * s) for x, y in pts],
-               fill=ink_page, width=int(2.6 * s), joint="curve")
-
-        # ---- the wordmark, beside the mark ----
-        wx = ox + 72 * s + 28
-        wy = oy + (24 * s - 44) / 2 - 4
-        d.text((wx, wy), "claude", font=f_word_light, fill=text_body)
-        wx += d.textlength("claude", font=f_word_light)
-        d.text((wx, wy), "status", font=f_word, fill=amber)
+        draw_lockup(d, ox, oy, s, amber, ink_page, text_body, f_word_light, f_word, 44)
 
         # ---- headline, wrapped to the card rather than to a guess ----
         y = oy + 24 * s + 92
@@ -147,8 +164,40 @@ def main():
 
         img.save(OUT, "PNG", optimize=True)
 
-    w, h = struct.unpack(">II", open(OUT, "rb").read()[16:24])
-    print(f"wrote {OUT} {w}x{h} {os.path.getsize(OUT)} bytes")
+        # ---- the readme lockup ----
+        #
+        # A SEPARATE, SMALLER image rather than a crop of the card: the readme
+        # wants the mark and the wordmark, not the headline and the bar.
+        #
+        # It is a PNG and not an SVG on purpose. GitHub renders a markdown
+        # image through `<img>`, and an SVG behind `<img>` cannot reach any
+        # font — the same reason `base.html` inlines the mark and sets the
+        # wordmark as real HTML rather than referencing the lockup asset. An
+        # SVG here would draw the wordmark in whatever generic mono the
+        # renderer had, or in nothing at all.
+        #
+        # It carries its own ink background rather than being transparent, so
+        # it reads the same in GitHub's light and dark themes instead of
+        # needing two files and a `<picture>`.
+        ls = 3.0
+        pad = 44
+        f_lock = ImageFont.truetype(mono_600, 58)
+        f_lock_light = ImageFont.truetype(mono_500, 58)
+
+        # Measured first on a scratch canvas, then drawn centred on a canvas
+        # cut to fit — so the padding is even whatever the wordmark measures.
+        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        lock_w = draw_lockup(probe, 0, 0, ls, amber, ink_page, text_body, f_lock_light, f_lock, 58)
+
+        lw, lh = round(lock_w + pad * 2), round(MARK_BOX[1] * ls + pad * 2)
+        lock = Image.new("RGB", (lw, lh), ink_page)
+        ld = ImageDraw.Draw(lock)
+        draw_lockup(ld, pad, pad, ls, amber, ink_page, text_body, f_lock_light, f_lock, 58)
+        lock.save(LOCKUP, "PNG", optimize=True)
+
+    for path in (OUT, LOCKUP):
+        w, h = struct.unpack(">II", open(path, "rb").read()[16:24])
+        print(f"wrote {path} {w}x{h} {os.path.getsize(path)} bytes")
 
 
 if __name__ == "__main__":

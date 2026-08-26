@@ -529,6 +529,21 @@ summary:focus-visible {
   color: var(--text-muted);
   text-decoration: none;
   transition: color var(--dur-2) var(--ease-standard);
+  /* The mark and the word are one thing, so they sit on a shared baseline and
+   * do not wrap apart from each other. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+
+/* Sized in `em` so it tracks the label rather than being pinned to a pixel
+ * count the type scale could move away from. `currentColor` on the path means
+ * the hover and focus colours below carry the mark with them. */
+.gh-mark {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
 }
 
 .header-source:hover,
