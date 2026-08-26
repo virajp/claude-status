@@ -756,6 +756,48 @@ fn only_allowlisted_paths_under_site_may_carry_a_script() {
     }
 }
 
+/// **The two tracked copies of the screenshot are the same bytes.**
+///
+/// There are two, and neither is derivable from the other at build time:
+///
+/// - `site/static/statusline.png` — zola copies `static/` into the build and
+///   reads nothing outside it, so the landing page cannot reference `assets/`.
+/// - `assets/statusline.png` — what the readme shows, by relative path.
+///   GitHub renders the readme from the repository, and the site's copy is
+///   fingerprinted at build time, so its URL changes every release.
+///
+/// So they are copied by hand, and the failure is that somebody re-renders the
+/// bar and updates ONE. Nothing else would say so: both files are valid PNGs
+/// of the right size, both pages render, and the two images are only ever seen
+/// on different sites. It has already happened once in this repository's
+/// history — the maintainer's re-render had to be swapped into three places,
+/// and the readme's was the one that lagged.
+///
+/// Compared by bytes rather than by dimensions. A re-render at the same size
+/// with different content is exactly the drift worth catching, and dimensions
+/// would not see it.
+#[test]
+fn the_two_tracked_screenshots_are_the_same_image() {
+    const COPIES: [&str; 2] = ["site/static/statusline.png", "assets/statusline.png"];
+
+    let bytes: Vec<Vec<u8>> = COPIES
+        .iter()
+        .map(|rel| std::fs::read(root().join(rel)).unwrap_or_else(|e| panic!("{rel} is missing: {e}")))
+        .collect();
+
+    assert_eq!(
+        bytes[0],
+        bytes[1],
+        "{} and {} have drifted — {} vs {} bytes. They are copied by hand because zola cannot reach \
+         outside `static/` and the readme cannot reference a fingerprinted URL, so re-rendering the \
+         bar means updating BOTH",
+        COPIES[0],
+        COPIES[1],
+        bytes[0].len(),
+        bytes[1].len()
+    );
+}
+
 /// The screenshot the landing page depends on is present and is a real PNG.
 /// A landing page for a *visual* tool whose one image 404s is worse than one
 /// with no image, and a missing static file is not something `zola build`
