@@ -652,7 +652,7 @@ The codepoints, so a lost glyph is recoverable and a port is checkable:
 | `symbols.win5h`                    | `U+F252`                      |
 | `symbols.win7d`                    | `U+F073`                      |
 | `symbols.worktree`                 | `U+1F332`                     |
-| `typeSymbols._default`             | `U+F544`                      |
+| `typeSymbols._default`             | `U+F1B2`                      |
 | `typeSymbols.background`           | `U+F013`                      |
 | `typeSymbols.cloud_agent`          | `U+F0C2`                      |
 | `typeSymbols.local_agent`          | `U+F109`                      |
@@ -661,6 +661,24 @@ The codepoints, so a lost glyph is recoverable and a port is checkable:
 | `typeSymbols.review`               | `U+F06E`                      |
 | `typeSymbols.task`                 | `U+F0AE`                      |
 | `typeSymbols.test`                 | `U+F0C3`                      |
+
+> **Amended 2026-08-26** (site-feedback). **`typeSymbols._default` was `U+F544`,
+> which no current Nerd Font can draw.** The row above is edited rather than
+> annotated, because this table mirrors the shipped defaults that
+> `tests/defaults_integrity.rs` pins — an unedited row here would simply be
+> wrong data rather than a preserved decision.
+>
+> `U+F544` was a Nerd Fonts **v2** Material Design Icons codepoint. v3 remapped
+> that set to `U+F0001`–`U+F1AF0` and left `U+F534`–`U+F560` unpopulated, so the
+> fallback glyph for an unrecognised subagent `type` rendered as tofu in every
+> Nerd Font 3.x — verified against Hack, FiraCode, Iosevka and Meslo at Nerd
+> Fonts 3.5.1, all four missing it and all four carrying the other 24 codepoints
+> this product uses.
+>
+> Replaced with `U+F1B2` (cube): present in v3, and deliberately generic, so it
+> does not read as any of the specific types beside it. Found while subsetting a
+> glyph font for the documentation site, which is the first thing that ever
+> checked these codepoints against a font.
 
 The non-glyph values worth having inline: `defaultFg` is `white`;
 `worktreePattern` is `worktree`; `projectName` is `Project-Name`; `gauge.width`
@@ -789,6 +807,31 @@ side of the whole text.
 > had `segments.rs`'s own doc comment, since fixed. The site's hero screenshot
 > shows the correct behaviour (`main ±`, no worktree glyph) and therefore
 > contradicted the page describing it.
+
+> **Amended 2026-08-26** (site-feedback), against `render::segments::project`.
+> **`project` no longer omits when nothing has named the repository.** The row
+> above says it sits out when `projectName` is not set in config; that was true
+> when written, and is a **deliberate behaviour change** rather than a
+> mis-record.
+>
+> The name is now the first of these that exists: `projectName` from the repo
+> layer, `projectName` from the user layer (which is not inert — it names every
+> repository that has not named itself), then **the git root's own directory
+> name**. The segment omits in exactly one case, which is that there is no git
+> root to take a name from.
+>
+> `projectName` therefore stops being what turns the segment on and becomes only
+> how a repository is called something other than its directory. The repo-level
+> narrowing of §"Layer 3 may set `projectName` and nothing else" is untouched,
+> and so is the rule that the key is in neither shipped defaults.
+>
+> The directory name is attacker-nameable, as `projectName` already was — a
+> clone lands in a directory the cloner chose. It reaches the bar through the
+> same `sanitize` every segment's text passes, which `_shared::text` already
+> lists "a worktree directory" among its inputs, so this widens no surface.
+>
+> Requested by the owner, whose expectation was that the segment already behaved
+> this way.
 
 An unknown segment id in `lines` writes `statusline: unknown segment "<id>"` to
 **stderr** and omits the segment. It must not fail the render, and the exit code

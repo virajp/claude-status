@@ -102,7 +102,7 @@ fn text_for(id: &str, facts: &MainFacts, git: &GitFacts, config: &Config, spend:
         "spend" => spend.map(str::to_string),
         // Omitted only when absent — `0` renders `0s`.
         "duration" => facts.duration_ms.map(|ms| format!("{} {}", sym("duration"), human_duration(Some(ms)))),
-        "project" => config.project_name.as_ref().map(|name| format!("{} {name}", sym("project"))),
+        "project" => project(git, config),
         "worktree" => git
             .worktree_subpath
             .as_ref()
@@ -110,6 +110,30 @@ fn text_for(id: &str, facts: &MainFacts, git: &GitFacts, config: &Config, spend:
         "branch" => branch(git, config),
         _ => None,
     }
+}
+
+/// `{project} my-repo`.
+///
+/// `projectName` from the repo layer wins. With none set, the git root's own
+/// directory name stands in — so a repository nobody has named still draws the
+/// segment, and the key is only needed to call it something else.
+///
+/// **Outside a git repository there is no root, and the segment omits.** That
+/// is the only remaining way it disappears.
+///
+/// The directory name is attacker-nameable exactly as `projectName` is — a
+/// clone lands in a directory the cloner chose — but it reaches the bar through
+/// the same `sanitize` every segment's text passes through, which
+/// `_shared::text` already names "a worktree directory" among its inputs.
+fn project(git: &GitFacts, config: &Config) -> Option<String> {
+    let name = match config.project_name.clone() {
+        Some(name) => name,
+        // `to_str` rather than `to_string_lossy`: a name that is not UTF-8 is
+        // one we cannot draw honestly, and U+FFFD in the bar would look like a
+        // rendering bug rather than an unnameable directory.
+        None => git.root.as_ref()?.file_name()?.to_str()?.to_string(),
+    };
+    Some(format!("{} {name}", config.symbol("project")))
 }
 
 /// `{model} Opus 5 [high]`. Falls back to `Claude`, including when the
@@ -326,17 +350,23 @@ mod tests {
 
     #[test]
     fn project_reads_the_config_not_the_payload() {
-        // The shipped defaults carry no `projectName` — it is repo-level only —
-        // so the segment omits until a repo config supplies one.
-        assert_eq!(text("project", &MainFacts::default(), &GitFacts::default()), None);
-
+        // Never the payload. A `projectName` in config wins outright.
         let named = Config::new(json!({ "symbols": { "project": "P" }, "projectName": "from-repo" }));
-        assert_eq!(
-            text_for("project", &MainFacts::default(), &GitFacts::default(), &named, None),
-            Some("P from-repo".to_string())
-        );
+        let in_repo = GitFacts { root: Some("/src/some-checkout".into()), ..Default::default() };
+        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &named, None), Some("P from-repo".to_string()));
+    }
 
+    #[test]
+    fn project_falls_back_to_the_repo_directory_name() {
         let bare = Config::new(json!({ "symbols": { "project": "P" } }));
+        let in_repo = GitFacts { root: Some("/src/my-repo".into()), ..Default::default() };
+
+        // Unnamed, but inside a repository: the directory name stands in, so
+        // the segment is drawn rather than omitted.
+        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &bare, None), Some("P my-repo".to_string()));
+
+        // Outside a repository there is no root to name, and it omits. This is
+        // the only remaining way the segment disappears.
         assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &bare, None), None);
     }
 

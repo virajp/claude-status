@@ -75,6 +75,59 @@
   src: url("fonts/ibm-plex-mono-600.woff2") format("woff2");
 }
 
+/*
+ * The status bar's OWN glyphs. Every symbol this product ships is a Nerd Font
+ * private-use codepoint, and neither IBM Plex nor any system mono has an
+ * outline for one — so every page that quotes a symbol value, the config
+ * generator most of all, drew tofu where the glyph should be.
+ *
+ * Subset from Hack Nerd Font Mono (Nerd Fonts 3.5.1) down to exactly the
+ * codepoints `assets/claude-status.defaults.json` uses: 25 glyphs, 3.2KB,
+ * against the 2.8MB font they came out of. The glyphs taken are the icon sets
+ * Nerd Fonts patches in, not Hack's letterforms; Hack itself is MIT.
+ *
+ * The codepoint list is READ FROM THE DEFAULTS when the subset is cut, rather
+ * than hand-maintained, so it cannot quietly stop covering a symbol. Cutting
+ * it is `pyftsubset` over that list — and the same pass is what discovered
+ * that `typeSymbols._default` pointed at U+F544, which Nerd Fonts v3 does not
+ * populate at all.
+ *
+ * `unicode-range` is what makes it safe to put FIRST in the mono stack: the
+ * browser consults this face only for the codepoints listed, so ordinary
+ * monospace text still comes from Plex and this file is not even downloaded by
+ * a page that quotes no glyph.
+ */
+@font-face {
+  font-family: "claude-status glyphs";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/claude-status-glyphs.woff2") format("woff2");
+  unicode-range:
+    U+E0A0,
+    U+E0B0-E0B1,
+    U+E0B6,
+    U+F007,
+    U+F00C-F00D,
+    U+F013,
+    U+F017,
+    U+F02B,
+    U+F04B,
+    U+F06E,
+    U+F073,
+    U+F07B,
+    U+F09D,
+    U+F0AE,
+    U+F0C2-F0C3,
+    U+F109,
+    U+F1B2,
+    U+F1C0,
+    U+F1E6,
+    U+F252,
+    U+F401,
+    U+F51E;
+}
+
 /* ---- palette ----------------------------------------------------------- */
 
 :root {
@@ -127,8 +180,22 @@
   --shadow-2: 0 10px 28px -12px rgb(0 0 0 / 65%);
 
   /* ---- type ---------------------------------------------------------- */
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The glyph face is first, but `unicode-range` limits it to the product's
+   * own symbols — everything else still falls to Plex. */
+  --font-mono:
+    "claude-status glyphs",
+    "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  /* The glyph face leads here too, and for the same reason it leads the mono
+   * stack: `unicode-range` confines it to the product's own symbols, so no
+   * Latin character can reach it. It is needed because the config generator
+   * draws its 28 symbol INPUTS in the sans face — measured in the browser, not
+   * assumed — and those inputs are where the glyphs are most worth seeing. */
   --font-sans:
+    "claude-status glyphs",
     "IBM Plex Sans",
     "Helvetica Neue",
     Helvetica,

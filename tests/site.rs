@@ -826,7 +826,26 @@ fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
             bytes.starts_with(b"wOF2"),
             "{rel} is not a woff2 — the browser will ignore it and fall back to system mono"
         );
-        assert!(bytes.len() > 4096, "{rel} is {} bytes, which is not a real face", bytes.len());
+
+        // The file's own declared length, against what is actually on disk.
+        //
+        // This replaced a `len() > 4096` floor, which was a stand-in for "not
+        // truncated" and stopped being usable once a face could legitimately
+        // be small: `claude-status-glyphs.woff2` is 25 glyphs and 3.2KB, and a
+        // threshold tuned to text faces would have rejected it. Raising a
+        // number until the real file passes is how a guard becomes a formality.
+        //
+        // The woff2 header carries the total file size at offset 8, so a
+        // truncated or padded file can be caught exactly rather than
+        // approximately — which is strictly stronger than the floor was, and
+        // needs no arbitrary constant.
+        let declared = u32::from_be_bytes(bytes[8..12].try_into().expect("a woff2 header is at least 12 bytes"));
+        assert_eq!(
+            declared as usize,
+            bytes.len(),
+            "{rel} declares {declared} bytes in its woff2 header but is {} on disk — truncated or padded",
+            bytes.len()
+        );
     }
 }
 

@@ -434,8 +434,8 @@ mod tests {
         let config = shipped();
         assert_eq!(type_glyph("local_agent", &config), "\u{f109}");
         assert_eq!(type_glyph("review", &config), "\u{f06e}");
-        assert_eq!(type_glyph("no_such_type", &config), "\u{f544}", "the _default glyph");
-        assert_eq!(type_glyph("", &config), "\u{f544}");
+        assert_eq!(type_glyph("no_such_type", &config), "\u{f1b2}", "the _default glyph");
+        assert_eq!(type_glyph("", &config), "\u{f1b2}");
     }
 
     #[test]
@@ -563,7 +563,7 @@ mod tests {
         let config = shipped();
         // A task with a status and nothing else is the head alone.
         assert_eq!(texts(&json!({ "id": 1, "status": "done" }), &json!({}), &config), vec![
-            "\u{f00c} \u{f544}".to_string()
+            "\u{f00c} \u{f1b2}".to_string()
         ]);
     }
 

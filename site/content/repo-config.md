@@ -4,6 +4,19 @@ description = "One key, one file, written by hand — and nothing creates it for
 weight = 4
 +++
 
+## You probably do not need this file
+
+The `project` segment names your repository whether or not this file exists.
+With no configuration anywhere, it draws the **git root's own directory name** —
+work in `~/src/my-repo` and the bar reads `my-repo`.
+
+So this file exists for one purpose: calling a repository something **other**
+than its directory name. If the directory is already called the right thing,
+there is nothing to write.
+
+The segment is omitted in exactly one case — you are not inside a git
+repository, so there is no root to take a name from.
+
 ## The file
 
 ```text
@@ -30,12 +43,20 @@ completion; `projectName` is the only key that does anything.
 ## What it does
 
 `projectName` is the name the `project` segment draws — with the
-`symbols.project` glyph in front of it — for that repository and no other.
+`symbols.project` glyph in front of it — for that repository and no other. It
+overrides the directory name; that is all it does.
 
-It is **repo-level only**, deliberately. It is not in the shipped defaults and
-setting it in `~/.config/claude-status/config.json` does nothing, so a
-repository you have not named omits the `project` segment entirely rather than
-wearing a name that was never about it.
+The name is resolved in this order, first match winning:
+
+1. `projectName` in **this file** — that repository, and no other.
+2. `projectName` in your **user** config. This is not inert: the user layer is
+   merged whole, so a name set there applies to every repository that has not
+   named itself. Setting it there is almost never what you want, and
+   [Configure](@/configure.md) says so.
+3. The **git root's directory name**.
+
+It is the only key this file may set. It is not in the shipped defaults, because
+a default name would be a name that was never about your repository.
 
 ## Every other key is ignored
 
