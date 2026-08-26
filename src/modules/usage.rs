@@ -1,10 +1,15 @@
-//! The usage mirror — a hard contract with `ai-plugins` (contract §8).
+//! The usage mirror — a hard contract with `ai-plugins`.
 //!
 //! **This is not internal.** Context-window and rate-limit figures arrive only
 //! on the statusline payload, never on hook stdin, so every main-bar render
 //! mirrors them to a session-keyed file that vwf's `PostToolUse` context-cap
 //! hook reads. The field names, the file layout and the env var name are all
 //! part of the contract; changing any of them silently disables that hook.
+//!
+//! **The contract is `docs/usage-mirror-contract.md`.** Read it before changing
+//! anything in this file: the consumer lives in another repository, so the
+//! tests below prove only that *this* side still writes what it promised — they
+//! cannot fail when the promise itself is broken.
 //!
 //! Best-effort throughout: a failure here must never affect the rendered line.
 
@@ -67,8 +72,9 @@ pub fn mirror(facts: &MainFacts, usage_dir: Option<&str>, session_id: Option<&st
 /// - `resets_at` is mirrored **raw**, not normalised. The consumer does its own
 ///   seconds/millis/ISO discrimination, and an ISO string must stay one.
 /// - `ctxSize` is **absent** when the payload carried no `context_window_size`,
-///   while the four rate-limit fields are present as `null`. That asymmetry is
-///   what the consumer was written against.
+///   while the other six value fields — `ctxPct`, `ctxUsed` and the four
+///   rate-limit ones — are present as `null`. That asymmetry is what the
+///   consumer was written against.
 fn document(facts: &MainFacts, session_id: &str) -> Value {
     let mut doc = Map::new();
     doc.insert("sessionId".into(), json!(session_id));

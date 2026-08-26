@@ -291,6 +291,34 @@ step that quietly re-scopes itself is the failure this cycle exists to fix:
 
 Nothing was deleted. Steps 3–7 are untouched.
 
+## Step 3 — §8 rehomed, walked 2026-08-27
+
+`docs/usage-mirror-contract.md` is written, and `src/modules/usage.rs` links it
+from its module doc in place of the `contract §8` citation it carried.
+
+**All three audit findings are documented**, each as its own section under *What
+the old contract omitted*: the `ctxSize` absent-vs-`null` asymmetry, the raw
+`resets_at`, and the `<session>.state.json` neighbour.
+
+Four things the walk found that the plan's step-3 text does not say:
+
+| Plan says                                         | What the code actually shows                                                                                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "`context-caps.js` writes `<session>.state.json`" | **`--caps-hook` writes it too**, at `app.rs:163`, and will be the only writer once the JS hook goes. The name is still not unilaterally ours while both exist. Corrected in the doc rather than transcribed. |
+| "`usage.rs:46-49` guards against colliding"       | It is a **`debug_assert!`** (`usage.rs:52`), so it holds the shape in the test build and is absent from the released one. Recorded as what it is; a runtime guard would imply a defence that does not ship.  |
+| the six `null` fields                             | Correct — but the writer's **own doc comment said "the four rate-limit fields"**, understating it by the two context fields the test at `usage.rs:179` already enumerates. Corrected in place, one line.     |
+| "touches no `src/`"                               | This step is the exception the plan itself asks for. The `src/` change is **two doc comments and no code**; the suite is unchanged at 582.                                                                   |
+
+**One thing recorded that §8 never claimed either way:** the in-repo reader uses
+**five** of the nine keys (`caps/mod.rs:46-55`). `sessionId`, `ts`, `ctxUsed`
+and `ctxSize` exist solely for the cross-repo consumer, so this repo's suite
+proves they are still *emitted* and nothing about what they mean. Stated in the
+doc, because assuming otherwise is how a cross-repo contract rots quietly.
+
+**The consumer side is marked unverified throughout**, per the plan's risk note
+— the corrections were made by reading this repository, and whether
+`context-caps.js` copes with each shape is not decidable from here.
+
 ## Gaps surfaced during execution
 
 1. **The commit-scope list has no home for the two documents this cycle
