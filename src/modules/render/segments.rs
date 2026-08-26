@@ -182,8 +182,8 @@ fn rate_limit(limit: &RateLimit, now_ms: i64, symbol: &str, config: &Config) -> 
 /// worktree glyph is the one that trips readers: it sits *before* the branch
 /// glyph and appears only inside a worktree, so the common case opens with the
 /// branch glyph. An earlier version of this comment said "every part after the
-/// branch glyph", which read as if the prefix were unconditional; the site and
-/// the contract both copied that error.
+/// branch glyph", which read as if the prefix were unconditional; the site
+/// and the behaviour contract both copied that error before it was found.
 fn branch(git: &GitFacts, config: &Config) -> Option<String> {
     let name = git.branch.as_deref().filter(|b| !b.is_empty())?;
 

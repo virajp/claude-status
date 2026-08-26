@@ -4,6 +4,6 @@ contact_links:
     url: https://github.com/virajp/claude-status#readme
     about: Install, configuration and the segment reference.
   - name: What the bar is meant to do
-    url: https://github.com/virajp/claude-status/blob/main/docs/spec/statusline-behaviour.md
-    about: The behaviour contract, if you want to check whether something is a
-      bug.
+    url: https://claude-status.virajp.dev/segments/
+    about: Every segment, what it draws and when it sits out — check here
+      before filing a bug.

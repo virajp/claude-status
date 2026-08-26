@@ -6,7 +6,7 @@ description: Cycle plan (a diff) reshaping the binary's flags — --refresh
   layer, and --debug reporting a missing config as normal.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-config-and-cli/02-config-relocation.md,
@@ -417,9 +417,8 @@ invalid file.
 **C9. Six doc comments and four readme passages were falsified.** Including
 `readme.md`'s "the only thing this tool writes on its own is the spend cache",
 which this cycle made false, and "three surfaces… you won't run them by hand",
-when the cycle adds a fourth that must be run by hand. Same drift pattern
-[the audit](../../spec/DRIFT-2026-08-23.md) documents, and the same one cycle 02
-recorded at its C9.
+when the cycle adds a fourth that must be run by hand. Same drift pattern the
+drift audit documents, and the same one cycle 02 recorded at its C9.
 
 ### Also noted, not acted on
 

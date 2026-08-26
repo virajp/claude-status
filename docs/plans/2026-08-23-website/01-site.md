@@ -6,7 +6,7 @@ description: Cycle plan (a diff) building claude-status.virajp.dev as a Zola
   tag, with the readme shrinking to a pointer.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: []
 timestamp: 2026-08-23T14:21:00Z

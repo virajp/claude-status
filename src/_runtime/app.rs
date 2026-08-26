@@ -462,8 +462,8 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let _ = writeln!(out, "\nSPEND");
     out.push_str(&spend_section(&config));
 
-    // **The one place `--debug` output is filtered** (contract §4a, invariant
-    // 4). Everything assembled above is diagnostic text drawn from untrusted
+    // **The one place `--debug` output is filtered** (invariant 4: only the
+    // renderer emits escapes). Everything assembled above is diagnostic text drawn from untrusted
     // sources — the config `lines` entries, the spend gate table and its
     // symbols, the `settings.json` command, the endpoint URL, the plan tag,
     // and every path — and filtering those one write at a time is how several

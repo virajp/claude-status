@@ -6,7 +6,7 @@ description: Cycle plan (a diff) moving the user config into
   to projectName, and deleting the render path's ability to write files.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-config-and-cli/01-typed-config.md,
@@ -401,10 +401,10 @@ hostile input where "cloning a hostile repo is the entire attack", and §The
 shipped defaults still pointed at `~/.config/statusline.json`. `readme.md` still
 promised per-repo styling and per-repo caps, and claimed no config file is
 created — which is false of the shipping installer. **This is the exact drift
-pattern [the audit](../../spec/DRIFT-2026-08-23.md) documents** — an amendment
-updates its own section and never revisits the earlier text it falsified — very
-nearly repeated inside the cycle that cites it. Amended in place rather than
-annotated further down, for that reason.
+pattern the drift audit documents** — an amendment updates its own section and
+never revisits the earlier text it falsified — very nearly repeated inside the
+cycle that cites it. Amended in place rather than annotated further down, for
+that reason.
 
 **C6. The autoseed integration path was structurally suppressed.** Every e2e
 `--statusline` run inherits the test process's cwd — this repo, which has a

@@ -34,7 +34,8 @@ fn direct(spec: Option<&Value>, palette: Option<&Palette>) -> Option<Rgb> {
     match spec? {
         // The palette is consulted *first*, so a palette that defines a key
         // spelled like a hex string still wins — matching the old resolution
-        // order rather than the contract's prose ordering.
+        // order rather than the palette-then-hex reading the retired
+        // contract's prose implied.
         Value::String(name) => match palette.and_then(|p| p.get(name)) {
             Some(entry) => triple(entry),
             None => name.starts_with('#').then(|| parse_hex(name)).flatten(),

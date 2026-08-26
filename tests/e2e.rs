@@ -44,8 +44,9 @@ const MISSING_FLAG_LINE: &str = "missing --statusline or --subagent";
 
 /// The reference main-bar payload, read from the file rather than transcribed.
 ///
-/// It used to be a `const` here **and** a shell example in the contract's §12,
-/// and the two drifted: §12's copy documented piping to a bare `claude-status`,
+/// It used to be a `const` here **and** a shell example in the retired
+/// behaviour contract, and the two drifted: that copy documented piping to a
+/// bare `claude-status`,
 /// which prints the missing-flag line instead of a bar. One file, read by the
 /// suite that proves it works — see `tests/fixtures/README.md`.
 const FIXTURE: &str = include_str!("fixtures/main-bar.json");
@@ -201,7 +202,8 @@ fn the_subagent_fixture_renders_ndjson_that_survives_a_json_parser() {
     assert!(!panel.ends_with('\n'), "no trailing newline");
     assert_eq!(stderr(&out), "", "a clean panel says nothing");
 
-    // What `jq -r .content` does, which is how the contract says to read it.
+    // What `jq -r .content` does, which is how `tests/fixtures/README.md`
+    // says to read it.
     let row: serde_json::Value = serde_json::from_str(&panel).expect("each line is a JSON object");
     let content = row["content"].as_str().expect("content is a string");
     assert_eq!(row["id"], "t1");
@@ -1369,7 +1371,7 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
     );
     assert!(out.status.success());
 
-    // The `SAMPLE RENDER` carve-out contract §4a calls load-bearing: that
+    // The `SAMPLE RENDER` carve-out, which is load-bearing: that
     // section is appended **after** the report-wide sweep precisely so its SGR
     // codes survive. Asserting the header alone would pass with an empty body,
     // and would still pass if the sweep were moved to cover it — which would
@@ -1736,7 +1738,7 @@ fn stdout_never_carries_a_diagnostic_whatever_the_input() {
     assert!(!stderr(&out).is_empty(), "the diagnostics did happen — just not on stdout");
 }
 
-/// Runs the binary with **no `$HOME` at all**, which is the case the contract's
+/// Runs the binary with **no `$HOME` at all**, which is the case the
 /// absent-never-relative clause governs.
 ///
 /// A separate process, so this needs none of the in-process env locking the
@@ -2183,7 +2185,7 @@ fn with_no_home_the_caps_hook_stays_silent() {
 
 #[test]
 fn debug_reports_a_hostile_config_without_obeying_it() {
-    // `--debug` is the fourth surface contract §4a names. Two of the values
+    // `--debug` is the fourth of the five filter surfaces. Two of the values
     // below land in two *different* sections of the report (EFFECTIVE LAYOUT
     // and the spend gate table), which is exactly why the filter is one sweep
     // over the assembled report rather than a call at each write: both were

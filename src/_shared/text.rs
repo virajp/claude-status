@@ -64,14 +64,15 @@ pub fn sanitize(text: &str) -> String {
 /// same rule — but is deliberately many lines, so the row version would collapse
 /// the whole report onto one.
 ///
-/// It exists because `--debug` is the fourth surface [§4a] names, and it earned
-/// its own entry point rather than a scatter of per-write calls: the report
-/// prints the config `lines` entries, the spend gate table, the `settings.json`
-/// command, the endpoint URL and the plan tag, and filtering those one at a
-/// time is how two of them were missed twice. Sanitize the assembled report
-/// once, and anything added to it later is covered without being remembered.
+/// It exists because `--debug` is the fourth of the [five filter chokepoints],
+/// and it earned its own entry point rather than a scatter of per-write calls:
+/// the report prints the config `lines` entries, the spend gate table, the
+/// `settings.json` command, the endpoint URL and the plan tag, and filtering
+/// those one at a time is how two of them were missed twice. Sanitize the
+/// assembled report once, and anything added to it later is covered without
+/// being remembered.
 ///
-/// [§4a]: ../../../docs/spec/statusline-behaviour.md
+/// [five filter chokepoints]: ../../../docs/decisions.md
 pub fn sanitize_report(text: &str) -> String {
     text.chars().filter(|c| *c == '\n' || safe(*c)).collect()
 }

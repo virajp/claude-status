@@ -6,7 +6,7 @@ description: Cycle plan (a diff) adding a schema-driven config form to the site
   the Rust renderer is tested with.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-website/01-site.md,

@@ -102,7 +102,7 @@ impl Finding {
     /// that a legal key does not warn *without* matching on a glyph, so the
     /// classification can be checked independently of how it is drawn. The e2e
     /// tests deliberately do match the glyph, because there the rendered line
-    /// is the contract.
+    /// is what is being pinned.
     pub fn is_warning(&self) -> bool {
         matches!(self, Self::UnknownKey { .. })
     }

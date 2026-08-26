@@ -7,7 +7,7 @@ description: Cycle plan (a diff) cutting v0.1.0 — the first tag this project
   end to end.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-distribution/01-drop-npm.md,

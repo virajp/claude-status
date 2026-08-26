@@ -49,8 +49,8 @@ use crate::config::matcher::Matcher;
 use crate::json::leaf;
 use crate::spend::SpendConfig;
 
-/// The hard fallback styling for a segment with no configured defaults
-/// (contract §4).
+/// The hard fallback styling for a segment with no configured defaults —
+/// the last rung of inline override → `segments.<id>` → here.
 pub const FALLBACK_BG: &str = "blue";
 
 /// A ceiling on `gauge.width`, which is a repeat count. Applied by the

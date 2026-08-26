@@ -77,7 +77,8 @@ impl SpendCache {
 ///
 /// `$CLAUDE_STATUS_SPEND_CACHE` wins, expanding a **leading `~` only** — unlike
 /// `$AI_PLUGINS_USAGE_DIR`, which also expands `$HOME`. The two are different
-/// contracts and the contract document conflates them.
+/// contracts, deliberately; the retired behaviour contract conflated them.
+/// See `docs/usage-mirror-contract.md` for the other one.
 ///
 /// `None` when there is no `$HOME` to resolve against. **Absent, never
 /// relative:** falling back to a bare `spend.json` wrote the cache into

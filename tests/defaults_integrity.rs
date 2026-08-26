@@ -4,7 +4,7 @@
 //! any tool that transcribes them.
 //!
 //! The *test* is safe to retype — it names every codepoint as a `\u{…}` escape,
-//! from the table in contract §3. The *asset* is not. Never edit the asset
+//! from the codepoint table below. The *asset* is not. Never edit the asset
 //! through an editor buffer, and never let a formatter touch it.
 
 use std::collections::BTreeSet;
@@ -95,12 +95,12 @@ fn every_glyph_matches_its_codepoint() {
         assert_eq!(
             actual,
             *expected,
-            "`{path}` drifted: asset has {:?}, contract §3 says {:?}",
+            "`{path}` drifted: asset has {:?}, the codepoint table says {:?}",
             actual.escape_debug().to_string(),
             expected.escape_debug().to_string(),
         );
     }
-    assert_eq!(GLYPHS.len(), 39, "the contract §3 codepoint table has 39 rows");
+    assert_eq!(GLYPHS.len(), 39, "the codepoint table has 39 rows");
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn the_asset_carries_no_symbol_the_table_does_not_cover() {
         let obj = at(&d, group).as_object().unwrap_or_else(|| panic!("`{group}` is not an object"));
         for key in obj.keys() {
             let path = format!("{group}.{key}");
-            assert!(covered(&path), "`{path}` is in the asset but not in the contract §3 table");
+            assert!(covered(&path), "`{path}` is in the asset but not in the codepoint table");
         }
     }
 }
@@ -170,11 +170,17 @@ fn subagent_statuses_stay_in_config_order() {
     // `serde_json`'s `preserve_order` feature is what makes this true, and
     // plan 2's first-match-wins status ladder depends on it.
     //
-    // Note the asset's order is not the precedence order contract §3 prints:
+    // Note the asset's order is not the order the ladder resolves in:
     // `pending` sits third and carries the *empty* match, which is the
     // designated fallback rather than a pattern that matches everything. A
     // reader that walked the ladder naively would resolve every unknown status
     // to `pending` before ever reaching `running`.
+    //
+    // The walk's three observable quirks — the empty `match` recorded as the
+    // fallback while the walk continues, the unanchored substrings, and a bad
+    // pattern skipped rather than fatal — are in `docs/decisions.md`. This
+    // assertion is what pins the order itself; a document that restated it is
+    // what drifted.
     let d = defaults();
     let statuses = at(&d, "subagent.statuses").as_object().expect("`subagent.statuses` is an object");
     let order: Vec<&str> = statuses.keys().map(String::as_str).collect();

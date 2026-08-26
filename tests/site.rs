@@ -624,17 +624,25 @@ fn every_readme_image_is_tracked_in_this_repository() {
     }
 }
 
-/// The site is where users are sent, so the two places that send them there
-/// have to agree on the address. `--help`'s copy is pinned by `src/_runtime/`
-/// and by `tests/e2e.rs`; this is the pair the *docs* own.
+/// The site is where users are sent, so the places that send them there have to
+/// agree on the address. `--help`'s copy is pinned by `src/_runtime/` and by
+/// `tests/e2e.rs`; these are the ones the *docs* own.
+///
+/// **The behaviour contract used to be the second half of this pair**, and
+/// `spec-retirement` gated its own deletion on that pointer existing. With the
+/// contract gone the readme is no longer the only other place: the issue-form
+/// config sends anyone about to file a bug at the site too, and a dead link
+/// there reaches people at their least patient.
 #[test]
-fn the_readme_and_the_behaviour_contract_name_the_same_site() {
+fn every_doc_that_sends_a_user_to_the_site_names_the_same_address() {
     const SITE: &str = "https://claude-status.virajp.dev";
-    assert!(read("readme.md").contains(SITE));
+
+    assert!(read("readme.md").contains(SITE), "readme.md no longer names the site");
     assert!(
-        read("docs/spec/statusline-behaviour.md").contains(SITE),
-        "the behaviour contract no longer names the site as the user-facing documentation — \
-         `spec-retirement` gates on that pointer existing"
+        read(".github/ISSUE_TEMPLATE/config.yml").contains(SITE),
+        "the issue-form contact links no longer point at the site — they pointed at the \
+         behaviour contract until `spec-retirement` deleted it, and a link that 404s is worse \
+         than the one it replaced"
     );
 }
 

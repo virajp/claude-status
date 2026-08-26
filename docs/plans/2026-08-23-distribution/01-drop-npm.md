@@ -5,7 +5,7 @@ description: Cycle plan (a diff) deleting the npm installer and its publish
   path, and adding the tarball release asset a Homebrew formula consumes.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-config-and-cli/03-cli-surface.md,

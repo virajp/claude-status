@@ -1,6 +1,8 @@
 //! claude-status — the Claude Code powerline status line.
 //!
-//! Invariants that outrank everything else (contract §1):
+//! Invariants that outrank everything else. Each is here rather than
+//! beside the feature it constrains because more than one feature obeys
+//! it; the reasoning is in `docs/decisions.md`:
 //!
 //! 1. **stdout is the bar.** Every diagnostic goes to stderr.
 //! 2. **A render never blocks.** No network call on the render path; git is

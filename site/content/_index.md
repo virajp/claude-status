@@ -71,7 +71,8 @@ Code to the binary. [Install](@/install.md) covers both routes in full.
 | [Segments](@/segments.md)     | every segment, what it draws, and when it sits out           |
 | [Diagnosing](@/diagnosing.md) | `--debug`, and the questions it answers                      |
 
-Implementing against it, or wondering why something behaves the way it does? The
-[behaviour contract](https://github.com/virajp/claude-status/blob/main/docs/spec/statusline-behaviour.md)
-is the source of truth, written for implementers rather than users. These pages
-are the user-facing documentation and do not restate it.
+Wondering *why* something behaves the way it does? The
+[decision record](https://github.com/virajp/claude-status/blob/main/docs/decisions.md)
+carries the reasoning behind each choice — including the ones that were later
+reversed. It is written for implementers rather than users; these pages are the
+user-facing documentation.

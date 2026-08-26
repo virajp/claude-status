@@ -27,8 +27,8 @@ pub fn set_narrate(on: bool) {
     NARRATE.store(on, Ordering::Relaxed);
 }
 
-/// The `--debug` narration, and the **fifth terminal surface** contract §4a
-/// names.
+/// The `--debug` narration, and one caller of the **fifth terminal surface**
+/// — stderr.
 ///
 /// stderr is a terminal too. This carries the cwd, the program name and its
 /// argv — all attacker-nameable, all under the same `--debug` flag as the

@@ -6,7 +6,7 @@ description: Cycle plan (a diff) replacing the untyped Value-and-dotted-paths
   changing no rendered byte.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: []
 timestamp: 2026-08-23T14:01:00Z

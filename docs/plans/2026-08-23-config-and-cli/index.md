@@ -6,7 +6,7 @@ description: Four ordered plans that give the config real types, move it to
   --configure, and make the types generate the schema.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 timestamp: 2026-08-23T14:00:00Z
 tags: [ config, cli, serde, schema, validation, xdg ]

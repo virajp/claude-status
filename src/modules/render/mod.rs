@@ -7,5 +7,6 @@ pub mod subagent;
 
 // The escape filter itself is domain-free and lives in `_shared/text.rs`; it is
 // re-exported here because every caller but the stderr chokepoint reaches it
-// through the renderer, and contract §4a names it as a rendering rule.
+// through the renderer, and it is a rendering rule: only the renderer emits
+// escapes.
 pub use crate::_shared::text::{sanitize, sanitize_report};

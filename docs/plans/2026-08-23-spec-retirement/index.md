@@ -6,7 +6,9 @@ description: One plan that retires the behaviour contract by rehoming the
   deleting the document.
 status: active
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
+  docs/usage-mirror-contract.md,
+  tests/fixtures/README.md,
 ]
 timestamp: 2026-08-23T15:00:00Z
 tags: [ docs, spec, retirement, decisions ]
@@ -21,8 +23,8 @@ tags: [ docs, spec, retirement, decisions ]
 ## Why the contract is being retired rather than repaired
 
 `docs/spec/statusline-behaviour.md` was validated section by section against the
-code on 2026-08-23. The audit is in
-[`DRIFT-2026-08-23.md`](../../spec/DRIFT-2026-08-23.md).
+code on 2026-08-23. The audit is in `DRIFT-2026-08-23.md`, deleted together with
+the spec and kept in git history.
 
 **Five claims are actively wrong** — a §12 fixture that prints an error instead
 of a bar, a §3 precedence order that contradicts the config order it names as

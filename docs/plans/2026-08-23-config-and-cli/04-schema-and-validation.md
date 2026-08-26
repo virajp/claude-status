@@ -6,7 +6,7 @@ description: Cycle plan (a diff) making the Rust config types generate the JSON
   the website's generator to consume.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-config-and-cli/03-cli-surface.md,

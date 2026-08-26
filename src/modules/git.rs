@@ -4,9 +4,9 @@
 //! this is a hot path and a `git rev-parse` is a whole process to learn
 //! something a file already says.
 //!
-//! **Deviation from the contract**, which says "two subprocesses, 250 ms each":
-//! there are up to *four*, and they run on two threads under **one shared
-//! 250 ms deadline**. Sequentially at 250 ms each the worst case is about a
+//! **The budget is one deadline, not one per call.** The original design said
+//! "two subprocesses, 250 ms each"; there are up to *four*, and they run on
+//! two threads under **one shared 250 ms deadline**. Sequentially at 250 ms each the worst case is about a
 //! second, on a bar that must never block.
 
 use std::path::{Component, Path, PathBuf};

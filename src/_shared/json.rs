@@ -1,7 +1,9 @@
 //! `serde_json::Value` accessors, file IO, and the config deep merge.
 //!
 //! Everything here swallows errors into `None`. A syntactically invalid config
-//! layer is *ignored*, not fatal — the bar still renders (contract §3).
+//! layer is *ignored*, not fatal — the bar still renders. A layer that is
+//! missing, unreadable, malformed or not a JSON object is skipped and the
+//! layers below it stand.
 
 use std::fs;
 use std::path::Path;

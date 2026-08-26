@@ -6,7 +6,7 @@ description: Cycle plan (a diff) adding the formula to the existing
   SHA256SUMS, and bumping it from CI on every tag.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 requires: [
   docs/plans/2026-08-23-distribution/01-drop-npm.md,

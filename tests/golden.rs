@@ -61,7 +61,9 @@ fn assert_golden(name: &str, actual: &str) {
     );
 }
 
-/// The reference fixture from contract §12.
+/// The reference fixture, as facts. The payload it corresponds to is
+/// `tests/fixtures/main-bar.json`; this is the parsed form, because a golden
+/// pins the render and not the parse.
 fn fixture_facts() -> MainFacts {
     MainFacts {
         now_ms: PINNED_NOW,
@@ -125,7 +127,7 @@ fn the_spend_segment_renders_when_every_gate_passes() {
     assert_golden("spend", &render_bar(&fixture_facts(), &GitFacts::default(), &config, Some(spend)));
 }
 
-/// The reference subagent payload from contract §12, with the panel-wide model
+/// The reference subagent payload — `tests/fixtures/subagent.json` — with the panel-wide model
 /// and effort the schema documents.
 fn subagent_fixture() -> serde_json::Value {
     json!({

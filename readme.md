@@ -65,8 +65,9 @@ disagree within a month, and the disagreement gets found by a user.
 | [Segments](https://claude-status.virajp.dev/segments/)     | every segment, what it draws, and when it sits out     |
 | [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --debug`, and the questions it answers  |
 
-The [behaviour contract](docs/spec/statusline-behaviour.md) is the source of
-truth for implementers, and is not user documentation.
+Implementing against it? Behaviour is pinned by the test suite, and
+[docs/decisions.md](docs/decisions.md) records why each decision was taken —
+including the ones that were later reversed, and why they changed.
 
 ## Contributing
 

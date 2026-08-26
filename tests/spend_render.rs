@@ -1,7 +1,7 @@
 //! The render path's side of the spend subsystem: what a render reads, what it
 //! draws, and what it spawns.
 //!
-//! These are the contract's §7 acceptance criteria, and every one of them is
+//! These are the spend segment's acceptance criteria, and every one of them is
 //! about a *negative* — that the render did **not** fetch, did **not** wait,
 //! did **not** read a file it had no business reading. The observable used
 //! throughout is a stub on loopback: the detached child inherits the parent's

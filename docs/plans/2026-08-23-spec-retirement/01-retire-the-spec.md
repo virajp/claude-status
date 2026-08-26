@@ -6,7 +6,9 @@ description: Cycle plan (a diff) retiring docs/spec/statusline-behaviour.md by
   ai-plugins contract and the reference payloads — and deleting the rest.
 status: active
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
+  docs/usage-mirror-contract.md,
+  tests/fixtures/README.md,
 ]
 requires: [
   docs/plans/2026-08-23-config-and-cli/01-typed-config.md,
@@ -38,11 +40,11 @@ in the tree because every other plan writes to this file.
 `docs/spec/statusline-behaviour.md` is 1333 lines across fourteen sections,
 maintained by **nine strike-through amendment blocks** rather than rewrites.
 
-**It has stopped being reliable.** The audit in
-[`docs/spec/DRIFT-2026-08-23.md`](../../spec/DRIFT-2026-08-23.md) validated
-every section against the code and found five claims that are actively wrong — a
-fixture that does not run (§12), a precedence order that contradicts the config
-order it claims to print (§3), a data-preservation rule the code inverts (§3), a
+**It has stopped being reliable.** The audit in `docs/spec/DRIFT-2026-08-23.md`
+— deleted with the spec in step 6, and in git history — validated every section
+against the code and found five claims that are actively wrong — a fixture that
+does not run (§12), a precedence order that contradicts the config order it
+claims to print (§3), a data-preservation rule the code inverts (§3), a
 test-isolation recipe that isolates nothing (§10), and a keychain kill-switch
 superseded by `46ab142` and never updated (§7). It also found two code defects,
 fixed separately.
@@ -361,6 +363,56 @@ Test count is **584**, up two from 582.
 preview's measurement set. Checked — website/02 measures the preview against
 `tests/golden/*.txt`, not against the payload files, and the site transcribes no
 payload of its own. Nothing to re-point; no gap.
+
+## Step 5 — references re-pointed, walked 2026-08-27
+
+**The step's own inventory was short by an order of magnitude.** It names "the
+three code comments that cite contract sections by number". There were
+**twenty-eight** citations across `src/` and `tests/`, and two references the
+step does not mention at all — one of them user-facing.
+
+| Found                                      | Where                                                                                                    | Now                                                                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **14 `covers:` entries**, not ten          | nine plan docs **and four folder `index.md`s** and this plan                                             | `docs/decisions.md`; this plan and its index name the three documents they produced                    |
+| **a live link on the shipped site**        | `site/content/_index.md` sent every reader to the contract on GitHub                                     | the decision record. It would have 404'd the moment step 6 ran, on the page users actually land on     |
+| **a link in the issue forms**              | `.github/ISSUE_TEMPLATE/config.yml`, offered to anyone about to file a bug                               | the site's Segments page — the user-facing answer to "what is it meant to do"                          |
+| **a fourth code comment**, not three       | `src/_shared/text.rs` carried a markdown link reference to the contract                                  | `docs/decisions.md`                                                                                    |
+| **28 `contract §N` citations**             | `lib.rs`, `app.rs`, `_shared/{mod,proc,json,text}.rs`, `git.rs`, `config/*`, `render/*`, five test files | the fact stated plainly, the test that pins it, or `docs/decisions.md`                                 |
+| **five markdown links to the drift audit** | which step 6 deletes together with the spec                                                              | unlinked. The *mention* is a record and stays; the *link* is a reference to a file that will not exist |
+
+The three the step did name — `schedule.rs`, `subagent.rs`,
+`defaults_integrity.rs` — each now cites the test that holds the behaviour, by
+test name.
+
+**`tests/site.rs` had a guard that would have failed on step 6 by design.**
+`the_readme_and_the_behaviour_contract_name_the_same_site` asserted the contract
+names the site, as the gate for this very cycle. It is now
+`every_doc_that_sends_a_user_to_the_site_names_the_same_address`, covering the
+readme and the issue-form config — the surviving pair, one of which this step
+only just pointed at the site.
+
+### Criterion 1 cannot be met as written, and the resolution is on the record
+
+The criterion asks that `grep -rn 'statusline-behaviour'` return nothing outside
+`docs/plans/archived/`. **A plan whose step 6 is "delete this file" has to name
+the file**, and so does the provenance line of each document harvested out of
+it. Read literally, the criterion deletes its own explanation — the same trap
+`tests/e2e.rs` already documented for the `--refresh` rename, and it is resolved
+the same way.
+
+**The line drawn is between a reference and a record.** A reference points at
+the file as a live source of truth and must go; a record names it as history and
+stays. What that leaves:
+
+- **Nothing outside `docs/` names it at all** — not `src/`, not `tests/`, not
+  the site, not the workflows, not the issue forms.
+- Inside `docs/`, only `docs/plans/` (the cycle that deletes it, plus landed
+  plans recording what they were diffs against) and two provenance lines, in
+  `decisions.md` and `usage-mirror-contract.md`, saying where their content came
+  from.
+- **No `covers:` names it**, which is criterion 7 and is met in full.
+
+Suite unchanged at **584**; the site builds.
 
 ## Gaps surfaced during execution
 

@@ -8,9 +8,14 @@ status: stable
 
 # Cycle plans
 
-The Rust rewrite of the Claude Code statusline. Each plan is a diff against
-[the behaviour contract](../spec/statusline-behaviour.md), and each ends at
-something runnable.
+The Rust rewrite of the Claude Code statusline. Each plan is a diff against the
+desired state, and each ends at something runnable.
+
+That desired state used to be one behaviour contract. The `spec-retirement`
+cycle split it by what each part is *for* — the site describes the product,
+[the decision record](../decisions.md) carries the reasoning, and behaviour is
+pinned by the suite — because a single document restating what the tests already
+held is the thing that drifted.
 
 ## Active
 
@@ -66,8 +71,8 @@ config generator with a fixture-gated live preview.
 
 Rehome the decision record, the `ai-plugins` contract and the reference
 payloads, then delete the behaviour contract. **Last, and gated on the site
-covering what it replaces** — see [the drift audit](../spec/DRIFT-2026-08-23.md)
-for why it is retired rather than repaired.
+covering what it replaces** — the plan's own *Current state* section records why
+it is retired rather than repaired.
 
 ### Cross-folder dependencies
 
@@ -160,11 +165,13 @@ renders. The evaluation is recorded in the
 `virajp/ai-plugins` and pointing that repo's docs at this one. A different
 repository, gated on a shipped release.
 
-Contract §8's usage mirror and `$AI_PLUGINS_USAGE_DIR` are **explicitly
-unchanged** by every plan in the tree — it is a live contract with that repo.
+The [usage mirror](../usage-mirror-contract.md) and `$AI_PLUGINS_USAGE_DIR` are
+**explicitly unchanged** by every plan in the tree — it is a live contract with
+that repo.
 
-**Code signing and notarisation.** Deferred by §9 and still unowned. More
-visible with a Homebrew tap, since people expect a brew-installed binary to be
-signed, and it is not.
+**Code signing and notarisation.** Still unowned, and recorded as such in the
+[decision record](../decisions.md#still-unowned-code-signing-and-notarisation).
+More visible with a Homebrew tap, since people expect a brew-installed binary to
+be signed, and it is not.
 
 **Linux.** See above.

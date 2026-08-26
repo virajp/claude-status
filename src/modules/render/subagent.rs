@@ -87,9 +87,12 @@ pub fn type_glyph<'a>(kind: &str, config: &'a Config) -> &'a str {
 /// The terminal width the description budget is computed from:
 /// `payload.columns` → `$COLUMNS` → `80`.
 ///
-/// The contract mentions neither the env var nor the default. Zero falls
-/// through at each rung rather than winning, because the original chained them
-/// with `||`.
+/// Zero falls through at each rung rather than winning, because the original
+/// chained them with `||`. Pinned by `columns_resolve_payload_then_env_then_eighty`.
+///
+/// This comment is the record: the retired contract described the payload field
+/// and mentioned neither the env var nor the default, so the ladder existed in
+/// the code and nowhere else.
 pub fn columns(payload: &Value, env_columns: Option<&str>) -> f64 {
     let usable = |n: &f64| *n != 0.0 && !n.is_nan();
     let from_payload = payload.get("columns").and_then(js_number).filter(usable);

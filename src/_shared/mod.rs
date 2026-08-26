@@ -7,7 +7,7 @@ pub mod proc;
 pub mod text;
 pub mod time;
 
-/// **The stderr chokepoint** — contract §4a's fifth surface.
+/// **The stderr chokepoint** — the fifth of the five filter surfaces.
 ///
 /// Everything this binary writes to stderr goes through here, sanitized. stderr
 /// is a terminal like stdout, and the diagnostics carry exactly the things most

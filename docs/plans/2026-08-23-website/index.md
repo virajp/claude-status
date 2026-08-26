@@ -6,7 +6,7 @@ description: Two ordered plans that build claude-status.virajp.dev as a Zola
   with a live bar preview.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 timestamp: 2026-08-23T14:20:00Z
 tags: [ website, zola, cloudflare, docs, config-generator ]

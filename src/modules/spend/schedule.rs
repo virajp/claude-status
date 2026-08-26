@@ -21,12 +21,17 @@ pub enum Decision {
 
 /// Should a render spawn a refresh child?
 ///
-/// The **24-hour stretch**, stated with its conditions because the contract
-/// gives only the conclusion: the interval stretches to a day when `show` is
-/// `auto` **and** a cache exists **and** it records a plan **and** that plan is
-/// not team/enterprise. A cache with *no plan recorded* uses the normal
-/// interval — the plan tag comes from the very fetch being scheduled, so a
-/// machine that has never learnt its plan must keep asking at full rate.
+/// The **24-hour stretch**, stated with its conditions rather than as the
+/// conclusion alone: the interval stretches to a day when `show` is `auto`
+/// **and** a cache exists **and** it records a plan **and** that plan is not
+/// team/enterprise. A cache with *no plan recorded* uses the normal interval —
+/// the plan tag comes from the very fetch being scheduled, so a machine that
+/// has never learnt its plan must keep asking at full rate.
+///
+/// All four conditions are pinned by `the_stretch_needs_all_four_conditions`
+/// below; the day boundary by `a_stretched_cache_still_refreshes_after_a_day`.
+/// This used to cite a contract that gave only the conclusion, which is how the
+/// conditions came to live in one place and be applied in another.
 ///
 /// It exists because gate 4 hides the segment for Pro/Max seats, but a seat can
 /// become a team seat, so the machine still re-checks daily.

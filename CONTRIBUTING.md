@@ -64,10 +64,10 @@ with.
 names everything a new platform has to touch — two places that do *not* derive
 from the table, so adding one is never a one-line change.
 
-[Contract §9](docs/spec/statusline-behaviour.md) is the durable record of why
-the set is one row, and of the bar any new target has to clear: a native runner
-that **builds and runs the suite**, because a binary that is built but never
-executed is a claim nobody checked.
+[Distribution, in the decision record](docs/decisions.md#11-distribution) is the
+durable account of why the set is one row, and of the bar any new target has to
+clear: a native runner that **builds and runs the suite**, because a binary that
+is built but never executed is a claim nobody checked.
 
 ### Building it elsewhere anyway
 
@@ -112,7 +112,8 @@ raw binary beside it, and a `SHA256SUMS` covering both. The tarball is what a
 Homebrew formula consumes; the raw binary is for anyone who wants it directly.
 `distribution/01` retired the npm channel and deleted the TypeScript installer,
 the Node toolchain and the OIDC trusted-publishing setup with it — see
-[contract §9](docs/spec/statusline-behaviour.md)'s fifth amendment for why.
+[npm is retired as a channel](docs/decisions.md#npm-is-retired-as-a-channel) for
+why.
 
 Both asset names come from `asset_name()` in
 `.config/mise/tasks/_scripts/_rust`, driven by `supported_targets`, so adding a
@@ -168,9 +169,10 @@ brew install --formula virajp/tap/claude-status
 
 Homebrew 6 requires explicit trust for the **formula**, not merely for the tap,
 so qualifying the name fully does not avoid it — there is no one-command
-install. This file previously claimed there was; see contract §9's correction of
-2026-08-26 for how that got through, which is worth reading before writing any
-other "this is the command" line here.
+install. This file previously claimed there was; see
+[the correction](docs/decisions.md#the-install-is-two-commands-and-neither-is-avoidable)
+for how that got through, which is worth reading before writing any other "this
+is the command" line here.
 
 Trust is recorded in `~/.homebrew/trust.json` and is a one-time step per
 machine, not per upgrade. That is also why it is easy to get wrong: once you
@@ -220,7 +222,9 @@ the url out of the release, as above, is the only thing that prevents it.
   one.
 - **Formatting** is dprint's job and **correctness** is clippy's; the two do not
   overlap. `mise run code:format` and `mise run code:lint`.
-- **Docs** that describe behaviour belong in
-  [the contract](docs/spec/statusline-behaviour.md), which records decisions
-  with their reasoning and amends rather than rewrites. Cycle plans live under
-  `docs/plans/`.
+- **Docs** go to whichever of three homes fits, and **no document restates
+  behaviour a test already holds** — that restatement is what drifted last time.
+  Behaviour is pinned by the suite and by the comment beside the code;
+  **decisions** and their reasoning go in
+  [docs/decisions.md](docs/decisions.md); the **user-facing** description is the
+  site, under `site/`. Cycle plans live under `docs/plans/`.

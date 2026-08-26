@@ -1,7 +1,7 @@
 //! The three config layers, deep-merged low → high.
 //!
-//! **Deviation from the contract:** it describes two file layers, and a machine
-//! with neither renders blank. Here the shipped defaults are embedded as a
+//! **Two file layers were the original design, and a machine with neither
+//! rendered blank.** Here the shipped defaults are embedded as a
 //! third, lowest layer, so a cold start still draws a full bar — and with the
 //! `config-relocation` cycle that is the *supported* state rather than a
 //! degraded one: no file has to exist anywhere for the bar to be complete.
@@ -49,12 +49,12 @@ pub const REPO_CONFIG_FILE_NAME: &str = "claude-status.json";
 ///
 /// The repo layer existed to name the project. Letting it override styling
 /// made every repo a place where the bar could look different for reasons
-/// nobody could find — so §3's three-layer merge is deliberately **narrowed**
-/// here, and the narrowing is a reduction of the contract rather than a
-/// clarification of it.
+/// nobody could find — so the three-layer merge is deliberately **narrowed**
+/// here. That narrowing is a *reduction* of what the layer could once do,
+/// not a clarification of it: it used to be able to override anything.
 ///
-/// (The cycle plan cites this as §2 throughout. §2 is *Input contracts*; the
-/// merge is §3. Corrected here rather than copied.)
+/// Both halves of the reversal, including the caps clamp it un-took, are in
+/// `docs/decisions.md`.
 pub const REPO_LAYER_KEY: &str = "projectName";
 
 /// Not a setting: a pointer that buys the file editor completions. The shipped

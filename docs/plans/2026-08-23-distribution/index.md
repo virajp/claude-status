@@ -6,7 +6,7 @@ description: Three ordered plans that delete the npm installer, ship a Homebrew
   chain.
 status: done
 covers: [
-  docs/spec/statusline-behaviour.md,
+  docs/decisions.md,
 ]
 timestamp: 2026-08-23T14:10:00Z
 tags: [ distribution, homebrew, npm, release, ci, tap ]
