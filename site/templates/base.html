@@ -218,11 +218,18 @@
       {% block content %}{% endblock content %}
     </main>
 
+    {# External, so both open away from the page — the same rule
+       `external_links_target_blank` applies to every link in `content/`. That
+       setting does not reach templates, so these two say it themselves. #}
     <footer class="site-footer">
       <p>
-        <a href="{{ config.extra.repo_url }}">Source on GitHub</a>
+        <a href="{{ config.extra.repo_url }}" target="_blank" rel="noopener noreferrer">
+          Source on GitHub<span class="visually-hidden"> (opens in a new tab)</span>
+        </a>
         &middot;
-        <a href="{{ config.extra.repo_url }}/blob/main/LICENSE">MIT</a>
+        <a href="{{ config.extra.repo_url }}/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
+          MIT<span class="visually-hidden"> (opens in a new tab)</span>
+        </a>
       </p>
     </footer>
 

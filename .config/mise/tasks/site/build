@@ -148,6 +148,68 @@ for must_keep in sitemap.xml robots.txt; do
 done
 
 # ---------------------------------------------------------------------------
+# EXTERNAL LINKS OPEN AWAY FROM THE PAGE
+# ---------------------------------------------------------------------------
+#
+# Checked in the BUILT output rather than in the sources, because the two
+# halves are produced by different mechanisms and only the output has both:
+# markdown links get their attributes from `external_links_target_blank` in
+# `config.toml`, and template links carry them by hand. A source-level check
+# would have to know which file a link came from; this just reads the result.
+#
+# `rel` is the half worth failing over. Without `noopener` the opened tab gets
+# a handle on this one through `window.opener` and can navigate it.
+print_header "Checking external links open in a new tab ..."
+
+# One pass over every page, emitting `<file>\t<anchor>` per external link, so
+# a page with several links on one source line is still checked link by link.
+# `$ARGV` is the file perl is currently reading.
+anchors="$(find "${SITE_DIR}/public" -name '*.html' -exec perl -ne \
+  'while (m{(<a\s[^>]*href="https?://[^>]*>)}g) { print "$ARGV\t$1\n" }' {} +)"
+
+offenders=0
+checked=0
+tab="$(printf '\t')"
+while IFS="${tab}" read -r page anchor; do
+  [ -n "${anchor}" ] || continue
+  case "${anchor}" in
+    *"${BASE_URL}"*) continue ;;  # a self-link that kept its prefix
+  esac
+  checked=$((checked + 1))
+  case "${anchor}" in
+    *'target="_blank"'*) ;;
+    *)
+      print_error "no target=_blank: ${page#"${SITE_DIR}/public/"} -> ${anchor}"
+      offenders=$((offenders + 1))
+      continue
+      ;;
+  esac
+  case "${anchor}" in
+    *noopener*) ;;
+    *)
+      print_error "no rel=noopener: ${page#"${SITE_DIR}/public/"} -> ${anchor}"
+      offenders=$((offenders + 1))
+      ;;
+  esac
+done <<EOF
+${anchors}
+EOF
+
+if [ "${offenders}" != "0" ]; then
+  print_error "${offenders} external link(s) do not open in a new tab"
+  exit 1
+fi
+
+# A scan of nothing passes. This site has external links on nearly every page,
+# so a count of zero means the anchor pattern stopped matching -- not that the
+# links became compliant.
+if [ "${checked}" -lt 10 ]; then
+  print_error "only ${checked} external link(s) were examined — the scan has stopped finding them"
+  exit 1
+fi
+echo "  ${checked} external links, all opening in a new tab"
+
+# ---------------------------------------------------------------------------
 # FINGERPRINTING
 # ---------------------------------------------------------------------------
 #
