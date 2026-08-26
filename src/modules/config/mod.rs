@@ -820,7 +820,7 @@ fn default_symbols() -> BTreeMap<String, String> {
 /// gives.
 fn default_type_symbols() -> BTreeMap<String, String> {
     pairs([
-        ("_default", "\u{f544}"),
+        ("_default", "\u{f1b2}"),
         ("local_agent", "\u{f109}"),
         ("cloud_agent", "\u{f0c2}"),
         ("remote_agent", "\u{f0c2}"),

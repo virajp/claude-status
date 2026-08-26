@@ -70,7 +70,9 @@ CONFIGURATION:
     defaults compiled into this binary, and that is a supported state.
 
     THE PER-REPO LAYER sets exactly one key: "projectName", the name the
-    `project` segment draws for that repository. Every other key in it is
+    `project` segment draws for that repository. You rarely need it: with no
+    name set anywhere the segment already draws the git root's directory name,
+    and this key only calls it something else. Every other key in it is
     ignored, and --debug names the ones it dropped. Write it by hand:
 
       {

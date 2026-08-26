@@ -572,6 +572,58 @@ fn the_readme_is_a_pointer_and_not_a_second_configuration_reference() {
     assert!(readme.contains("https://claude-status.virajp.dev"), "readme.md no longer links to the site");
 }
 
+/// **Every image the readme shows is in this repository, and resolves.**
+///
+/// Both used to be absolute URLs on `cdn.virajp.dev`, chosen when
+/// `claude-status.virajp.dev` did not resolve. Two things retired that: the
+/// domain resolves now, and the site's own copies are FINGERPRINTED at build
+/// time, so their URLs change every release and a readme pointing at one would
+/// rot on the next deploy. The tracked copies under `assets/` are the stable
+/// address, and this is what keeps them that way.
+///
+/// It checks both directions, because each fails differently and silently: an
+/// external host is a picture that vanishes when someone else's CDN changes,
+/// and a relative path with no file behind it is a broken image on the
+/// project's front page — which no test reading only markdown would notice.
+#[test]
+fn every_readme_image_is_tracked_in_this_repository() {
+    let readme = read("readme.md");
+
+    // `![alt](path)` across newlines — the bar's alt text is five lines long —
+    // and `<img src="path">`, which the lockup uses because it needs a width.
+    let mut referenced = Vec::new();
+    for (open, close) in [("](", ")"), ("<img src=\"", "\"")] {
+        let mut rest = readme.as_str();
+        while let Some(at) = rest.find(open) {
+            rest = &rest[at + open.len()..];
+            let Some(end) = rest.find(close) else { break };
+            let target = &rest[..end];
+            if target.ends_with(".png") || target.ends_with(".svg") || target.ends_with(".jpg") {
+                referenced.push(target.to_string());
+            }
+        }
+    }
+
+    assert!(
+        referenced.len() >= 2,
+        "found {} image(s) in readme.md — it carries at least the lockup and the bar, so this scan has stopped matching",
+        referenced.len()
+    );
+
+    for target in referenced {
+        assert!(
+            !target.starts_with("http://") && !target.starts_with("https://"),
+            "readme.md shows {target} from another host. The tracked copy under `assets/` is the one \
+             that cannot rot — the site's copies are fingerprinted and change address every release"
+        );
+        assert!(
+            root().join(&target).is_file(),
+            "readme.md shows {target}, which is not a file in this repository — the project's front page \
+             renders a broken image"
+        );
+    }
+}
+
 /// The site is where users are sent, so the two places that send them there
 /// have to agree on the address. `--help`'s copy is pinned by `src/_runtime/`
 /// and by `tests/e2e.rs`; this is the pair the *docs* own.
@@ -628,7 +680,7 @@ fn the_layout_carries_the_static_marks_of_a_readable_phone_page() {
     // true. What the criterion was ever about is right here — the usual mobile
     // nav failure is a hamburger behind a script, and a nav that cannot be
     // opened without one is broken for everybody the script fails for.
-    // `exactly_one_tracked_path_under_site_may_carry_a_script` holds the rest.
+    // `only_allowlisted_paths_under_site_may_carry_a_script` holds the rest.
     assert!(
         !nav.contains("<script"),
         "the nav has grown a script — a hamburger behind JavaScript is the failure this criterion names: {nav}"
@@ -645,19 +697,27 @@ fn the_layout_carries_the_static_marks_of_a_readable_phone_page() {
 ///
 /// So it is stronger than what it replaced, in three ways:
 ///
-/// 1. **One allowlisted path**, named below. Every other tracked file fails.
+/// 1. **A named allowlist**, below. Every other tracked file fails.
 /// 2. **Markdown is scanned too.** The old version read `.html` and `.css`
 ///    only, so a `<script>` written into a content page — which zola passes
 ///    through verbatim — went straight past it. That hole is closed here.
-/// 3. **The allowlisted file must actually carry one.** An allowlist entry
+/// 3. **Each allowlisted file must actually carry one.** An allowlist entry
 ///    that has gone stale is a permission nobody is using and nobody will
 ///    notice widening.
+///
+/// It held ONE path until the copy buttons arrived. A button on every code
+/// block needs a script on every page, so "one script, one page" was going to
+/// end whichever way that was built; what survives is the property that
+/// actually matters, which is that no script arrives unnoticed. The entry was
+/// added deliberately, and the count is not the point — the review is.
 #[test]
-fn exactly_one_tracked_path_under_site_may_carry_a_script() {
-    /// The config generator's module tag, and nothing else. It lives in a
-    /// template rather than in markdown so the content stays script-free and
-    /// the exception is one file a reviewer can read in full.
-    const ALLOWED: &[&str] = &["site/templates/generate.html"];
+fn only_allowlisted_paths_under_site_may_carry_a_script() {
+    /// Both entries are templates rather than markdown, so the content stays
+    /// script-free and every exception is a file a reviewer can read in full.
+    ///
+    /// - `base.html` — the copy buttons, on every page.
+    /// - `generate.html` — the config generator's module.
+    const ALLOWED: &[&str] = &["site/templates/base.html", "site/templates/generate.html"];
 
     let mut sources: Vec<String> = tracked_under("site/", ".html");
     sources.extend(tracked_under("site/", ".css"));
@@ -677,8 +737,8 @@ fn exactly_one_tracked_path_under_site_may_carry_a_script() {
     assert_eq!(
         offenders,
         Vec::<String>::new(),
-        "a second script arrived under site/. The layout, the nav and every page's content are supposed \
-         to work without JavaScript; exactly one path is allowed to load any, and it is {ALLOWED:?}"
+        "an unallowlisted script arrived under site/. The layout, the nav and every page's content are \
+         supposed to work without JavaScript; only these paths may load any, and they are {ALLOWED:?}"
     );
 
     // The other direction. Without this the allowlist could name a file that
@@ -694,6 +754,48 @@ fn exactly_one_tracked_path_under_site_may_carry_a_script() {
             "{allowed} is allowlisted for a script and no longer has one — remove the entry rather than leaving a spare permission"
         );
     }
+}
+
+/// **The two tracked copies of the screenshot are the same bytes.**
+///
+/// There are two, and neither is derivable from the other at build time:
+///
+/// - `site/static/statusline.png` — zola copies `static/` into the build and
+///   reads nothing outside it, so the landing page cannot reference `assets/`.
+/// - `assets/statusline.png` — what the readme shows, by relative path.
+///   GitHub renders the readme from the repository, and the site's copy is
+///   fingerprinted at build time, so its URL changes every release.
+///
+/// So they are copied by hand, and the failure is that somebody re-renders the
+/// bar and updates ONE. Nothing else would say so: both files are valid PNGs
+/// of the right size, both pages render, and the two images are only ever seen
+/// on different sites. It has already happened once in this repository's
+/// history — the maintainer's re-render had to be swapped into three places,
+/// and the readme's was the one that lagged.
+///
+/// Compared by bytes rather than by dimensions. A re-render at the same size
+/// with different content is exactly the drift worth catching, and dimensions
+/// would not see it.
+#[test]
+fn the_two_tracked_screenshots_are_the_same_image() {
+    const COPIES: [&str; 2] = ["site/static/statusline.png", "assets/statusline.png"];
+
+    let bytes: Vec<Vec<u8>> = COPIES
+        .iter()
+        .map(|rel| std::fs::read(root().join(rel)).unwrap_or_else(|e| panic!("{rel} is missing: {e}")))
+        .collect();
+
+    assert_eq!(
+        bytes[0],
+        bytes[1],
+        "{} and {} have drifted — {} vs {} bytes. They are copied by hand because zola cannot reach \
+         outside `static/` and the readme cannot reference a fingerprinted URL, so re-rendering the \
+         bar means updating BOTH",
+        COPIES[0],
+        COPIES[1],
+        bytes[0].len(),
+        bytes[1].len()
+    );
 }
 
 /// The screenshot the landing page depends on is present and is a real PNG.
@@ -774,6 +876,189 @@ fn every_landing_bullet_opens_with_a_complete_bold_title() {
             "landing bullet's bold title `{title}` does not end a sentence, so the card body starts mid-clause: {bullet}"
         );
     }
+}
+
+/// **Every `@font-face` names a file that exists and is really a woff2.**
+///
+/// The brand face is IBM Plex, self-hosted rather than pulled from Google. That
+/// choice has one failure mode the build cannot see: zola copies `static/`
+/// through without reading it, so a deleted or truncated font is a green build
+/// that silently falls back to system mono — and the wordmark, the headings and
+/// every nav item are mono by design, so the page would look *plausible* while
+/// being off-brand everywhere at once.
+///
+/// Checked by parsing the stylesheet's own `src: url(...)` rather than a list
+/// kept here, so adding a weight cannot leave the guard behind.
+#[test]
+fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
+    let css = read("site/static/style.css");
+
+    let refs: Vec<&str> = css
+        .match_indices("url(\"")
+        .map(|(i, _)| {
+            let rest = &css[i + 5..];
+            &rest[..rest.find('"').expect("the url literal closes")]
+        })
+        .filter(|u| u.ends_with(".woff2"))
+        .collect();
+
+    assert!(
+        refs.len() >= 4,
+        "expected at least the four Plex faces, found {} — has the stylesheet stopped self-hosting?",
+        refs.len()
+    );
+
+    for rel in refs {
+        let path = root().join("site/static").join(rel);
+        let bytes = std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("style.css asks for {rel}, which is not there: {e}"));
+
+        // `wOF2`. A 404 page or an LFS pointer saved under the right name is
+        // the realistic way this goes wrong, and both start with something
+        // else.
+        assert!(
+            bytes.starts_with(b"wOF2"),
+            "{rel} is not a woff2 — the browser will ignore it and fall back to system mono"
+        );
+
+        // The file's own declared length, against what is actually on disk.
+        //
+        // This replaced a `len() > 4096` floor, which was a stand-in for "not
+        // truncated" and stopped being usable once a face could legitimately
+        // be small: `claude-status-glyphs.woff2` is 25 glyphs and 3.2KB, and a
+        // threshold tuned to text faces would have rejected it. Raising a
+        // number until the real file passes is how a guard becomes a formality.
+        //
+        // The woff2 header carries the total file size at offset 8, so a
+        // truncated or padded file can be caught exactly rather than
+        // approximately — which is strictly stronger than the floor was, and
+        // needs no arbitrary constant.
+        let declared = u32::from_be_bytes(bytes[8..12].try_into().expect("a woff2 header is at least 12 bytes"));
+        assert_eq!(
+            declared as usize,
+            bytes.len(),
+            "{rel} declares {declared} bytes in its woff2 header but is {} on disk — truncated or padded",
+            bytes.len()
+        );
+    }
+}
+
+/// **Every page carries link-preview tags, and their URLs are absolute.**
+///
+/// The tags live in `base.html`, which every template extends, so this is a
+/// check on one file rather than on eight.
+///
+/// **Absolute is the whole point.** Every other URL in that file is piped
+/// through `replace(from=config.base_url)` to come out root-relative, which is
+/// right for a browser that already has an origin and useless to a crawler
+/// that does not: `/og-card.png` is not an address WhatsApp can fetch. So
+/// `og:image` and `og:url` must NOT carry the filter, and that is exactly the
+/// edit a tidying pass would make — it looks inconsistent, and the cost of
+/// making it consistent is a preview with no picture, visible only to someone
+/// sharing a link.
+///
+/// `site:build` asserts the same property against the BUILT html, where the
+/// self-link rewrite could also eat it. This is the source half.
+#[test]
+fn every_page_carries_absolute_link_preview_tags() {
+    let base = code("site/templates/base.html");
+
+    for tag in ["og:type", "og:title", "og:description", "og:url", "og:image", "og:image:width", "og:image:height"] {
+        assert!(base.contains(&format!("\"{tag}\"")), "base.html has no {tag} — a shared link unfurls with nothing");
+    }
+    for tag in ["twitter:card", "twitter:title", "twitter:image"] {
+        assert!(base.contains(&format!("\"{tag}\"")), "base.html has no {tag}");
+    }
+
+    // The two that must stay absolute. `get_url` without the root-relative
+    // filter is what makes them so.
+    for line in base.lines().filter(|l| l.contains("og:image") || l.contains("twitter:image")) {
+        if line.contains("get_url") {
+            assert!(
+                !line.contains("replace(from=config.base_url"),
+                "the preview image URL is made root-relative, so a crawler has nothing to resolve it against: {}",
+                line.trim()
+            );
+        }
+    }
+
+    // The card itself: a real PNG at the size the tags promise. A missing or
+    // mis-sized image is a preview that silently renders as a grey box.
+    let card = root().join("site/static/og-card.png");
+    let bytes = std::fs::read(&card).expect("site/static/og-card.png is missing — regenerate it with .config/og-card.py");
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "og-card.png is not a PNG");
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+    assert_eq!(
+        (width, height),
+        (1200, 630),
+        "og-card.png is {width}x{height}, but base.html declares 1200x630 — the tags and the file must agree"
+    );
+}
+
+/// **Every asset that can change between releases is fingerprinted, and the
+/// two that cannot be are not.**
+///
+/// Cloudflare Pages serves the HTML `max-age=0, must-revalidate` and static
+/// assets with a lifetime of their own. Those are not the same freshness, so a
+/// returning reader gets the NEW html against an OLD stylesheet, and nothing
+/// requires the two to be compatible.
+///
+/// **This is not hypothetical.** The first production deploy of the redesign
+/// looked broken to anyone who had visited before and correct to anyone who
+/// had not: the previous stylesheet defined no `--surface-accent`, so the
+/// logo's `fill="var(--surface-accent)"` resolved to nothing and the mark
+/// rendered blank; and it had no `.hero-shot img { width: 100% }`, so the
+/// 2294px screenshot ran off the side of the page. Two symptoms, one stale
+/// file. It read as a browser bug, then as a CNAME bug, before it read as what
+/// it was.
+///
+/// A hash in the FILENAME is what makes the year-long `immutable` in
+/// `_headers` honest: changed bytes are a different address, so the old file
+/// can be held forever and never served against HTML that does not ask for it.
+///
+/// **The negative half matters as much as the positive half.**
+/// `config-generator.js` fetches the schema and the defaults by relative name
+/// at runtime, so fingerprinting those two would 404 the form — and would do
+/// it only in the built output, where no source-reading test would see it.
+#[test]
+fn the_build_fingerprints_every_asset_that_can_change() {
+    let build = read(".config/mise/tasks/site/build");
+
+    let fingerprinted = build
+        .find("for asset in style.css")
+        .map(|at| {
+            let end = build[at..].find('\n').map(|e| at + e).unwrap_or(build.len());
+            build[at..end].to_string()
+        })
+        .expect("the build no longer has a fingerprint list — this guard is scanning for nothing");
+
+    for asset in ["style.css", "copy-code.js", "config-generator.js", "statusline.png", "og-card.png"] {
+        assert!(
+            fingerprinted.contains(asset),
+            "{asset} is not fingerprinted by site:build, so it ships at a stable address with an \
+             `immutable` year on it — a changed file that no cache will ever go back for"
+        );
+    }
+
+    assert!(
+        build.contains("for font in \"${PUB}\"/fonts/*.woff2"),
+        "the fonts are no longer fingerprinted; they are named inside style.css and must be hashed before it"
+    );
+
+    // The two that must keep a stable name, because the generator fetches them
+    // by relative name at runtime.
+    for pinned in ["claude-status.schema.json", "claude-status.defaults.json"] {
+        assert!(
+            !fingerprinted.contains(pinned),
+            "{pinned} is in the fingerprint list, but `config-generator.js` fetches it by relative \
+             name — renaming it 404s the form in the built output only"
+        );
+    }
+
+    // And the header file that the whole scheme exists to make safe.
+    assert!(build.contains("_headers"), "site:build no longer writes _headers, so nothing sets the immutable year");
+    assert!(build.contains("immutable"), "_headers no longer marks the fingerprinted assets immutable");
 }
 
 // ---------------------------------------------------------------------------

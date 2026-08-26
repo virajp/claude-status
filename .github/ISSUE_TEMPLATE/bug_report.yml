@@ -1,0 +1,118 @@
+name: Bug report
+description: Something in the status line, the wiring, or the caps hook is
+  wrong.
+labels: [ "bug" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The fields below are the ones that actually triage
+        a `claude-status` bug — a version and a `--debug` report usually settle
+        it on the first pass.
+
+        `--debug` prints paths and repository names. Redact anything you would
+        rather not publish; it does not change what the report is worth.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `claude-status --version`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-route
+    attributes:
+      label: How did you install it?
+      options:
+        - Homebrew (virajp/tap)
+        - mise
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface misbehaves?
+      description: The flag you invoked, or the one Claude Code invokes for you.
+      options:
+        - "--statusline (the main bar)"
+        - "--subagent (the subagent panel)"
+        - "--caps-hook"
+        - "--configure"
+        - "--refresh"
+        - "--debug"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw. A screenshot of the bar is worth pasting.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: debug
+    attributes:
+      label: "`claude-status --debug`"
+      description: >-
+        The relevant part of the report. If you are unsure which part is
+        relevant, paste all of it.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: config-layers
+    attributes:
+      label: Which config layers are in play?
+      description: >-
+        Running from the compiled defaults with no file anywhere is a supported
+        state — say so rather than leaving this blank.
+      options:
+        - label: "`~/.config/claude-status/config.json` (the user layer)"
+        - label: "`<repo-root>/.config/claude-status.json` (the per-repo layer)"
+        - label: Neither — no config file anywhere
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and architecture
+      placeholder: "15.6, Apple Silicon"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal, and whether a Nerd Font is installed
+      description: >-
+        The powerline separators and glyphs need a Nerd Font. Missing glyphs are
+        almost always this.
+      placeholder: "Ghostty, JetBrainsMono Nerd Font installed"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I am on the latest release, or I have said above why I am not.
+          required: true

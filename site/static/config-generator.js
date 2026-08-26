@@ -113,6 +113,26 @@ function isPlainObject(value) {
 }
 
 /**
+ * How many settings a subtree of the EMITTED config accounts for.
+ *
+ * An array counts as one, matching what the config actually does with it:
+ * `deep_merge` replaces an array wholesale, so a touched layout is one change
+ * however many rows it has, not one per row.
+ */
+export function countLeaves(value) {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  if (!isPlainObject(value)) {
+    return 1;
+  }
+  return Object.values(value).reduce(
+    (total, child) => total + countLeaves(child),
+    0,
+  );
+}
+
+/**
  * Structural equality, with a missing key read as `null`.
  *
  * Key ORDER is deliberately not part of it: `serde_json::Value` compares its
@@ -598,17 +618,92 @@ function element(tag, attributes = {}, children = []) {
 }
 
 /**
+ * The inline markdown the schema's descriptions actually use, and nothing
+ * else: `` `code` `` and `**bold**`.
+ *
+ * These strings were injected as PLAIN TEXT until now, so 48 hints on the
+ * built page showed their own backticks and one showed its asterisks — the
+ * schema is written in markdown because it is read as markdown everywhere
+ * else, and this was the one consumer rendering it raw.
+ *
+ * Returns DOM NODES rather than a string of HTML. The descriptions are
+ * repository content rather than anything a visitor types, so this is not a
+ * live injection hole — but a renderer that reaches for `innerHTML` is one
+ * schema edit away from being one, and building nodes costs nothing here. It
+ * is also why this is nine lines of regex rather than a markdown dependency:
+ * the tree has no package manager, and two inline forms do not need one.
+ */
+function inlineMarkdown(text) {
+  const out = [];
+  // The backtick is written `\x60` rather than literally, and that is not
+  // style. `tests/site.rs::string_literals` lexes this file to find config-key
+  // literals, and it understands quotes and comments but not regex literals —
+  // so a literal backtick here reads as the start of a template string, the
+  // scan desynchronises, and it starts reporting key names out of COMMENTS it
+  // would otherwise have skipped. Escaping leaves the pattern with no quote
+  // character of any kind, which the lexer can walk straight past.
+  const pattern = /\x60([^\x60]+)\x60|\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) {
+      out.push(document.createTextNode(text.slice(last, match.index)));
+    }
+    out.push(
+      match[1] === undefined
+        ? element("strong", { text: match[2] })
+        : element("code", { text: match[1] }),
+    );
+    last = pattern.lastIndex;
+  }
+  if (last < text.length) {
+    out.push(document.createTextNode(text.slice(last)));
+  }
+  return out;
+}
+
+/** Past this, a group's description is reference prose rather than form help. */
+const HINT_INLINE_MAX = 140;
+
+/**
  * A field's schema `description`, shown beside it — criterion 7's whole point:
  * a form built from a schema with no descriptions is a form of unlabelled
- * boxes, which is why this cycle put the ten missing ones back at the source.
+ * boxes, which is why an earlier cycle put the ten missing ones back at the
+ * source.
  *
  * A `<span>` and not a `<p>`, because a row is a `<label>` and a `<label>`'s
  * content model is phrasing content. The stylesheet makes it a block.
+ *
+ * `collapsible` is only ever passed for a GROUP's description, and the reason
+ * is that same content model: a group's hint is a child of `<fieldset>`, where
+ * `<details>` is valid, while a row's is inside a `<label>`, where it is not —
+ * and where a `<summary>` would also steal the click that belongs to the
+ * input. Groups are where the problem actually is: `caps` opened with a
+ * seven-line implementation paragraph before its first control. The first
+ * sentence stays; the rest goes behind a disclosure.
  */
-function hint(text) {
-  return text
-    ? element("span", { class: "gen-hint", text })
-    : document.createTextNode("");
+function hint(text, { collapsible = false } = {}) {
+  if (!text) {
+    return document.createTextNode("");
+  }
+  const trimmed = text.trim();
+
+  const split = collapsible && trimmed.length > HINT_INLINE_MAX
+    ? /^(.*?[.?!])\s+(.+)$/s.exec(trimmed)
+    : null;
+
+  if (!split) {
+    return element("span", { class: "gen-hint" }, inlineMarkdown(trimmed));
+  }
+
+  return element("span", { class: "gen-hint" }, [
+    ...inlineMarkdown(split[1]),
+    " ",
+    element("details", { class: "gen-more" }, [
+      element("summary", { text: "why this exists" }),
+      element("span", { class: "gen-more-body" }, inlineMarkdown(split[2])),
+    ]),
+  ]);
 }
 
 function valueAt(root, path) {
@@ -655,6 +750,16 @@ function start(schema, defaults, mount) {
   const shipped = Object.freeze(structuredClone(defaults));
   let current = structuredClone(defaults);
 
+  /**
+   * Which groups the reader has opened, by dotted path.
+   *
+   * Kept OUTSIDE the DOM because `restructure()` throws the whole form away and
+   * rebuilds it. Without this, adding a key to a map inside a group you had
+   * opened would collapse it under you mid-edit — the structural edit and the
+   * thing you were looking at are the same group.
+   */
+  const openGroups = new Set();
+
   const output = element("pre", { class: "gen-output" });
   const note = element("p", { class: "gen-note" });
   const fields = element("div", { class: "gen-fields" });
@@ -694,6 +799,18 @@ function start(schema, defaults, mount) {
       } came out complete rather than as a partial edit. `
         + "Arrays and scalars replace wholesale when the layers merge, so a list has to be emitted "
         + "whole or the parts you did not touch would be lost. This is the binary's behaviour, not a bug here.";
+
+    // Every collapsed group says how much of the emitted config came from
+    // inside it, so closing one never hides an edit. Counted off `emitted`
+    // rather than off the inputs, so it means exactly what the download will
+    // contain — a value typed back to its shipped default counts as nothing,
+    // because it emits nothing.
+    for (const badge of fields.querySelectorAll(".gen-changed")) {
+      const path = badge.dataset.path.split(".").filter(Boolean);
+      const changed = countLeaves(valueAt(emitted, path));
+      badge.textContent = changed === 0 ? "" : `${changed} changed`;
+      badge.hidden = changed === 0;
+    }
   }
 
   function render() {
@@ -730,6 +847,52 @@ function start(schema, defaults, mount) {
    *
    * `label` is the row's caption — a property name, a map key, or an index.
    */
+  /**
+   * The disclosure a group's contents live behind. Appends itself to `box` and
+   * returns the node to fill.
+   *
+   * Expanded, this form is 199 controls and about 20,000 pixels — a reference
+   * with inputs in it rather than something anyone fills in. Collapsed, the
+   * legends are scannable and you open only what you came to change.
+   *
+   * `<details>` and not a scripted toggle: it is native, keyboard operable for
+   * free, and find-in-page opens it in modern browsers.
+   */
+  function collapsibleBody(box, path, count, noun) {
+    const groupKey = path.join(".");
+    const body = element("details", { class: "gen-collapse" });
+    if (openGroups.has(groupKey)) {
+      body.open = true;
+    }
+    body.addEventListener("toggle", () => {
+      if (body.open) {
+        openGroups.add(groupKey);
+      }
+      else {
+        openGroups.delete(groupKey);
+      }
+    });
+
+    body.append(
+      element("summary", {}, [
+        element("span", {
+          class: "gen-collapse-count",
+          text: `${count} ${count === 1 ? noun : noun + "s"}`,
+        }),
+        // Filled by `refreshOutput`. A collapsed group that hid an edit you
+        // made would be worse than no collapsing at all.
+        element("span", {
+          class: "gen-changed",
+          "data-path": groupKey,
+          hidden: "",
+        }),
+      ]),
+    );
+
+    box.append(body);
+    return body;
+  }
+
   function widget(field, path, label) {
     const value = valueAt(current, path);
 
@@ -737,13 +900,16 @@ function start(schema, defaults, mount) {
       case "object": {
         const box = element("fieldset", { class: "gen-group" }, [
           element("legend", { text: label }),
-          hint(field.description),
+          hint(field.description, { collapsible: true }),
         ]);
+
+        const body = collapsibleBody(box, path, field.fields.length, "setting");
+
         for (const { key, field: child } of field.fields) {
           if (!isPlainObject(valueAt(current, path))) {
             setValueAt(current, path, {});
           }
-          box.append(widget(child, [...path, key], key));
+          body.append(widget(child, [...path, key], key));
         }
         return box;
       }
@@ -961,7 +1127,7 @@ function start(schema, defaults, mount) {
 
     return element("fieldset", { class: "gen-group gen-choice" }, [
       element("legend", { text: label }),
-      hint(field.description),
+      hint(field.description, { collapsible: true }),
       select,
       inner,
     ]);
@@ -977,8 +1143,9 @@ function start(schema, defaults, mount) {
 
     const box = element("fieldset", { class: "gen-group" }, [
       element("legend", { text: label }),
-      hint(field.description),
+      hint(field.description, { collapsible: true }),
     ]);
+    const body = collapsibleBody(box, path, Object.keys(table).length, "key");
 
     for (const key of Object.keys(table)) {
       const isShipped = isPlainObject(shippedTable)
@@ -1009,7 +1176,7 @@ function start(schema, defaults, mount) {
         restructure();
       });
 
-      box.append(
+      body.append(
         element("div", { class: "gen-entry" }, [
           widget(field.entry, [...path, key], key),
           button,
@@ -1043,7 +1210,7 @@ function start(schema, defaults, mount) {
       setValueAt(current, [...path, key], blankValue(field.entry));
       restructure();
     });
-    box.append(element("div", { class: "gen-add" }, [keyInput, add]), error);
+    body.append(element("div", { class: "gen-add" }, [keyInput, add]), error);
     return box;
   }
 
@@ -1056,8 +1223,9 @@ function start(schema, defaults, mount) {
 
     const box = element("fieldset", { class: "gen-group" }, [
       element("legend", { text: label }),
-      hint(field.description),
+      hint(field.description, { collapsible: true }),
     ]);
+    const body = collapsibleBody(box, path, items.length, "row");
 
     items.forEach((_, index) => {
       const move = to => {
@@ -1090,7 +1258,7 @@ function start(schema, defaults, mount) {
         restructure();
       });
 
-      box.append(
+      body.append(
         element("div", { class: "gen-entry" }, [
           widget(field.item, [...path, index], String(index + 1)),
           element("span", { class: "gen-order" }, [up, down, remove]),
@@ -1103,7 +1271,7 @@ function start(schema, defaults, mount) {
       items.push(blankValue(field.item));
       restructure();
     });
-    box.append(element("div", { class: "gen-add" }, [add]));
+    body.append(element("div", { class: "gen-add" }, [add]));
     return box;
   }
 
@@ -1179,12 +1347,20 @@ function start(schema, defaults, mount) {
       document.createTextNode(
         "Built from the schema this site was deployed with — ",
       ),
+      // External, so it opens away from the page like every other external
+      // link here. `site:build`'s check cannot see this one: it is created at
+      // runtime, and that check reads the built HTML.
       element("a", {
         href: schema.$id ?? "#",
         text: schema.$id ?? "the published schema",
+        target: "_blank",
+        rel: "noopener noreferrer",
       }),
-      document.createTextNode(
-        ". There are no releases yet, so it is the schema on `main` at build time rather than one pinned to a version you installed.",
+      // Was "there are no releases yet", which stopped being true at v1.0.0.
+      // What is still true, and is the part worth saying, is that the schema
+      // tracks the site's deploy rather than the binary you have.
+      ...inlineMarkdown(
+        ". That tracks `main` as of the last deploy rather than the version you installed, so a key added since your release can appear here.",
       ),
     ]),
     fields,

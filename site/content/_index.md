@@ -40,19 +40,25 @@ cloned cannot raise them past what you set. See [Configure](@/configure.md).
 
 ## Getting it
 
-On Apple Silicon macOS:
+Apple Silicon macOS, with Homebrew:
 
 ```sh
-brew install virajp/tap/claude-status
+brew trust --formula virajp/tap/claude-status
+brew install --formula virajp/tap/claude-status
 claude-status --configure
 ```
 
-The fully-qualified form is the one that works — Homebrew 6 requires explicit
-trust for third-party taps, so `brew tap` followed by `brew install` does not.
-On anything else, build from source with `cargo build --release` and put the
-binary on your `PATH`.
+Or with [mise](https://mise.jdx.dev):
 
-`--configure` is the real second step, not a formality: it is what wires Claude
+```sh
+mise use --global "github:virajp/claude-status@latest"
+claude-status --configure
+```
+
+`brew trust` is not optional — Homebrew 6 will not load a third-party formula it
+has not been told to trust, so the install fails without it. You do it once.
+
+`--configure` is the real last step, not a formality: it is what wires Claude
 Code to the binary. [Install](@/install.md) covers both routes in full.
 
 ## Where to go next

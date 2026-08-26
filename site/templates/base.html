@@ -43,41 +43,214 @@
       name="description"
       content="{% block description %}{{ config.description }}{% endblock description %}"
     />
+    {#
+      Link previews — WhatsApp, Slack, iMessage, Twitter, anything that unfurls
+      a URL.
+
+      THESE URLS ARE ABSOLUTE, and are the one deliberate exception to rule 3
+      above. Every other `get_url` here is piped through `replace(...)` to come
+      out root-relative; these are not, because a crawler resolves them against
+      nothing. `/og-card.png` is not an address anyone else can fetch, and a
+      root-relative `og:image` is simply a preview with no picture.
+
+      `page` / `section` rather than the `title` block: a Tera variable set out
+      here is not reliably visible inside a block a CHILD template overrode, so
+      reading the same two fields the blocks read is the form that actually
+      works. The duplication is deliberate and is why the fallbacks match
+      `page.html`'s exactly — `page.description` falling back to
+      `config.description`.
+    #}
+    {%- if page %}
+      {%- set og_title = page.title ~ " — " ~ config.title %}
+      {%- set og_description = page.description | default(value=config.description) %}
+      {%- set og_url = page.permalink %}
+    {%- elif section %}
+      {%- set og_title = config.title %}
+      {%- set og_description = config.description %}
+      {%- set og_url = section.permalink %}
+    {%- else %}
+      {%- set og_title = config.title %}
+      {%- set og_description = config.description %}
+      {%- set og_url = config.base_url %}
+    {%- endif %}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{ config.title }}" />
+    <meta property="og:title" content="{{ og_title }}" />
+    <meta property="og:description" content="{{ og_description }}" />
+    <meta property="og:url" content="{{ og_url }}" />
+    <meta property="og:locale" content="en_GB" />
+    {# WhatsApp will not render an SVG and crops toward the centre, so this is a
+       1200x630 PNG with nothing load-bearing near an edge. The dimensions are
+       declared because WhatsApp uses them to reserve the thumbnail before the
+       image has finished arriving. Regenerate with `.config/og-card.py`. #}
+    <meta property="og:image" content="{{ get_url(path='og-card.png') }}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="claude-status — {{ config.description }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{ og_title }}" />
+    <meta name="twitter:description" content="{{ og_description }}" />
+    <meta name="twitter:image" content="{{ get_url(path='og-card.png') }}" />
+
+    {# The brand mark, from the design system's `assets/favicon.svg`. #}
+    <link rel="icon" href="{{ get_url(path='favicon.svg') | replace(from=config.base_url, to='') }}" type="image/svg+xml" />
+    {# Both faces preloaded: they are self-hosted beside the stylesheet, so the
+       browser cannot discover them until it has parsed the CSS, and a display
+       face that arrives late is the one visible reflow on this site. #}
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{{ get_url(path='fonts/ibm-plex-sans-var.woff2') | replace(from=config.base_url, to='') }}" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{{ get_url(path='fonts/ibm-plex-mono-500.woff2') | replace(from=config.base_url, to='') }}" />
+    {# Written as the plain name. `site:build` FINGERPRINTS it afterwards, so
+       what ships is `style.<hash>.css` and this href is rewritten to match.
+
+       That is load-bearing, not tidiness. Cloudflare Pages serves the HTML as
+       `max-age=0, must-revalidate` and static assets with a lifetime of their
+       own, so a returning reader can get the NEW html against an OLD
+       stylesheet — and nothing requires those two to be compatible. It is
+       exactly how the first production deploy looked broken: the previous
+       stylesheet defined no `--surface-accent`, so the logo's
+       `fill="var(--surface-accent)"` resolved to nothing and the mark rendered
+       blank, and it had no `.hero-shot img { width: 100% }`, so the 2294px
+       screenshot ran off the side of the page.
+
+       A content hash IN THE FILENAME ends that permanently: changed bytes are
+       a different file at a different address, so a cache can hold the old one
+       forever without ever being able to serve it against HTML that does not
+       ask for it. Which is what lets `_headers` mark these `immutable` for a
+       year instead of four hours. #}
     <link rel="stylesheet" href="{{ get_url(path='style.css') | replace(from=config.base_url, to='') }}" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
+    {#
+      The lockup is INLINE svg plus real text, and not an `<img>` of
+      `assets/lockup-horizontal.svg`. That asset draws its wordmark with an SVG
+      `<text>` element set in IBM Plex Mono, and an SVG referenced through
+      `<img>` cannot reach the page's fonts — it would render the wordmark in
+      whatever generic mono the browser had to hand. Inline, the mark stays
+      geometry and the wordmark is HTML, so it uses the face this site ships.
+
+      The `<svg>` is `aria-hidden` and the accessible name comes from the link,
+      so a screen reader hears the name once rather than twice.
+    #}
+    {# The bar is full-bleed so its hairline and translucency span the viewport,
+       but its CONTENTS are constrained to the same `--shell` as `<main>`.
+
+       The design's own shell leaves the header contents unconstrained. That
+       reads fine at the kit's 1180px preview viewport and comes apart above
+       about 1100px, where the wordmark sits against the window edge while the
+       heading it labels starts several hundred pixels inboard. This is the one
+       deliberate deviation from the source, and it is an alignment fix rather
+       than a restyle. #}
     <header class="site-header">
-      <a class="brand" href="{{ get_url(path='@/_index.md') | replace(from=config.base_url, to='') }}">claude-status</a>
+      <div class="site-header-inner">
+      <a class="brand" href="{{ get_url(path='@/_index.md') | replace(from=config.base_url, to='') }}" aria-label="claude-status home">
+        <svg viewBox="0 0 72 24" aria-hidden="true" focusable="false">
+          <rect width="72" height="24" rx="12" fill="var(--surface-accent)"></rect>
+          <polyline
+            points="10,12 22,12 27,5 33,19 39,12 62,12"
+            fill="none"
+            stroke="var(--text-on-accent)"
+            stroke-width="2.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></polyline>
+        </svg>
+        <span class="brand-word" aria-hidden="true"><span class="b-claude">claude</span><span class="b-status">status</span></span>
+      </a>
+
       {# Plain anchors, no JS, no disclosure widget. On a narrow screen the
          stylesheet wraps them onto their own line rather than collapsing them
-         behind a button that would need a script to open. #}
+         behind a button that would need a script to open.
+
+         `aria-current="page"` is both the accessible marker and the hook the
+         stylesheet uses for the amber underline, so the two cannot disagree. #}
       <nav aria-label="Documentation">
-        <a href="{{ get_url(path='@/install.md') | replace(from=config.base_url, to='') }}">Install</a>
-        <a href="{{ get_url(path='@/configure.md') | replace(from=config.base_url, to='') }}">Configure</a>
-        <a href="{{ get_url(path='@/generate.md') | replace(from=config.base_url, to='') }}">Generate</a>
-        <a href="{{ get_url(path='@/repo-config.md') | replace(from=config.base_url, to='') }}">Per-repo</a>
-        <a href="{{ get_url(path='@/segments.md') | replace(from=config.base_url, to='') }}">Segments</a>
-        <a href="{{ get_url(path='@/diagnosing.md') | replace(from=config.base_url, to='') }}">Diagnosing</a>
+        {% set install_url = get_url(path='@/install.md') | replace(from=config.base_url, to='') %}
+        {% set configure_url = get_url(path='@/configure.md') | replace(from=config.base_url, to='') %}
+        {% set generate_url = get_url(path='@/generate.md') | replace(from=config.base_url, to='') %}
+        {% set repo_url = get_url(path='@/repo-config.md') | replace(from=config.base_url, to='') %}
+        {% set segments_url = get_url(path='@/segments.md') | replace(from=config.base_url, to='') %}
+        {% set diagnosing_url = get_url(path='@/diagnosing.md') | replace(from=config.base_url, to='') %}
+
+        <a href="{{ install_url }}"{% if current_path == install_url %} aria-current="page"{% endif %}>install</a>
+        <a href="{{ configure_url }}"{% if current_path == configure_url %} aria-current="page"{% endif %}>configure</a>
+        <a href="{{ generate_url }}"{% if current_path == generate_url %} aria-current="page"{% endif %}>generate</a>
+        <a href="{{ repo_url }}"{% if current_path == repo_url %} aria-current="page"{% endif %}>per-repo</a>
+        <a href="{{ segments_url }}"{% if current_path == segments_url %} aria-current="page"{% endif %}>segments</a>
+        <a href="{{ diagnosing_url }}"{% if current_path == diagnosing_url %} aria-current="page"{% endif %}>diagnosing</a>
       </nav>
+
+      {# Hidden below 34rem by the stylesheet — the footer carries the same
+         link, so nothing is lost, and the header stays one row on a phone. #}
+      {# `target="_blank"` with `rel="noopener noreferrer"`. `noopener` is the
+         load-bearing half: without it the opened tab gets a handle on this one
+         through `window.opener` and can navigate it. The new-tab behaviour is
+         announced rather than left to be discovered, because a link that
+         silently changes where it opens is a surprise a screen reader user
+         gets no warning of.
+
+         The mark uses `fill="currentColor"` — NOT a `var()`, which is not
+         resolved inside an SVG presentation attribute by every engine — so it
+         simply follows the link's own colour through hover and focus. #}
+      <a
+        class="header-source"
+        href="{{ config.extra.repo_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path
+            fill="currentColor"
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"
+          ></path>
+        </svg>
+        source
+        <span class="visually-hidden">(opens in a new tab)</span>
+      </a>
+      </div>
     </header>
 
     <main id="main">
       {% block content %}{% endblock content %}
     </main>
 
+    {# External, so both open away from the page — the same rule
+       `external_links_target_blank` applies to every link in `content/`. That
+       setting does not reach templates, so these two say it themselves. #}
     <footer class="site-footer">
       <p>
-        <a href="{{ config.extra.repo_url }}">Source on GitHub</a>
+        <a href="{{ config.extra.repo_url }}" target="_blank" rel="noopener noreferrer">
+          Source on GitHub<span class="visually-hidden"> (opens in a new tab)</span>
+        </a>
         &middot;
-        <a href="{{ config.extra.repo_url }}/blob/main/LICENSE">MIT</a>
+        <a href="{{ config.extra.repo_url }}/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
+          MIT<span class="visually-hidden"> (opens in a new tab)</span>
+        </a>
       </p>
     </footer>
 
+    {# The copy buttons, on every page because every page has code blocks.
+
+       It builds each button at runtime and writes none into the HTML, so with
+       scripting off there is no dead control to click — see the header of
+       `copy-code.js`. A module script is deferred by definition, so `defer` is
+       neither needed nor written.
+
+       This file and `generate.html` are the TWO paths under `site/` allowed to
+       load a script, and `tests/site.rs` names both. A `<script>` written
+       anywhere else — any other template, any `.css`, any content page — still
+       fails. #}
+    <script
+      type="module"
+      src="{{ get_url(path='copy-code.js') | replace(from=config.base_url, to='') }}"
+    ></script>
+
     {# Empty for every page but one. `generate.html` fills it with the config
-       generator's module, and `tests/site.rs` allowlists that single template
-       path — a `<script>` written anywhere else, this file included, fails.
+       generator's module.
 
        At the end of the body rather than in the head: nothing on this site
        needs a script to lay out or to navigate, so nothing should be allowed

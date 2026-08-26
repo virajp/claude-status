@@ -37,7 +37,7 @@ whole text.
 | `cost`     | `{sym.cost}·$46.51`                      | never — an absent cost renders `$0.00`  |
 | `spend`    | `{sym.spend}·$75.93/$150·(51%)`          | any of four gates — see below           |
 | `duration` | `{sym.duration}·9hr 19m`                 | the duration is **absent**; `0` renders |
-| `project`  | `{sym.project}·my-repo`                  | `projectName` is not set **in config**  |
+| `project`  | `{sym.project}·my-repo`                  | you are not inside a git repository     |
 | `worktree` | `{sym.worktree}·{sym.folder}·sub/path`   | you are not inside a worktree           |
 | `branch`   | `{sym.branch}·main·↑·±`                  | no branch could be resolved             |
 
@@ -57,10 +57,17 @@ Three of those have a detail worth knowing:
 
 ## Where `project` comes from
 
-`project` reads `projectName`, and `projectName` is a **repo-level** key — it
-does not come from the session payload and it is not in the shipped defaults. A
-repository that has not been named omits the segment. See
-[Per-repo](@/repo-config.md).
+Never from the session payload. The name is the first of these that exists:
+
+1. `projectName` in the repository's own
+   `<repo-root>/.config/claude-status.json`.
+2. `projectName` in your user config — which is **not** inert, and names every
+   repository that has not named itself.
+3. The git root's directory name.
+
+So the segment draws by default, and naming a repository is only how you call it
+something other than its directory. Outside a git repository there is no root,
+and the segment sits out. See [Per-repo](@/repo-config.md).
 
 ## Why `spend` is missing
 

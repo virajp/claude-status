@@ -1,0 +1,43 @@
+name: Feature request
+description: A segment, a config key, or a behaviour that should exist and does
+  not.
+labels: [ "enhancement" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `claude-status` renders a fixed bar from a payload Claude Code hands it.
+        The more precisely you can say where a change belongs, the likelier it
+        is to happen.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation you are in, not the feature you have in mind
+        for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should it do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try first?
+      description: >-
+        Existing config keys, another tool, or nothing. Knowing what fell short
+        keeps the answer from being something you already ruled out.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues.
+          required: true

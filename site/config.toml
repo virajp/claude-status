@@ -66,6 +66,22 @@ generate_feeds = false
 render_emoji      = false
 smart_punctuation = true
 
+# Every external link opens in a new tab, so reading the docs is never
+# something a link quietly navigates you away from.
+#
+# Set HERE rather than fixed up afterwards because markdown links have no
+# template hook — the four in `content/` are written `[text](https://…)` and
+# there is nowhere to hang an attribute. Zola applies it at render time, which
+# also means it cannot be forgotten for a link added later. The three in
+# `templates/` carry the attributes by hand, since this setting does not reach
+# them, and `site:build` asserts the result across BOTH.
+#
+# `no_referrer` implies the `noopener` half that actually matters: without it
+# the opened tab gets a handle on this one through `window.opener` and can
+# navigate it.
+external_links_no_referrer  = true
+external_links_target_blank = true
+
 [markdown.highlighting]
 style = "inline"
 # Dark, which matters — every snippet on this site is a terminal command or a

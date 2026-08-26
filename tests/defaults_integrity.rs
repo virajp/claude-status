@@ -62,7 +62,7 @@ const GLYPHS: &[(&str, &str)] = &[
     ("symbols.win5h", "\u{f252}"),
     ("symbols.win7d", "\u{f073}"),
     ("symbols.worktree", "\u{1f332}"),
-    ("typeSymbols._default", "\u{f544}"),
+    ("typeSymbols._default", "\u{f1b2}"),
     ("typeSymbols.background", "\u{f013}"),
     ("typeSymbols.cloud_agent", "\u{f0c2}"),
     ("typeSymbols.local_agent", "\u{f109}"),

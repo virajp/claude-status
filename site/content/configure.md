@@ -185,6 +185,3 @@ Two are optional. The third is not, if you want the caps hook to do anything:
 | `CLAUDE_STATUS_SPEND_CACHE` | override the spend cache path                                             |
 | `CLAUDE_STATUS_SPEND_URL`   | override the usage endpoint — for testing                                 |
 | `CLAUDE_STATUS_USAGE_DIR`   | where the usage mirror is written — **the caps hook is inert without it** |
-
-`AI_PLUGINS_USAGE_DIR` is still honoured as a fallback for the last of these,
-from before the tool was renamed. Prefer the current name.

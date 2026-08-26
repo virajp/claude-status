@@ -1,3 +1,9 @@
+<!-- Repo-relative, not the CDN the screenshot below uses: the site's copies are
+     fingerprinted at build time, so their URLs change every release. Drawn at
+     760px and shown at 380 so it stays crisp on a retina display. Regenerate
+     with `.config/og-card.py`. -->
+<img src="assets/lockup.png" alt="claude-status" width="380" />
+
 # Statusline for Claude Code
 
 Know what your Claude Code session is up to — at a glance, without breaking
@@ -13,42 +19,36 @@ date.
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
 4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
 session cost. The second shows the project name and the git branch with a dirty
-marker.](https://cdn.virajp.dev/claude-status/statusline.png)
+marker.](assets/statusline.png)
 
 ## Install
 
-Apple Silicon macOS:
+Apple Silicon macOS, with Homebrew:
 
 ```sh
-brew install virajp/tap/claude-status
-```
-
-Use that fully-qualified form — Homebrew 6 requires explicit trust for
-third-party taps, so the two-step `brew tap` then `brew install` needs a
-`brew trust` in between.
-
-> `claude-status` used to be an npm package; that channel was retired before it
-> ever shipped a real version, because it asked you for a Node toolchain to
-> deliver a binary that needs none.
-
-For any other platform, build from source — needs only a Rust toolchain:
-
-```sh
-git clone https://github.com/virajp/claude-status
-cd claude-status
-cargo build --release
-# put target/release/claude-status somewhere on your PATH, then:
+brew trust --formula virajp/tap/claude-status
+brew install --formula virajp/tap/claude-status
 claude-status --configure
 ```
 
-`--configure` is the second step, not a formality — it's what wires Claude
-Code's `~/.claude/settings.json` to the binary. Restart Claude Code and the bar
-is there.
+`brew trust` is not optional — Homebrew 6 will not load a third-party formula it
+has not been told to trust, so the install fails without it. You do it once, not
+per upgrade.
+
+Or with [mise](https://mise.jdx.dev):
+
+```sh
+mise use --global "github:virajp/claude-status@latest"
+claude-status --configure
+```
+
+`--configure` is the last step, not a formality — it's what wires Claude Code's
+`~/.claude/settings.json` to the binary. Restart Claude Code and the bar is
+there.
 
 **[claude-status.virajp.dev](https://claude-status.virajp.dev)** has the rest:
-the [Homebrew route](https://claude-status.virajp.dev/install/) for when the tap
-exists, what `--configure` writes and what it replaces, and the platforms that
-are and aren't served.
+both routes in full, what `--configure` writes and what it replaces, and the
+platforms that are and aren't served.
 
 ## Documentation
 
