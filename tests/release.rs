@@ -506,7 +506,7 @@ fn the_render_produces_a_whole_formula_with_the_new_url_and_digest() {
     // where nothing in this repo could see them drift.
     for kept in [
         "desc \"Status line for Claude Code\"",
-        "homepage \"https://claude-status-site.pages.dev\"",
+        "homepage \"https://claude-status.virajp.dev\"",
         "license \"MIT\"",
         "depends_on arch: :arm64",
         "depends_on :macos",
@@ -618,11 +618,25 @@ fn the_formula_template_carries_the_whole_contract() {
         "the caveats give no website url, so criterion 2 is unmet"
     );
 
-    // The vanity domain does not resolve. Shipping it in `homepage` or the
-    // caveats is a dead link in the first thing a user reads.
+    // **This guard was inverted, and the inversion is the point.** It used to
+    // forbid `claude-status.virajp.dev` because the DNS record did not exist,
+    // so shipping it would have been a dead link in the first thing a user
+    // reads. The record exists now — the domain serves, and it is what
+    // `--help`, the readme and the site itself all name.
+    //
+    // What survived the fix is the *interim*: `claude-status-site.pages.dev`
+    // still resolves, so nothing breaks, and a formula naming it is a second
+    // address for the same pages with nothing pointing anyone at it. Two
+    // addresses is how one of them stops being maintained without anybody
+    // noticing.
     assert!(
-        !template.contains("claude-status.virajp.dev"),
-        "the template names `claude-status.virajp.dev`, which does not resolve; use the pages.dev url until DNS is pointed"
+        !template.contains("pages.dev"),
+        "the template names the `pages.dev` interim; the vanity domain resolves now and is what \
+         `--help` and the readme give — one address, or neither stays current"
+    );
+    assert!(
+        template.contains("https://claude-status.virajp.dev"),
+        "the template no longer names the site at all"
     );
 
     assert!(

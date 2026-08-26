@@ -15,7 +15,7 @@
 # file is a formula `brew style` and `brew audit` can check wherever it sits.
 class ClaudeStatus < Formula
   desc "Status line for Claude Code"
-  homepage "https://claude-status-site.pages.dev"
+  homepage "https://claude-status.virajp.dev"
   url "https://github.com/virajp/claude-status/releases/download/v0.1.0/claude-status-darwin-arm64.tar.gz"
   sha256 "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044"
   license "MIT"
@@ -45,7 +45,7 @@ class ClaudeStatus < Formula
       This OVERWRITES any existing status line in ~/.claude/settings.json.
 
       Docs and the config generator:
-        https://claude-status-site.pages.dev
+        https://claude-status.virajp.dev
     EOS
   end
 

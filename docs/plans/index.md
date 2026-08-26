@@ -97,12 +97,22 @@ It was recorded here as a live defect: both website plans had landed and
 DNS record were never created. That is no longer true. The project exists
 (`claude-status-virajp-dev`, direct upload), and it serves both
 `claude-status.virajp.dev` and `claude-status-site.pages.dev`. The formula's
-caveats point at the `pages.dev` name, which was the interim this note proposed
-and is still what ships.
+caveats pointed at the `pages.dev` name, which was the interim this note
+proposed.
 
-Two things that outlived the problem and are worth keeping in view: the caveats
-were never repointed at the vanity domain now that it resolves, and `cli.rs`'s
-help text names it too, with a test pinning it.
+**Repointed 2026-08-27.** The formula's `homepage` and caveats now give
+`claude-status.virajp.dev`, which was measured serving 200. The guard in
+`tests/release.rs` that *forbade* the vanity domain — written when the DNS
+record did not exist — is inverted: it now forbids the `pages.dev` interim,
+because both addresses serve the same pages and **two addresses is how one of
+them stops being maintained without anybody noticing**.
+
+Half of the note this replaces was wrong: `cli.rs`'s help text already gave the
+vanity domain, with a test pinning it. Only the formula was behind.
+
+**The tap's copy is still the old one** until the next release renders it — the
+formula there is generated per release and cannot be edited in place, which is
+the property that stops it drifting.
 
 Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — currently
 empty.
