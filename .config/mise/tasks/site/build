@@ -267,12 +267,12 @@ cat > "${PUB}/_headers" <<'HEADERS'
 /*.svg
   Cache-Control: public, max-age=31536000, immutable
 
-# NOT fingerprinted: the config generator fetches these two by relative name at
-# runtime, so they keep a stable address and must therefore be revalidated.
-/claude-status.schema.json
-  Cache-Control: public, max-age=0, must-revalidate
-/claude-status.defaults.json
-  Cache-Control: public, max-age=0, must-revalidate
+# `claude-status.schema.json` and `claude-status.defaults.json` are NOT
+# fingerprinted -- the config generator fetches them by relative name at
+# runtime, so they keep a stable address. They need no rule of their own: they
+# fall under `/*` above and revalidate every time, which is what data at a
+# stable name requires. Listing them again only made Cloudflare emit the same
+# directives twice in one header.
 HEADERS
 
 print_header "Site built into ${SITE_DIR}/public"
