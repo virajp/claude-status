@@ -1,0 +1,95 @@
+name: CI
+
+# Runs the suite on every push to `main` and every pull request.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS
+# ---------------------------------------------------------------------------
+#
+# Until 2026-08-27 this repository had **no continuous integration at all**.
+# `release.yml` triggers only on a `v*` tag and `site.yml` only on `site-v*` or
+# a pull request touching `site/`, so `code:lint` and `code:test` ran exactly
+# once per release — and a commit pushed to `main` was verified by nothing.
+#
+# The local pre-commit hook is not that gate and was never meant to be. It runs
+# formatting, secret scanning, the schema check and the two config linters. It
+# runs **no tests, no clippy and no grype**. So the 584 tests stood between a
+# broken commit and `main` only when a human remembered to type
+# `mise run code:test`, and every green result on the way here was a person
+# choosing to check rather than a machine insisting.
+#
+# The immediate prompt was narrower: `code:sec` had just been given
+# `--fail-on medium`, and a threshold on a task nothing runs automatically is
+# half a gate. Fixing that surfaced the larger absence.
+#
+# ---------------------------------------------------------------------------
+# WHY `code:all` AND NOT A LIST OF STEPS
+# ---------------------------------------------------------------------------
+#
+# `code:all` is what a maintainer runs before pushing. Naming the sub-tasks here
+# instead would let CI and the local command drift — a task added to `code:all`
+# would silently not run in CI, which is the class of gap this file is closing.
+# One command, one definition, both places.
+#
+# The trade-off taken knowingly: `code:all` includes `code:sec`, and grype
+# downloads a vulnerability database at scan time. A grype-side outage
+# therefore fails CI on a commit that is fine. That is acceptable **here** and
+# deliberately not in `release.yml` — a red tick on a pull request costs a
+# re-run, whereas a release that cannot be cut because a third-party database
+# is down costs a release. The two workflows want different answers and get
+# them.
+#
+# ---------------------------------------------------------------------------
+# WHY macos-latest
+# ---------------------------------------------------------------------------
+#
+# `aarch64-apple-darwin` is the only supported target, and the suite reaches for
+# the macOS keychain path in `spend::creds`. Testing on Linux would exercise a
+# configuration nothing ships. Kept in step with `supported_targets` in
+# `.config/mise/tasks/_scripts/_rust`.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch: {}
+
+# A force-push or a quick second commit should not leave two runs racing. The
+# newer one is the one whose answer anybody wants.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MISE_ENV: ci
+  CARGO_TERM_COLOR: always
+  # No test may reach the real spend endpoint: the credential store is not
+  # scoped by $HOME, so a stray fetch is a privacy leak and a rate limit the
+  # account wears for half an hour. The same pin release.yml carries.
+  CLAUDE_STATUS_SPEND_URL: http://127.0.0.1:1/never
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `install_args`, for the reason release.yml records at length: scoping
+      # the install made rustup resync to a `minimal` profile on some runs and
+      # not others, so clippy existed intermittently and the gate failed at
+      # random. Install the declared set.
+      - uses: jdx/mise-action@v4
+
+      # Cheap, and it guards the config that decides whether the lint below even
+      # has a linter — which is how the first release failed.
+      - name: Check the shared toolchain
+        run: mise run code:toolchain
+
+      # Format, lint, test, and the security scan — `code:sec` fails at medium
+      # and above, per `.config/grype.yaml`.
+      - name: Check everything
+        run: mise run code:all
