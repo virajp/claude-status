@@ -1,0 +1,28 @@
+{
+  "name": "@askviraj/claude-status",
+  "version": "1.1.1",
+  "description": "Installer for claude-status, the Claude Code powerline status line. Downloads the release binary against a pinned digest; carries no binary itself.",
+  "license": "MIT",
+  "homepage": "https://claude-status.virajp.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/virajp/claude-status.git"
+  },
+  "type": "module",
+  "bin": {
+    "claude-status": "install.mjs"
+  },
+  "files": [
+    "install.mjs",
+    "asset.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

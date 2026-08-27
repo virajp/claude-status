@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#MISE description="Stage a publishable copy of npm/ with the release's tag, asset name and digest injected"
+#MISE dir="{{ config_root }}"
+
+# Usage:  .config/mise/tasks/release/npm-package <SHA256SUMS> [<out-dir>]
+#         mise run release:npm-package -- SHA256SUMS
+#
+# The published npm package carries no binary. It is an installer that
+# downloads one asset from one GitHub Release and refuses it unless the bytes
+# match a sha256 baked in at publish time — so this injection is the ENTIRE
+# integrity story of that channel. Get it wrong and the package still publishes,
+# still installs, and verifies a digest belonging to a different artifact.
+#
+# It lives here rather than in the `publish-npm` job's YAML for the reason
+# `_rust_reassemble` does: `tests/release.rs` can run a script and cannot run a
+# workflow step, and a step embedded in YAML is the one place in this repository
+# nothing can execute it. It is also runnable by hand — point it at a
+# `SHA256SUMS` downloaded from any tag and read the staged tree.
+#
+# The output is a COPY. `npm/` itself is never rewritten, so a release does not
+# leave the working tree holding a tag's values.
+
+set -e
+set -o pipefail
+
+# Sourced relative to THIS file rather than to `$MISE_PROJECT_ROOT`, because CI
+# invokes this script by path: the `publish-npm` job installs no mise tools, for
+# the same reason `publish` does not. `_rust_reassemble` is invoked the same way.
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "${BASH_SOURCE[0]}")/../_scripts/_rust"
+
+manifest="${1:?usage: npm-package <SHA256SUMS> [<out-dir>]}"
+out="${2:-target/npm}"
+
+# `target/` is already gitignored, which is the whole reason the staging dir
+# lives under it: a tree of tag-stamped files is build output, and a copy of the
+# package sitting in the working tree is a second package.json to get wrong.
+[ -f npm/package.json ] || {
+  echo "no npm/package.json — there is nothing to stage" >&2
+  exit 1
+}
+# The installer's pin. Required rather than created: if the package stopped
+# reading this file, writing one nothing loads would publish a package with no
+# digest check at all and no way to tell from here.
+[ -f npm/asset.json ] || {
+  echo "no npm/asset.json — the installer's digest pin is what this task exists to write" >&2
+  exit 1
+}
+
+# ONE version, and it is the crate's. `docs/decisions.md` records the cycle
+# where the npm package carried a hand-set `0.x` while the binary reported
+# `1.0.0` — "one artifact claimed two versions of itself". So the staged
+# manifest is STAMPED below rather than trusted, and nothing here is typed by a
+# human.
+#
+# `VERSION` is how CI hands down `verify`'s answer, which that job computed with
+# this same `crate_version` and refused the release unless the pushed tag agreed
+# with it. Reading it saves `publish-npm` a `cargo` it would otherwise have to
+# install to ask the same question twice.
+version="${VERSION:-$(crate_version)}"
+[ -n "$version" ] || {
+  echo "no version: \$VERSION is unset and crate_version() returned nothing" >&2
+  exit 1
+}
+tag="v${version}"
+
+# The tarball, never the raw binary — the installer extracts an archive, and the
+# two asset names collide on a prefix. `digest_for` compares the WHOLE name for
+# exactly that reason and fails rather than returning empty on a miss; both are
+# pinned by `the_digest_lookup_is_anchored_to_the_whole_asset_name` and
+# `an_asset_missing_from_the_manifest_fails_instead_of_returning_empty` in
+# `tests/release.rs`. It is the same lookup the tap's bump job uses, and that is
+# the point: two channels pinning one digest must read it the same way.
+#
+# A target renamed or dropped out of `supported_targets` therefore fails HERE,
+# naming the asset it looked for, which is why there is no separate guard for it.
+name="$(asset_name darwin arm64).tar.gz"
+digest="$(digest_for "$manifest" "$name")"
+
+rm -rf "$out"
+mkdir -p "$(dirname "$out")"
+cp -R npm "$out"
+
+# Written whole rather than patched. These three fields ARE the file, so a
+# generated copy overwritten every release cannot drift from the release it
+# describes — the same reasoning `render_formula` renders a whole formula on.
+printf '{\n  "tag": "%s",\n  "name": "%s",\n  "sha256": "%s"\n}\n' \
+  "$tag" "$name" "$digest" > "$out/asset.json"
+
+# `sed` matches the value and leaves the rest of the line alone, so a `version`
+# key that is last in the object keeps its lack of a trailing comma.
+sed -E "s/^([[:space:]]*\"version\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\1\"${version}\"/" \
+  "$out/package.json" > "$out/package.json.new"
+mv "$out/package.json.new" "$out/package.json"
+
+# Read back, because `sed` exits 0 whether or not it matched anything — the
+# failure `render_formula`'s comment describes. A manifest that quietly kept its
+# own value would publish the PREVIOUS version's package under this tag's
+# digest, with the run green behind it. Two `version` keys fail here too: the
+# capture yields two lines and matches neither.
+staged="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$out/package.json")"
+if [ "$staged" != "$version" ]; then
+  echo "staged package.json reports version '$staged', expected '$version' — the substitution did not take" >&2
+  exit 1
+fi
+
+echo "  staged $out"
+echo "    version  $version"
+echo "    tag      $tag"
+echo "    asset    $name"
+echo "    sha256   $digest"

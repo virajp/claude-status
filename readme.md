@@ -45,13 +45,22 @@ mise use --global "github:virajp/claude-status@latest"
 claude-status --configure
 ```
 
+Or, if you reach for `npx` first — `pnpx` and `bunx` take the same arguments:
+
+```sh
+npx @askviraj/claude-status --install --configure
+```
+
+Nothing is installed globally by that one: the package is an installer, and it
+downloads the same released binary the other two routes get.
+
 `--configure` is the last step, not a formality — it's what wires Claude Code's
 `~/.claude/settings.json` to the binary. Restart Claude Code and the bar is
 there.
 
 **[claude-status.virajp.dev](https://claude-status.virajp.dev)** has the rest:
-both routes in full, what `--configure` writes and what it replaces, and the
-platforms that are and aren't served.
+all three routes in full, what `--configure` writes and what it replaces, and
+the platforms that are and aren't served.
 
 ## Documentation
 

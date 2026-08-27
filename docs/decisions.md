@@ -1437,6 +1437,33 @@ could drift". That stopped being true for one cycle, when the npm package
 carried a hand-set `0.x` while the binary was `1.0.0` — **so one artifact
 claimed two versions of itself.**
 
+**Amended 2026-08-27** (`npm-installer`). The download path is live again, **on
+the npm channel and nowhere else** — that channel is now an installer rather
+than a carrier of bytes.
+
+**Every one of the five costs listed above is real and every one is being
+taken**: a required network call, air-gapped installs broken, `HTTPS_PROXY`
+unhonoured by Node's `fetch`, a release that has to precede the npm publish, and
+a digest pinned against a mutable asset. **What changed is the comparison, not
+the costs.** The passage above weighs downloading against *embedding* and
+concludes embedding is strictly better; that conclusion is not being contested,
+because this is not a choice between the two. A third channel that embedded the
+binary would be a fourth copy of the bytes with a fourth digest to keep true, so
+there is no embedding option here to lose to.
+
+**The integrity argument is taken up rather than dropped.** A release asset is
+mutable and an npm version is not — which is precisely why the digest is pinned
+**inside the published package**, written at publish time from that release's
+own `SHA256SUMS`. The trust root is npm's immutability, the same shape as the
+formula's `sha256`, which
+[the standing credential entry](#the-standing-credential-is-a-github-app-and-what-that-does-and-does-not-buy)
+calls the only thing standing between a user and substituted bytes.
+
+**One of the five is paid by an ordering rather than by work.** "A release that
+had to precede the npm publish" costs nothing to satisfy here: `publish-npm`
+runs after the release job in the same workflow, which is where `bump-tap`
+already runs for the same reason.
+
 ### Caps become config
 
 **Decided 2026-08-23** (caps as config). The `--caps-hook` thresholds move into
@@ -1511,6 +1538,54 @@ deliberately rather than papered over with a runtime host check, because the
 check would outlive the window and the binary would then be refusing to run on a
 platform the formula had already refused to install.**
 
+**Amended 2026-08-27** (`npm-installer`). npm is retired as *the* channel and
+returns as a **third** one, beside the tap and mise:
+`npx @askviraj/claude-status --install`. **The package carries no binary and is
+never installed globally** — it is an installer and nothing else, and its
+version, its tag and its digest all describe an artifact that lives on a GitHub
+Release.
+
+**What this section argued against was a build toolchain, and six of the seven
+things it named do not come back.**
+
+| Named above            | What returns                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| a TypeScript installer | one `.mjs` — no types, no compile step                                                       |
+| `tsup`                 | nothing; the published file is the tracked file                                              |
+| `pnpm`                 | nothing                                                                                      |
+| a lockfile             | nothing — there are zero runtime dependencies, so there is nothing to lock                   |
+| a `tsconfig`           | nothing                                                                                      |
+| node in the toolchain  | a **test-time** tool only, exactly as `tests/site.rs` already uses it                        |
+| its own test suite     | **this one does come back** — as `tests/npm.rs`, inside the Rust suite rather than beside it |
+
+**The seventh is the honest residual, and it is accepted rather than dismissed:
+there is JavaScript in the tree again**, and it will need maintaining for the
+life of the channel. What is bought against it is that the file has no build, no
+dependency graph and no second `test` command — `mise run code:test` still runs
+everything.
+
+**What makes this defensible rather than a change of taste is that two of the
+three things it rests on were delivered by this retirement itself, and the third
+came two days after it.** `--configure` had already moved the wiring into the
+binary — that is this section's own argument — so what is left for an installer
+to do is *place a file*, not the work the retired installer was doing. The
+release *is* the distribution, which this cycle made true, so the installer
+consumes what already ships and adds no artifact of its own. And the tap proved
+the pattern: `bump-tap` reads a digest out of a published release and pins it in
+an immutable artifact, and `publish-npm` is that same job against a different
+registry.
+
+**The other half of the argument above is untouched.** What npm bought was the
+`pnpx` invocation, and `--configure` did make it unnecessary. This is not a
+replacement for the tap and nothing here argues that it should be; it is a route
+for people who reach for `npx` before `brew`.
+
+**The platform gate deleted here comes back on this channel.** The manifest's
+`os`/`cpu` makes npm refuse with `EBADPLATFORM` before a line of the installer
+runs, and the installer names the host it will not serve. The window recorded
+just above as knowingly open closes for anyone arriving that way — **for that
+way only**, which is why the formula, not this, is what closed it in general.
+
 ### The receipt discipline was never discharged
 
 **Was decided** at the outset: whatever the channel, the installer must keep the
@@ -1536,6 +1611,14 @@ to end "then uninstall and confirm the tree is byte-identical to before".
 **There is no uninstall to run, so that round trip is unverifiable rather than
 merely unperformed.** The snapshot harness that would apply it survives in
 `tests/e2e.rs`; what it has no counterpart for is the second half.
+
+**Amended 2026-08-27** (`npm-installer`). A channel has regained an uninstall,
+so the obligation kept above is claimed rather than merely recorded — **"the
+reasoning is the reasoning" is being taken at its word.** The round trip called
+unverifiable above is what makes it defensible to put `settings.json` editing in
+a second language at all: it is pinned as a test, not asserted in prose. The
+supersession stands everywhere else — the binary still ships no `--unconfigure`,
+and a foreign `statusLine` is still a warning on stderr rather than a prompt.
 
 ### The Homebrew tap is the channel
 
@@ -1669,12 +1752,88 @@ decidable from outside** — an unpublished package 404s the same way — and
 nothing turns on the difference. The name is unreserved; claiming it is a
 separate decision nobody has made.
 
+**Amended 2026-08-27** (`npm-installer`). **This cycle makes that decision.**
+`@askviraj/claude-status` is claimed, and what it will carry is the installer
+for the third channel — no binary, no per-platform packages.
+
+**The measurement above stands as measured.** The authenticated fetch did return
+404, and whether the name ever carried a published version is still not
+decidable from outside; claiming it makes that no more knowable than it was.
+What changes is only that somebody now wants the name.
+
+**Two things this needs cannot be done by a commit in this repository**, and
+both have to land before the next tag or `publish-npm` fails a release that is
+otherwise fine: the scope has to exist on npmjs.com, and Trusted Publishing has
+to be configured for that repo and that job. Whether npm will attach a trusted
+publisher to a package that does not yet exist is **not established here** — if
+it will not, the first publish is manual or token-authenticated and OIDC takes
+over from the second. Whoever finds out records the answer in this section.
+
+### The install receipt is state, and is neither config nor cache
+
+**Decided 2026-08-27** (`npm-installer`). The npm installer's receipt lives at
+`~/.local/state/claude-status/install-receipt.json` — a third directory, chosen
+against both of the two this project already uses.
+
+**Not `~/.config/claude-status/`.** That is the directory people commit to a
+dotfiles repo and sync between machines —
+[the cache does not move, and the split is the point](#the-cache-does-not-move-and-the-split-is-the-point)
+— and a receipt names *this machine's* install path. Synced, it would arrive on
+the second machine asserting a binary that is not there, which is worse than
+arriving with no receipt at all: **the guard that refuses to touch a binary this
+installer did not place would be reasoning from a fiction**, on the one machine
+where nobody would think to check.
+
+**Not `~/.cache/claude-status/` either.** A cache is regenerable by definition,
+and clearing one is a supported thing for a user to do; a receipt is neither
+regenerable nor safe to lose. **Clearing a cache must not strand the
+uninstall.**
+
+### Consent to `--configure` has three states, and the third is a decline
+
+**Decided 2026-08-27** (`npm-installer`). `--install --configure` runs it,
+`--install --no-configure` skips it, and with neither flag the installer prompts
+on a TTY and skips silently where there is none.
+
+**`--no-configure` exists because a script must be able to decline as explicitly
+as it consents.** Without it there are two ways to finish unwired — declining,
+and running with no TTY — and **from outside the process they are
+indistinguishable**. So a CI job that meant to decline has no way to say so, and
+one that meant to consent cannot tell that it did not. The decline is a decline
+and not a failure: it exits 0 and prints the one line the user would otherwise
+have to be told.
+
+**The two flags together are refused rather than ranked.** No precedence, no
+last-one-wins.
+[`--configure` is the one mode that rejects an unrecognised argument](#--configure-is-the-one-mode-that-rejects-an-unrecognised-argument)
+already, for the reason that it writes to a file this tool does not own — and a
+contradiction resolved silently is how a script ends up doing the opposite of
+what it says on its own command line.
+
 ### Still unowned: code signing and notarisation
 
 **Recorded 2026-08-25** (`distribution/02`) as an open risk rather than a
 decision. A brew-installed binary is downloaded rather than built, exactly as
 npm's would have been, but **"Homebrew installed it" makes people assume it is
 signed. It is not.**
+
+**Amended 2026-08-27** (`npm-installer`). The risk is unchanged and now spans
+**two channels rather than one**. `fetch` does not set the
+`com.apple.quarantine` xattr, so a binary the npm installer places runs without
+Gatekeeper stopping it — **which removes the symptom rather than the risk**, and
+with it the one moment a user might have been told the binary is unsigned.
+
+### Still unowned: the proxy and the air gap, on the npm channel
+
+**Recorded 2026-08-27** (`npm-installer`) as open risks rather than decisions.
+Both are inherent to a channel that downloads, and neither is fixed here.
+
+**`HTTPS_PROXY` is not honoured.** Node's `fetch` ignores it. This is one of the
+costs listed above as a reason the download path was deleted, and **it returns
+with this channel**; a user behind a proxy installs from the tap.
+
+**Air-gapped installs do not work on this channel.** Inherent — the package
+carries no bytes. The tap does.
 
 ---
 

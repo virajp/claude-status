@@ -93,12 +93,28 @@ fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
 /// and nothing else), and `cloudflare/wrangler-action@v4` keeps wrangler's Node
 /// on the runner rather than in this repository — that is the whole design, and
 /// this is what holds it.
+///
+/// # Why a manifest was banned too, and why exactly one is now allowed
+///
+/// A `package.json` is the first thing anyone would add to run
+/// `generator.test.mjs` under a test runner, and **that is precisely how the
+/// npm ecosystem comes back**: a manifest invites a dev dependency, a dev
+/// dependency requires a lockfile, and a lockfile puts a second package manager
+/// and a second `test` command in a tree that ships one Rust binary. That
+/// reasoning has not changed and still governs every path but one.
+///
+/// The one is `npm/package.json`, the manifest of the npx install channel. It
+/// is permitted because it is the opposite of what the ban is about: **zero
+/// dependencies, no build, and nothing to lock** — the published file is the
+/// tracked file, and `tests/npm.rs` runs it inside this suite rather than
+/// beside it. The allowance is written as a **path** and not as a name, which
+/// is the whole of the narrowing: a `package.json` anywhere else is still the
+/// ecosystem coming back, and every lockfile is still refused outright,
+/// including one that would sit next to the permitted manifest.
 #[test]
 fn no_javascript_lockfile_or_node_modules_is_tracked() {
-    // A manifest, not just a lockfile. `the_generators_pure_core_holds_against_the_real_schema`
-    // cites this test for "no `package.json`", and a `package.json` is the
-    // first thing anyone would add to run `generator.test.mjs` under a test
-    // runner — which is precisely how the npm ecosystem comes back.
+    /// The npx installer's manifest, and nothing else in the tree.
+    const PERMITTED_MANIFEST: &str = "npm/package.json";
     const JS_MANIFESTS: &[&str] = &["package.json"];
     const JS_LOCKFILES: &[&str] = &[
         "package-lock.json",
@@ -110,24 +126,48 @@ fn no_javascript_lockfile_or_node_modules_is_tracked() {
         "deno.lock",
     ];
 
-    let mut offenders = Vec::new();
-    for rel in tracked_files() {
-        let name = rel.rsplit('/').next().unwrap_or(&rel);
-        if JS_LOCKFILES.contains(&name) {
-            offenders.push(format!("{rel} (JS lockfile)"));
+    let offending = |paths: Vec<String>| -> Vec<String> {
+        let mut offenders = Vec::new();
+        for rel in paths {
+            let name = rel.rsplit('/').next().unwrap_or(&rel);
+            if JS_LOCKFILES.contains(&name) {
+                offenders.push(format!("{rel} (JS lockfile)"));
+            }
+            if JS_MANIFESTS.contains(&name) && rel != PERMITTED_MANIFEST {
+                offenders.push(format!("{rel} (JS manifest)"));
+            }
+            if rel.split('/').any(|c| c == "node_modules") {
+                offenders.push(format!("{rel} (under node_modules/)"));
+            }
         }
-        if JS_MANIFESTS.contains(&name) {
-            offenders.push(format!("{rel} (JS manifest)"));
-        }
-        if rel.split('/').any(|c| c == "node_modules") {
-            offenders.push(format!("{rel} (under node_modules/)"));
-        }
-    }
+        offenders
+    };
 
     assert_eq!(
-        offenders,
+        offending(tracked_files()),
         Vec::<String>::new(),
-        "a JavaScript toolchain is tracked again — the site was supposed to be built by a Rust binary"
+        "a JavaScript toolchain is tracked again — the site was supposed to be built by a Rust binary, and the npx installer was supposed to arrive with nothing but a manifest"
+    );
+
+    // **The control, and it is what makes the allowance a path.** Written as a
+    // name — `rel.ends_with("package.json")`, or the name check simply dropped
+    // — the scan above passes just as well while permitting a manifest
+    // anywhere in the tree, which is the ban gone rather than narrowed. These
+    // four must all still offend.
+    assert_eq!(
+        offending(vec![
+            "site/package.json".to_string(),
+            "tests/js/package.json".to_string(),
+            "npm/package-lock.json".to_string(),
+            "npm/node_modules/left-pad/index.js".to_string(),
+        ]),
+        vec![
+            "site/package.json (JS manifest)".to_string(),
+            "tests/js/package.json (JS manifest)".to_string(),
+            "npm/package-lock.json (JS lockfile)".to_string(),
+            "npm/node_modules/left-pad/index.js (under node_modules/)".to_string(),
+        ],
+        "the allowance is not scoped to `{PERMITTED_MANIFEST}` — it lets a manifest, a lockfile or a node_modules through somewhere it should not"
     );
 }
 
@@ -570,6 +610,42 @@ fn the_readme_is_a_pointer_and_not_a_second_configuration_reference() {
     // And it points. A readme that dropped the configuration reference without
     // linking to where it went is worse than the one it replaced.
     assert!(readme.contains("https://claude-status.virajp.dev"), "readme.md no longer links to the site");
+}
+
+/// **The install page gives every runner the package can be run with.**
+///
+/// The npm package is an installer invoked through a runner and never installed
+/// globally, so the runner's name is not a detail — it *is* the command. Three
+/// of them execute a package straight from the registry, one per package
+/// manager a reader is likely to already have, and the arguments are identical
+/// across all three.
+///
+/// The failure this stops is drift towards whichever one the author happens to
+/// use. A page naming only `npx` reads, to a pnpm or bun user, as "this channel
+/// wants npm installed" — which is the exact objection that retired the npm
+/// channel the first time, and it would be false. There is nothing to correct
+/// them with either: `pnpx @askviraj/claude-status` appears nowhere else in the
+/// repository, so a reader who does not already know it works will not find out.
+///
+/// Read against the manifest rather than a name written here, so renaming the
+/// package renames what the page must say.
+#[test]
+fn the_install_page_names_every_runner_the_package_supports() {
+    let page = read("site/content/install.md");
+    let manifest: serde_json::Value = serde_json::from_str(&read("npm/package.json")).expect("npm/package.json is JSON");
+    let package = manifest["name"].as_str().expect("the manifest names the package");
+
+    for runner in ["npx", "pnpx", "bunx"] {
+        let invocation = format!("{runner} ");
+        let named = page.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with(&invocation) && l.contains(package) && l.contains("--install")
+        });
+        assert!(
+            named,
+            "site/content/install.md never shows `{runner} {package} --install` — a reader with {runner} is left assuming this channel needs a different package manager"
+        );
+    }
 }
 
 /// **Every image the readme shows is in this repository, and resolves.**

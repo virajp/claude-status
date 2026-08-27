@@ -19,7 +19,20 @@ held is the thing that drifted.
 
 ## Active
 
-**None.** The four folders that were here — `config-and-cli`, `distribution`,
+| Folder                                       | Plans | What it changes                                           |
+| -------------------------------------------- | ----- | --------------------------------------------------------- |
+| [npm-installer](./2026-08-27-npm-installer/) | 1     | `npx` as a third install channel, beside the tap and mise |
+
+**`npm-installer` reopens two decisions the `distribution` folder closed** —
+`drop-npm` and the deleted download path — which is the whole reason it is a
+plan rather than a commit. Its
+[index](./2026-08-27-npm-installer/index.md#this-is-a-third-channel-not-a-replacement)
+carries the table of what reverses and what specifically changed to allow it. It
+has **two prerequisites outside this repository**: the npm scope, which
+[the decision record](../decisions.md) says nobody had yet claimed, and Trusted
+Publishing.
+
+The four folders that were here before it — `config-and-cli`, `distribution`,
 `website` and `spec-retirement`, ten plans between them — all landed and were
 archived on 2026-08-27. They are listed under [Archived](#archived) below.
 

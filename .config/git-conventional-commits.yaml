@@ -22,10 +22,12 @@ convention:
     - usage # the session usage mirror consumed by ai-plugins
     - caps # the PostToolUse context/rate-limit hook
     # everything else
-    # `installer` is a dead scope — `distribution/01` deleted the npm channel it
-    # named. It stays listed so the commits that used it remain valid under this
-    # config; nothing new should reach for it.
-    - installer # npm platform packages, install/uninstall, receipts
+    # `installer` was a dead scope between `distribution/01`, which deleted the
+    # npm channel it named, and `npm-installer`, which brought one back as a
+    # third channel beside the tap and mise. It is live again — but it now names
+    # the npx installer that DOWNLOADS the binary, never the per-platform
+    # packages that used to carry it. The older commits stay valid either way.
+    - installer # the npx installer: install/uninstall, receipts, the digest pin
     - plans # ./docs/plans
     - site # ./site — the zola sources behind claude-status.virajp.dev
     # `spec` is a dead scope, on the same terms as `installer` above —

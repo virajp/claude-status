@@ -4,7 +4,7 @@ description = "Get the binary, then wire Claude Code to it."
 weight = 1
 +++
 
-Apple Silicon macOS. Two routes, and both end at the same wiring step.
+Apple Silicon macOS. Three routes, and all of them end at the same wiring step.
 
 ## Homebrew
 
@@ -41,15 +41,71 @@ mise use --global "github:virajp/claude-status@latest"
 That pulls the released binary straight from the GitHub release and puts it on
 your `PATH`. `mise upgrade` moves it forward.
 
+## npx
+
+Pick the runner you already have — the arguments are identical:
+
+```sh
+npx  @askviraj/claude-status --install
+pnpx @askviraj/claude-status --install
+bunx @askviraj/claude-status --install
+```
+
+**The package is an installer, not the tool.** Nothing is installed globally: it
+downloads the same released binary the other two routes use and puts it on your
+`PATH`. `claude-status --configure` still does the wiring. Running the same
+command again upgrades what it placed, printing the old version and the new.
+
+It refuses anything but Apple Silicon macOS, and it refuses *before* it runs
+rather than after downloading. It verifies what it downloads against a SHA-256
+**pinned inside the published package** — not one fetched alongside the binary —
+and a mismatch is fatal rather than something to retry.
+
+**It will not touch a binary Homebrew or mise installed.** It recognises both,
+prints that channel's upgrade command, and stops — so two channels never end up
+fighting over the same file on your `PATH`.
+
+The binary lands in a directory under your home that is already on your `PATH`,
+`~/.local/bin` first. Never `/usr/local/bin`, never Homebrew's prefix. If
+nothing qualifies it installs into `~/.local/bin` anyway, prints the line to add
+to your shell, and exits non-zero.
+
+### The installer's flags
+
+These are the installer's own, and they are not the binary's — the binary's
+surfaces are further down.
+
+| Flag          | Does                                            |
+| ------------- | ----------------------------------------------- |
+| `--install`   | place the binary on your `PATH`                 |
+| `--uninstall` | remove it, and unwire `~/.claude/settings.json` |
+| `--help`      | the flag list                                   |
+
+Three modifiers pair with `--install`:
+
+| Flag             | Does                                             |
+| ---------------- | ------------------------------------------------ |
+| `--configure`    | run `claude-status --configure` after installing |
+| `--no-configure` | skip it, and print the command instead           |
+| `--force`        | replace a binary this installer did not place    |
+
+**With neither `--configure` nor `--no-configure`, it asks.** A script has no
+TTY to be asked on, so there it skips silently — which is why `--no-configure`
+exists at all: it lets a script decline as explicitly as it consents.
+
+**Passing both is refused, not ranked.** A contradiction resolved silently is
+how a script ends up doing the opposite of what it says.
+
 ## Then wire Claude Code to it
 
-Both routes end here, and it is the step people skip:
+Every route ends here, and it is the step people skip:
 
 ```sh
 claude-status --configure
 ```
 
-Restart Claude Code and the bar is there.
+Restart Claude Code and the bar is there. The npx installer will offer to run
+this for you; brew and mise cannot.
 
 ### What `--configure` writes
 
@@ -148,9 +204,22 @@ no second language.
 **Apple Silicon macOS** is what is built and tested. The Homebrew formula
 refuses anything else — it declares an `arm64` and a macOS requirement, so an
 Intel Mac is told *"The arm64 architecture is required for this software"*
-rather than installing something that cannot run.
+rather than installing something that cannot run. The npm package declares the
+same requirement, so that route refuses too.
 
 ## Removing it
 
-Delete the binary, then remove the `statusLine`, `subagentStatusLine` and
-`PostToolUse` hook entries from `~/.claude/settings.json`.
+The npx route has an uninstaller:
+
+```sh
+npx @askviraj/claude-status --uninstall
+```
+
+That removes the binary and takes the `statusLine`, `subagentStatusLine` and
+`PostToolUse` entries back out of `~/.claude/settings.json`, leaving another
+tool's hooks in that array alone. **It refuses a binary it did not place**, so
+it will not remove a Homebrew or mise install. Your
+`~/.config/claude-status/config.json` is left where it is.
+
+After brew or mise it is by hand: delete the binary, then remove those three
+entries from `~/.claude/settings.json` yourself.

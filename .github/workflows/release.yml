@@ -9,12 +9,15 @@ name: Release
 #   1. a pushed version tag (v*)   — the normal release path
 #   2. workflow_dispatch           — manual re-run against an existing tag
 #
-# THERE IS NO REGISTRY STEP, and adding one back is a decision, not a fix. npm
-# was the channel until `distribution/01` retired it: shipping a Rust binary
-# through npm asked every user for a Node toolchain to deliver something that
-# needs none, and made this repo two-language to serve one artifact. That is
-# also why OIDC trusted publishing and `id-token: write` are gone — the only
-# thing that ever needed them was the publish. See contract §9.
+# THE REGISTRY STEP IS BACK, and narrowly. `distribution/01` retired npm as a
+# channel because shipping a Rust binary through it asked every user for a Node
+# toolchain to deliver something that needs none, and made this repo
+# two-language to serve one artifact. `publish-npm` below publishes an
+# INSTALLER instead — no binary, no build, no dependencies — which downloads the
+# asset this workflow just uploaded and refuses it unless it matches a digest
+# stamped in from that release's own SHA256SUMS. `docs/decisions.md` carries
+# both halves of the reversal. `id-token: write` returns with it, on that one
+# job rather than on the workflow.
 #
 # ONE version. Cargo.toml owns it: the binary self-reports it, and `verify`
 # below checks the tag against it before anything is built.
@@ -47,8 +50,11 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  # `contents: write` creates the release and uploads the binaries to it. It is
-  # the only permission this workflow needs, now that nothing publishes.
+  # `contents: write` creates the release and uploads the binaries to it, and is
+  # the only permission every job here needs. `publish-npm` declares its own —
+  # `id-token: write`, with `contents` narrowed back to `read` — because a
+  # job-level block replaces this one outright, and nothing else in this
+  # workflow should be able to mint an OIDC identity.
   contents: write
 
 concurrency:
@@ -537,3 +543,177 @@ jobs:
 
           git commit -m "claude-status $VERSION"
           git push
+
+  # The npm package moves only after the release exists, and pins a digest read
+  # back out of it. `bump-tap` is its sibling against a different registry.
+  #
+  # `needs: publish` is the design, not sequencing hygiene, and it is sharper
+  # here than it is for the tap. The package carries NO BINARY — it is an
+  # installer that fetches `claude-status-darwin-arm64.tar.gz` from this tag and
+  # refuses it unless the bytes match a sha256 stamped in at publish time. A
+  # published npm version is immutable, so a package pinned against a release
+  # that did not exist yet could never be corrected, only superseded.
+  #
+  # **A failure here is not a broken release.** By the time this job runs,
+  # `publish` has created the release and uploaded every asset, and nothing
+  # below can modify either — this job's token is narrowed to `contents: read`
+  # precisely so that stays true. Every failure path says so out loud, because a
+  # red X on a release run reads as "the release failed" unless something tells
+  # you otherwise. Re-run this job alone.
+  #
+  # **THIS WORKFLOW CANNOT PERFORM THE FIRST PUBLISH OF A PACKAGE NAME.** A
+  # Trusted Publisher is configured on a package's settings page on npmjs.com,
+  # and that page does not exist until the package does — so a name has to be
+  # published once by hand, with a granular token, before OIDC can be registered
+  # for it. Checked on 2026-08-27 rather than assumed: npm/cli#8544 ("Allow
+  # publishing initial version with OIDC") is OPEN, and npm's own
+  # trusted-publishers doc describes no path for a package that does not exist.
+  # The mechanism is fine; only the first release of a new name is gated.
+  #
+  # **The bootstrap may be worse than one manual publish, and nobody has
+  # established which.** The `drop-npm` plan recorded `@askviraj/claude-status`
+  # as published — "a placeholder reserving the name, with `latest` pointing at
+  # it" — and an authenticated fetch later returned 404, which
+  # `docs/decisions.md` records while saying the difference is not decidable
+  # from outside. If that placeholder was published and then unpublished, npm
+  # refuses the name for 24 hours and refuses that exact version forever. So the
+  # bootstrap is "publish once by hand" only if the name was never taken; if it
+  # was, it is that plus a version that can never be `0.0.1` again. Whoever runs
+  # it first finds out, and records the answer in `docs/decisions.md`.
+  publish-npm:
+    needs: [ verify, publish ]
+    runs-on: ubuntu-24.04
+    # Narrowed from the workflow's `contents: write`, which this job must not
+    # have: it reads the release and may not touch it.
+    #
+    # `id-token: write` IS the trusted-publishing mechanism. npm exchanges this
+    # run's OIDC identity — repository plus the ENTRY-POINT workflow's filename
+    # — for a publish credential that lives as long as the request, so there is
+    # no npm token at rest in this repository at all. That the identity names
+    # the entry point is also why a publish can never be moved behind a
+    # `workflow_call`: npm would see the caller, not this file.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      # `install: false`, for the reason `publish` carries it: this job runs
+      # after `test`, `build` and `publish` have spent their minutes, so a tool
+      # download dying here is a shipped release with no npm package — the exact
+      # shape of the 2026-08-22 failure. It needs nothing: the staging task is
+      # bash, `sed` and `awk`, and `gh`, `node` and `npm` all ship in the runner
+      # image.
+      #
+      # The one download below — `npm install -g npm@latest` — is deliberate and
+      # different in kind. It comes from the registry this job exists to talk to,
+      # so it cannot fail in a way the publish itself would have survived.
+      - uses: jdx/mise-action@v4
+        with:
+          install: false
+
+      # Ground truth for the digest: the manifest attached to the release that
+      # was actually published, never one rebuilt here. Same source the tap
+      # reads, so the two channels cannot pin different bytes for one tag.
+      - name: Download the release's SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -e
+          gh release download "v$VERSION" -p SHA256SUMS -O SHA256SUMS --clobber
+
+      # The injection lives in a task so it can be RUN outside CI —
+      # `tests/release.rs` can execute a script and cannot execute YAML, and
+      # this rewrite is the whole integrity story of the npm channel. Invoked by
+      # path, like `_rust_reassemble`, because this job has no mise tools.
+      #
+      # `VERSION` is `verify`'s answer, which it computed from Cargo.toml and
+      # refused the release unless the pushed tag agreed. The task falls back to
+      # `crate_version()` when run by hand; either way no version is typed.
+      - name: Stage the npm package
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: .config/mise/tasks/release/npm-package SHA256SUMS
+
+      # The staged package's OWN claim, checked against what the release
+      # carries. A package whose installer names an asset that is not attached
+      # is well-formed, publishes cleanly, and 404s for every user — the same
+      # class of failure `docs/decisions.md` records for a formula url, where
+      # `brew audit --strict` was measured exiting 0 against a url returning 404.
+      #
+      # Read back out of the staged file rather than recomputed here, so no
+      # asset name is written down twice.
+      #
+      # Not piped into `grep -q`: `grep` exits at the first match and `gh` dies
+      # of SIGPIPE, which under `pipefail` would fail the check on success.
+      - name: Check the staged asset is one the release carries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -e
+          asset="$(node -p "require('./target/npm/asset.json').name")"
+          gh release view "v$VERSION" --json assets --jq '.assets[].name' > assets.txt
+          if ! grep -qxF -- "$asset" assets.txt; then
+            echo "::error::the staged package points at '$asset', which v$VERSION does not carry — every install on this channel would 404. v$VERSION IS RELEASED and unaffected."
+            exit 1
+          fi
+
+      # Trusted publishing needs npm >= 11.5.1 on node >= 22.14.0, per npm's
+      # own docs, and the runner image's bundled npm may lag either. `@latest`
+      # rather than a pin: the floor is the requirement, and there is nothing
+      # here to reproduce byte for byte.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Publish to npm
+        env:
+          # Read through the environment, never interpolated into the script
+          # body, for the reason the tap's rewrite step gives: `${{ }}`
+          # substitution happens before bash sees the text.
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -e
+
+          # A release is only ever cut from a pushed tag. `needs: publish`
+          # already makes a branch dispatch unreachable — `publish` refuses
+          # first, for the reasons its own guard spells out — and this says it
+          # again anyway, at the point of no return. An npm version cannot be
+          # replaced or unpublished, so relying on another job's guard costs
+          # permanently and publicly if that guard is ever edited.
+          if [ "$REF_TYPE" != "tag" ]; then
+            echo "::error::refusing to publish to npm from a $REF_TYPE ref ($REF_NAME). A release is cut from a pushed tag; dispatch against the tag ref to re-run one."
+            exit 1
+          fi
+
+          # The name npm sees is the name in the staged manifest — nothing here
+          # transcribes it.
+          name="$(node -p "require('./target/npm/package.json').name")"
+
+          # Idempotent, which is this job's `--clobber`. An npm version cannot
+          # be republished, so re-running a tag — the documented way to recover
+          # a partly-failed release — must SKIP a version that is already there
+          # rather than fail the run on it.
+          if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+            echo "$name@$VERSION is already published — skipping."
+            exit 0
+          fi
+
+          # `--access public`: a scoped package defaults to restricted, and a
+          # restricted installer is one nobody can install.
+          #
+          # `--provenance` is explicit rather than load-bearing. npm generates
+          # and publishes provenance attestations automatically for a
+          # trusted-publisher publish and its docs say the flag is not needed;
+          # it is passed so the intent is readable in the job rather than
+          # inferred from the absence of a token.
+          echo "Publishing $name@$VERSION ..."
+          if ! npm publish --provenance --access public target/npm; then
+            echo "::error::the npm publish failed. v$VERSION IS RELEASED — the GitHub Release and its assets are complete and untouched by this job. Re-run this job alone once npm is reachable, or once $name has had the one manual first publish a Trusted Publisher registration requires (see this job's comment)."
+            exit 1
+          fi
