@@ -1604,3 +1604,107 @@ fn the_publish_command_names_the_staged_directory_as_a_path() {
         publish_line.trim()
     );
 }
+
+/// **The readme ships, or npm shows the package with no page at all.**
+///
+/// `files` is an allowlist: anything missing from it is absent from the
+/// tarball, and npmjs.com renders the readme it finds in the package rather
+/// than the one in the repository. A package whose `files` forgot it publishes
+/// clean, installs correctly, and presents as a bare name and version.
+#[test]
+fn the_readme_is_shipped_in_the_tarball() {
+    let manifest: serde_json::Value =
+        serde_json::from_str(&read("npm/package.json")).expect("npm/package.json is JSON");
+    let files: Vec<&str> = manifest["files"]
+        .as_array()
+        .expect("the manifest has a files allowlist")
+        .iter()
+        .map(|f| f.as_str().expect("files entries are strings"))
+        .collect();
+
+    assert!(
+        files.contains(&"readme.md"),
+        "npm/readme.md is not in the manifest's `files`, so it is not in the tarball and npmjs.com \
+         will show this package with no description at all: {files:?}"
+    );
+    assert!(
+        root().join("npm/readme.md").is_file(),
+        "`files` promises a readme.md that does not exist"
+    );
+}
+
+/// **Every image in the npm readme is an absolute URL.**
+///
+/// npmjs.com cannot serve a file out of the tarball. A repo-relative `src`
+/// renders as a broken image on the package page no matter what `files` ships,
+/// which is exactly the mistake that looks like it was fixed by adding the
+/// asset to the package. The root readme is repo-relative ON PURPOSE and is a
+/// different document for a different reader; this test is why they cannot be
+/// the same file.
+///
+/// The site is not an option either: `site:build` fingerprints statusline.png
+/// and og-card.png, so their addresses change every release — see
+/// `the_build_fingerprints_every_asset_that_can_change` in tests/site.rs.
+#[test]
+fn every_image_in_the_npm_readme_is_absolute() {
+    let readme = read("npm/readme.md");
+
+    let mut relative = Vec::new();
+    for (marker, close) in [("<img", '>'), ("](", ')')] {
+        let mut rest = readme.as_str();
+        while let Some(at) = rest.find(marker) {
+            rest = &rest[at + marker.len()..];
+            let end = rest.find(close).unwrap_or(rest.len());
+            let chunk = &rest[..end];
+            let src = if marker == "<img" {
+                chunk.split("src=").nth(1).map(|s| s.trim().trim_matches(|c| c == '"' || c == '\n' || c == ' '))
+            } else if chunk.contains(".png") || chunk.contains(".svg") {
+                Some(chunk.trim())
+            } else {
+                None
+            };
+            if let Some(src) = src
+                && (src.contains(".png") || src.contains(".svg"))
+                && !src.starts_with("https://")
+            {
+                relative.push(src.to_string());
+            }
+        }
+    }
+
+    assert_eq!(
+        relative,
+        Vec::<String>::new(),
+        "an image in npm/readme.md is not an absolute https URL, so it renders broken on npmjs.com — \
+         the tarball cannot serve it and the site's copies are fingerprinted"
+    );
+}
+
+/// **The readme's asset URLs are pinned to a release tag, and the staging task
+/// repoints them.**
+///
+/// An npm version is immutable and its readme should be too. A `main` URL
+/// silently repoints every version ever published the moment the image
+/// changes — so a user reading the page for 1.0.0 sees 3.0.0's screenshot.
+///
+/// Both halves are pinned here because either alone is useless: a tracked file
+/// that carries a tag nothing rewrites goes stale at the first release, and a
+/// rewrite with nothing to match finds nothing and exits 0.
+#[test]
+fn the_readme_asset_urls_are_tag_pinned_and_restamped_at_publish() {
+    let readme = read("npm/readme.md");
+    let task = read(".config/mise/tasks/release/npm-package");
+
+    let tagged = readme.matches("raw.githubusercontent.com/virajp/claude-status/v").count();
+    assert!(
+        tagged > 0,
+        "npm/readme.md has no tag-pinned asset URL — either the images moved, or they are pinned to a \
+         branch, which repoints every published version's readme when an image changes"
+    );
+
+    assert!(
+        task.contains("readme.md"),
+        "release/npm-package no longer touches readme.md, so every published version would carry the \
+         tag that happens to be committed rather than its own"
+    );
+}

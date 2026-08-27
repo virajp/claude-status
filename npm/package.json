@@ -14,7 +14,8 @@
   },
   "files": [
     "install.mjs",
-    "asset.json"
+    "asset.json",
+    "readme.md"
   ],
   "engines": {
     "node": ">=20"
