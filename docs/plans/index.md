@@ -19,64 +19,22 @@ held is the thing that drifted.
 
 ## Active
 
-Ten plans in four folders. **All ten have landed.**
+**None.** The four folders that were here — `config-and-cli`, `distribution`,
+`website` and `spec-retirement`, ten plans between them — all landed and were
+archived on 2026-08-27. They are listed under [Archived](#archived) below.
 
-[retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md) was always
-last, because every other plan wrote into the document it deletes. It ran on
-2026-08-26/27 and the document is gone; what it carried is split across the
-site, [the decision record](../decisions.md),
+`retire-the-spec` was always last, because every other plan wrote into the
+document it deletes. It ran on 2026-08-26/27 and the document is gone; what it
+carried is split across the site, [the decision record](../decisions.md),
 [the usage-mirror contract](../usage-mirror-contract.md) and `tests/fixtures/`.
 
-All ten are marked `status: done` in their own front matter, and the four cycles
-holding them with them. The nine stayed `active` long after they shipped, which
-made `retire-the-spec` look gated on work that was already finished — the gate
-was bookkeeping, not a dependency.
-
-### [config-and-cli](./2026-08-23-config-and-cli/index.md)
-
-| # | Plan                                                                             | Requires |
-| - | -------------------------------------------------------------------------------- | -------- |
-| 1 | [typed-config](./2026-08-23-config-and-cli/01-typed-config.md)                   | —        |
-| 2 | [config-relocation](./2026-08-23-config-and-cli/02-config-relocation.md)         | 1        |
-| 3 | [cli-surface](./2026-08-23-config-and-cli/03-cli-surface.md)                     | 2        |
-| 4 | [schema-and-validation](./2026-08-23-config-and-cli/04-schema-and-validation.md) | 3        |
-
-Types for the config, a move to `~/.config/claude-status/` storing only
-non-defaults, `--configure` and the reshaped flag set, then a generated schema.
-
-### [distribution](./2026-08-23-distribution/index.md)
-
-| # | Plan                                                                 | Requires         |
-| - | -------------------------------------------------------------------- | ---------------- |
-| 1 | [drop-npm](./2026-08-23-distribution/01-drop-npm.md)                 | config-and-cli 3 |
-| 3 | [release](./2026-08-23-distribution/03-release.md)                   | 1                |
-| 2 | [homebrew-formula](./2026-08-23-distribution/02-homebrew-formula.md) | 3                |
-
-Delete the npm installer, cut `v0.1.0`, then ship a Homebrew tap against the
-asset it published. **Rows are in execution order: 1 → 3 → 2.** The two plans
-each declared the other as a prerequisite; a formula cannot pin a digest that
-does not exist, so the release goes first.
-
-### [website](./2026-08-23-website/index.md)
-
-| # | Plan                                                            | Requires            |
-| - | --------------------------------------------------------------- | ------------------- |
-| 1 | [site](./2026-08-23-website/01-site.md)                         | —                   |
-| 2 | [config-generator](./2026-08-23-website/02-config-generator.md) | 1, config-and-cli 4 |
-
-`claude-status.virajp.dev` — Zola on Cloudflare Pages, then a schema-driven
-config generator with a fixture-gated live preview.
-
-### [spec-retirement](./2026-08-23-spec-retirement/index.md)
-
-| # | Plan                                                                  | Requires       |
-| - | --------------------------------------------------------------------- | -------------- |
-| 1 | [retire-the-spec](./2026-08-23-spec-retirement/01-retire-the-spec.md) | all nine above |
-
-Rehome the decision record, the `ai-plugins` contract and the reference
-payloads, then delete the behaviour contract. **Last, and gated on the site
-covering what it replaces** — the plan's own *Current state* section records why
-it is retired rather than repaired.
+What is not yet cut into a cycle lives in [`backlog.md`](./backlog.md) — **three
+entries**, moved there on 2026-08-27 out of cycles that had already closed
+`done`: the config generator's wasm bar preview, code signing and notarisation,
+and Linux targets. The backlog read "currently empty" until then, which was true
+of what anyone had *raised* and false of what had been *deferred*. Its entries
+carry their own evidence rather than linking into the archive, for the reason
+the Archived section gives.
 
 ### Cross-folder dependencies
 
@@ -117,12 +75,6 @@ this sat open. `bump-tap` has now run: the published formula gives
 `homepage "https://claude-status.virajp.dev"`, and `pages.dev` appears in it
 zero times.
 
-Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — **three
-entries**, all moved there on 2026-08-27 from cycles that had already closed
-`done`: the config generator's wasm bar preview, code signing and notarisation,
-and Linux targets. It read "currently empty" until then, which was true of what
-anyone had *raised* and false of what had been *deferred*.
-
 ## The direction these replace
 
 An earlier set of five plans, written the same day, was scrapped rather than
@@ -138,10 +90,39 @@ into the new set. Git history holds the originals.
 
 ## Archived
 
-Twelve cycles, all executed. They live on disk under `docs/plans/archived/` and
-are **gitignored** — the record is kept locally, out of the repo. Nothing below
-links, because in a fresh clone there is nothing to link to; the merge commit is
-the durable pointer.
+Twenty-two cycles, all executed. They live on disk under `docs/plans/archived/`
+and are **gitignored** — the record is kept locally, out of the repo. Nothing
+below links, because in a fresh clone there is nothing to link to; the merge
+commit is the durable pointer.
+
+### Archived 2026-08-27 — the four 2026-08-23 folders
+
+Ten plans, all `status: done` before they moved. Rows are in execution order
+within each folder.
+
+| Plan                                                 | Requires            | Landed              |
+| ---------------------------------------------------- | ------------------- | ------------------- |
+| `2026-08-23-config-and-cli/01-typed-config`          | —                   | `6eefd79`, no merge |
+| `2026-08-23-config-and-cli/02-config-relocation`     | 1                   | merged in `586134e` |
+| `2026-08-23-config-and-cli/03-cli-surface`           | 2                   | merged in `4556946` |
+| `2026-08-23-config-and-cli/04-schema-and-validation` | 3                   | merged in `83859e6` |
+| `2026-08-23-distribution/01-drop-npm`                | config-and-cli 3    | merged in `fd8d4de` |
+| `2026-08-23-distribution/03-release`                 | 1                   | merged in `e990ab4` |
+| `2026-08-23-distribution/02-homebrew-formula`        | 3                   | merged in `ee6f939` |
+| `2026-08-23-website/01-site`                         | —                   | merged in `ce3126c` |
+| `2026-08-23-website/02-config-generator`             | 1, config-and-cli 4 | merged in `f6b22c4` |
+| `2026-08-23-spec-retirement/01-retire-the-spec`      | all nine above      | `8471678`, no merge |
+
+**Two landed without a merge commit**, which is why they carry a plain sha:
+`typed-config` and `retire-the-spec` were pushed straight to `main`. For
+`cli-surface` the follow-up scan fix is `fca2aa2`; for `release` the work spans
+`10796c4`, `d1cf9b0`, `91d4237` and `57ee92f` before `e990ab4` completes it.
+
+**`distribution` rows are in execution order 1 → 3 → 2.** The two plans each
+declared the other a prerequisite; a formula cannot pin a digest that does not
+exist, so the release went first.
+
+### The twelve before them
 
 | Plan                                | Requires                         | Landed                    |
 | ----------------------------------- | -------------------------------- | ------------------------- |
@@ -160,24 +141,31 @@ the durable pointer.
 Filename timestamps record when each plan was written, not when it ran.
 
 **Three acceptance criteria were archived open.** Two — one binary per platform
-from a real publish, and a machine with no toolchain running it — are carried
-into [`distribution/03`](./2026-08-23-distribution/03-release.md), restated for
-Homebrew. The third, `macos-only`'s `EBADPLATFORM` proof, **dies with npm** and
-is closed as no longer applicable.
+from a real publish, and a machine with no toolchain running it — were carried
+into `distribution/03`, restated for Homebrew, and **closed by the releases
+themselves**: `v0.1.0` then `v1.0.0` published the assets, and `v1.1.0` proved
+the tarball installs and runs. The third, `macos-only`'s `EBADPLATFORM` proof,
+**died with npm** and is closed as no longer applicable.
 
-## Nothing has shipped
+## What has shipped
 
-No release tag, no GitHub Release. The registry holds a `0.0.1` placeholder
-reserving `@askviraj/claude-status`, which will be deprecated rather than
-published to. [`distribution/03`](./2026-08-23-distribution/03-release.md) owns
-the first release.
+**This section said "Nothing has shipped" until 2026-08-27.** It was written
+before `distribution/03` ran and was never updated as the releases went out.
+
+- **`v0.1.0`**, then **`v1.0.0`** (`e990ab4`) — the first real assets.
+- **`v1.1.0`** (`a4d9d5b`) — the OS-trust-store fix for the spend fetch, the
+  Node 24 action bump, and the release-pipeline repairs that took three attempts
+  to land. Its `bump-tap` run is what finally repointed the Homebrew formula at
+  `claude-status.virajp.dev`.
+- **Homebrew is the channel.** npm is retired; the `@askviraj/claude-status`
+  registry entry holds a `0.0.1` placeholder that will be deprecated rather than
+  published to.
 
 **One target.** `supported_targets()` has one row, `aarch64-apple-darwin`. Linux
-was evaluated for this round and **deferred, not rejected** — the technical cost
-is low, but nobody has confirmed Claude Code on Linux writes
-`~/.claude/.credentials.json`, without which the spend segment silently never
-renders. The evaluation is recorded in the
-[distribution index](./2026-08-23-distribution/index.md); do not re-derive it.
+was evaluated and **deferred, not rejected**; the evaluation is preserved in
+[`backlog.md`](./backlog.md) — including the correction that its "TLS is already
+`rustls` with baked roots" premise stopped being true in `v1.1.0`. Do not
+re-derive it.
 
 ## Not planned here
 

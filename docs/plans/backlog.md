@@ -22,13 +22,20 @@ is exactly how they became invisible: nothing is half-built, no cycle is
 waiting, and a reader checking this file on 2026-08-27 would have been told
 there was nothing pending. Moved here so the next planning pass sees them.
 
+**Each entry carries its evidence rather than linking to the plan it came
+from.** Those plans were archived on 2026-08-27 into `docs/plans/archived/`,
+which is **gitignored** — in a fresh clone there is nothing to link to, and a
+backlog whose reasoning lives behind a dead link is a backlog that gets
+re-derived. Commit shas are given instead: they are the durable pointer, the
+same convention [`index.md`](./index.md) uses for archived cycles.
+
 ### The config generator's bar preview — and it is WebAssembly, not JavaScript
 
-**Deferred from**
-[website/02](./2026-08-23-website/02-config-generator.md#the-cycle-was-cut-steps-4-and-5-are-deferred-and-so-are-criteria-4-5-and-6).
-Steps 4 and 5 were cut with acceptance criteria 4, 5 and 6. Nothing partial was
-left behind — the page says plainly that it does not draw a bar and sends the
-reader to `--debug`.
+**Deferred from** `2026-08-23-website/02-config-generator` (archived; landed in
+`f6b22c4`), section *"The cycle was cut: steps 4 and 5 are deferred, and so are
+criteria 4, 5 and 6"*. Steps 4 and 5 were cut with acceptance criteria 4, 5 and
+6. Nothing partial was left behind — the page says plainly that it does not draw
+a bar and sends the reader to `--debug`.
 
 **Already true, and measured rather than argued** — a recon pass in that cycle
 built it before deferring it:
@@ -59,10 +66,10 @@ still one file.
 
 ### Code signing and notarisation
 
-**Deferred from** `distribution/§9`, restated as still-unowned in
-[distribution/02](./2026-08-23-distribution/02-homebrew-formula.md) and
-[03](./2026-08-23-distribution/03-release.md), and recorded in
-[`docs/decisions.md`](../decisions.md).
+**Deferred from** `distribution/§9`, restated as still-unowned in the archived
+`2026-08-23-distribution/02-homebrew-formula` (`ee6f939`) and `03-release`
+(`e990ab4`), and — the copy that survives in the repo — in
+[`docs/decisions.md`](../decisions.md#still-unowned-code-signing-and-notarisation).
 
 **Already true:** a brew-installed binary is downloaded rather than built, the
 same as npm's was — but **"brew installed it" makes people expect it is signed,
@@ -73,10 +80,11 @@ put in front of a user. Nothing about this changed in v1.1.0.
 
 ### Linux targets
 
-**Deferred rather than rejected** in
-[distribution/index.md](./2026-08-23-distribution/index.md#platforms), with the
-evaluation written down so it is not re-derived. `supported_targets()` still has
-one row.
+**Deferred rather than rejected** in the archived
+`2026-08-23-distribution/index.md`, under *Platforms*. The evaluation is
+reproduced in full below rather than pointed at, because that folder is now
+gitignored and the whole purpose of the note was that nobody re-derives it.
+`supported_targets()` still has one row.
 
 **Already true:** the technical cost is low — every dependency is pure Rust,
 home resolution is `$HOME`, and the keychain is a capability check that falls
@@ -100,29 +108,27 @@ claim a Linux plan must re-check rather than inherit.
 ## Graduated
 
 **The four entries that were here have all graduated.** They were cut into plans
-on 2026-08-23 and now live in the three folders under
-[`docs/plans/`](./index.md):
+on 2026-08-23, ran, and were archived on 2026-08-27 — so the sha is the durable
+pointer, not a path.
 
-| Was                                 | Became                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------- |
-| `$schema` in every generated config | [config-and-cli/04](./2026-08-23-config-and-cli/04-schema-and-validation.md) |
-| Config validation in `--debug`      | [config-and-cli/04](./2026-08-23-config-and-cli/04-schema-and-validation.md) |
-| A Homebrew formula                  | [distribution/02](./2026-08-23-distribution/02-homebrew-formula.md)          |
-| Remove the npm installer            | [distribution/01](./2026-08-23-distribution/01-drop-npm.md)                  |
+| Was                                 | Became                                    | Landed    |
+| ----------------------------------- | ----------------------------------------- | --------- |
+| `$schema` in every generated config | `config-and-cli/04-schema-and-validation` | `83859e6` |
+| Config validation in `--debug`      | `config-and-cli/04-schema-and-validation` | `83859e6` |
+| A Homebrew formula                  | `distribution/02-homebrew-formula`        | `ee6f939` |
+| Remove the npm installer            | `distribution/01-drop-npm`                | `fd8d4de` |
 
 Planning turned up more than the entries asked for, and the extra plans are
 worth knowing about because no backlog entry predicted them:
 
 - **There were no Rust config types** to hang a schema or a validator off, so
-  [config-and-cli/01](./2026-08-23-config-and-cli/01-typed-config.md) exists to
-  create them.
+  `config-and-cli/01-typed-config` (`6eefd79`) exists to create them.
 - **Retiring the installer stopped being a port and became a deletion**, once
-  `--configure` moved into the binary
-  ([config-and-cli/03](./2026-08-23-config-and-cli/03-cli-surface.md)) and it
-  was settled that nothing needs migrating.
-- **A website was commissioned** — [website/](./2026-08-23-website/index.md) —
-  which is now part of the install flow rather than marketing, since both the
-  formula's caveats and `--help` point at it.
+  `--configure` moved into the binary (`config-and-cli/03-cli-surface`,
+  `4556946`) and it was settled that nothing needs migrating.
+- **A website was commissioned** — `2026-08-23-website/` — which is now part of
+  the install flow rather than marketing, since both the formula's caveats and
+  `--help` point at it.
 
 ## Closed
 
