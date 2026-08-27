@@ -89,6 +89,25 @@ jobs:
       - name: Check the shared toolchain
         run: mise run code:toolchain
 
+      # **Belt and braces against a flake this repo has already been bitten by
+      # twice.** `code:toolchain` above checks what the *config declares*; this
+      # checks what is *installed*, and the two come apart.
+      #
+      # release.yml records the symptom at length: "three runs of the SAME
+      # commit minutes apart produced clippy twice and not the third time,
+      # where rustup resynced the toolchain at lint time and reported
+      # 'downloading 3 components' — a `minimal` profile, not the `default`
+      # this repo's config asks for". Dropping `install_args` made it rarer,
+      # not impossible: this workflow's second run hit
+      # "'cargo-clippy' is not installed for the toolchain '1.98.0'" on a
+      # commit whose predecessor had linted clean minutes earlier.
+      #
+      # `rustup component add` is idempotent and costs nothing when the
+      # component is already there. A gate that fails at random is worse than
+      # no gate, because it teaches you to re-run it rather than read it.
+      - name: Ensure clippy is actually installed
+        run: rustup component add clippy
+
       # Format, lint, test, and the security scan — `code:sec` fails at medium
       # and above, per `.config/grype.yaml`.
       - name: Check everything
