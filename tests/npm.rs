@@ -431,7 +431,7 @@ fn the_package_version_equals_the_crate_version() {
     assert_eq!(
         manifest["version"].as_str(),
         Some(from_shell.as_str()),
-        "npm/package.json claims a version the crate does not — a user who runs `npx @askviraj/claude-status` gets an installer that names a release that is not the one it fetches"
+        "npm/package.json claims a version the crate does not — a user who runs `npx @virajp.dev/claude-status` gets an installer that names a release that is not the one it fetches"
     );
 }
 
@@ -742,7 +742,7 @@ fn an_unknown_binary_is_refused_rather_than_overwritten() {
 /// **A matching receipt turns the refusal into an upgrade.**
 ///
 /// This is the other side of the same guard, and it is what makes the channel
-/// usable at all: without it, the second `npx @askviraj/claude-status --install`
+/// usable at all: without it, the second `npx @virajp.dev/claude-status --install`
 /// a user ever runs refuses the binary the first one placed.
 ///
 /// Both halves of the proof are checked separately, because they fail

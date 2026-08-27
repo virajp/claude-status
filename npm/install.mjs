@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /*
- * `npx @askviraj/claude-status --install` — the third route to a
+ * `npx @virajp.dev/claude-status --install` — the third route to a
  * `claude-status` on PATH, beside `brew install virajp/tap/claude-status` and
  * `mise use --global`.
  *
@@ -111,9 +111,9 @@ export function helpText() {
   return `claude-status — install the Claude Code powerline status line
 
 USAGE:
-    npx @askviraj/claude-status --install     put it on your PATH
-    npx @askviraj/claude-status --uninstall   take it off, and unwire it
-    npx @askviraj/claude-status --help        print this help
+    npx @virajp.dev/claude-status --install     put it on your PATH
+    npx @virajp.dev/claude-status --uninstall   take it off, and unwire it
+    npx @virajp.dev/claude-status --help        print this help
 
     pnpx and bunx work identically. Nothing is installed globally: this
     package is an installer, and the binary it fetches is the product.

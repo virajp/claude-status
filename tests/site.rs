@@ -624,7 +624,7 @@ fn the_readme_is_a_pointer_and_not_a_second_configuration_reference() {
 /// use. A page naming only `npx` reads, to a pnpm or bun user, as "this channel
 /// wants npm installed" — which is the exact objection that retired the npm
 /// channel the first time, and it would be false. There is nothing to correct
-/// them with either: `pnpx @askviraj/claude-status` appears nowhere else in the
+/// them with either: `pnpx @virajp.dev/claude-status` appears nowhere else in the
 /// repository, so a reader who does not already know it works will not find out.
 ///
 /// Read against the manifest rather than a name written here, so renaming the

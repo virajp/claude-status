@@ -52,9 +52,11 @@ Three things, and the reversal rests on them rather than on a change of taste:
 ## Prerequisite outside this repository
 
 **The npm scope must exist and Trusted Publishing must be configured**, and
-neither is something a commit here can do. `docs/decisions.md:1660` records that
-`@askviraj/claude-status` returns 404 and that claiming the name "is a separate
-decision nobody has made" — this cycle makes it. See
+neither is something a commit here can do. `docs/decisions.md:1660` records
+`@askviraj/claude-status` as unclaimed and says taking it "is a separate
+decision nobody has made" — **this cycle does not take it.** It publishes under
+`@virajp.dev/claude-status` instead, because a scoped publish needs a scope its
+publisher owns and that is the identifier this project already serves from. See
 [plan 1's prerequisites](./01-npm-installer.md#prerequisites-outside-this-repository).
 
 ## Version line

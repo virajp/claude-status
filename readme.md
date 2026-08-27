@@ -48,7 +48,7 @@ claude-status --configure
 Or, if you reach for `npx` first — `pnpx` and `bunx` take the same arguments:
 
 ```sh
-npx @askviraj/claude-status --install --configure
+npx @virajp.dev/claude-status --install --configure
 ```
 
 Nothing is installed globally by that one: the package is an installer, and it

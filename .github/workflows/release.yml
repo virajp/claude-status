@@ -570,16 +570,17 @@ jobs:
   # trusted-publishers doc describes no path for a package that does not exist.
   # The mechanism is fine; only the first release of a new name is gated.
   #
-  # **The bootstrap may be worse than one manual publish, and nobody has
-  # established which.** The `drop-npm` plan recorded `@askviraj/claude-status`
-  # as published — "a placeholder reserving the name, with `latest` pointing at
-  # it" — and an authenticated fetch later returned 404, which
-  # `docs/decisions.md` records while saying the difference is not decidable
-  # from outside. If that placeholder was published and then unpublished, npm
-  # refuses the name for 24 hours and refuses that exact version forever. So the
-  # bootstrap is "publish once by hand" only if the name was never taken; if it
-  # was, it is that plus a version that can never be `0.0.1` again. Whoever runs
-  # it first finds out, and records the answer in `docs/decisions.md`.
+  # **That bootstrap is one manual publish, and no more.** An earlier version of
+  # this comment worried it might be worse: `drop-npm` recorded
+  # `@askviraj/claude-status` as carrying a `0.0.1` placeholder, and a name that
+  # was published and then unpublished is refused by npm for 24 hours and at
+  # that exact version forever. **The concern was real and no longer applies** —
+  # the package is `@virajp.dev/claude-status`, a name measured as never
+  # published, so nothing about the old one's history reaches it. The old name
+  # stays unreclaimed; see `docs/decisions.md`.
+  #
+  # The scope, not the name, is what a first publish actually needs: npm accepts
+  # a scoped publish only under a scope its publisher owns.
   publish-npm:
     needs: [ verify, publish ]
     runs-on: ubuntu-24.04

@@ -1540,8 +1540,8 @@ platform the formula had already refused to install.**
 
 **Amended 2026-08-27** (`npm-installer`). npm is retired as *the* channel and
 returns as a **third** one, beside the tap and mise:
-`npx @askviraj/claude-status --install`. **The package carries no binary and is
-never installed globally** — it is an installer and nothing else, and its
+`npx @virajp.dev/claude-status --install`. **The package carries no binary and
+is never installed globally** — it is an installer and nothing else, and its
 version, its tag and its digest all describe an artifact that lives on a GitHub
 Release.
 
@@ -1752,14 +1752,33 @@ decidable from outside** — an unpublished package 404s the same way — and
 nothing turns on the difference. The name is unreserved; claiming it is a
 separate decision nobody has made.
 
-**Amended 2026-08-27** (`npm-installer`). **This cycle makes that decision.**
-`@askviraj/claude-status` is claimed, and what it will carry is the installer
-for the third channel — no binary, no per-platform packages.
+**Amended 2026-08-27** (`npm-installer`). **The name stays unreclaimed, and the
+third channel publishes under a different one:** `@virajp.dev/claude-status`.
+
+**An earlier draft of this amendment said the opposite** — that this cycle
+claimed `@askviraj/claude-status` — and it is corrected rather than deleted,
+because what changed the answer is worth keeping. The publish was attempted and
+returned `E404` on the `PUT`; **npm answers an unauthorised publish of a scoped
+name with 404 rather than 401**, deliberately, so that the response cannot be
+used to probe whether a private package exists. The 404 said nothing about the
+name. What it meant was that nobody was logged in.
+
+**The scope is the constraint, not the name.** A scoped package may only be
+published under a scope its publisher owns, so the choice was never between
+strings — it was between accounts. `@virajp.dev` matches the domain the site
+already serves from, which is the one identifier this project had already
+committed to. Unscoped `claude-status` was measured **taken** on 2026-08-27 and
+was never available to take.
+
+**A dotted scope is not exotic**, which is worth recording because it looks like
+it should be: `@socket.io/component-emitter` resolves, so npm permits a dot in
+an org name and this is not a novel bet.
 
 **The measurement above stands as measured.** The authenticated fetch did return
-404, and whether the name ever carried a published version is still not
-decidable from outside; claiming it makes that no more knowable than it was.
-What changes is only that somebody now wants the name.
+404, and whether `@askviraj/claude-status` ever carried a published version is
+still not decidable from outside. Nothing here makes it more knowable — and
+nothing now depends on it, which is the real change: **a name nobody publishes
+to cannot block a release.**
 
 **Two things this needs cannot be done by a commit in this repository**, and
 both have to land before the next tag or `publish-npm` fails a release that is

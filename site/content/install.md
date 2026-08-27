@@ -46,9 +46,9 @@ your `PATH`. `mise upgrade` moves it forward.
 Pick the runner you already have — the arguments are identical:
 
 ```sh
-npx  @askviraj/claude-status --install
-pnpx @askviraj/claude-status --install
-bunx @askviraj/claude-status --install
+npx  @virajp.dev/claude-status --install
+pnpx @virajp.dev/claude-status --install
+bunx @virajp.dev/claude-status --install
 ```
 
 **The package is an installer, not the tool.** Nothing is installed globally: it
@@ -212,7 +212,7 @@ same requirement, so that route refuses too.
 The npx route has an uninstaller:
 
 ```sh
-npx @askviraj/claude-status --uninstall
+npx @virajp.dev/claude-status --uninstall
 ```
 
 That removes the binary and takes the `statusLine`, `subagentStatusLine` and

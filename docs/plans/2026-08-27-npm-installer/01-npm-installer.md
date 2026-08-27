@@ -19,9 +19,10 @@ No dependency chain. One plan, standalone.
 
 ## Slice
 
-§11 Distribution. `npx @askviraj/claude-status --install` becomes a third route
-to a `claude-status` on `PATH`, beside `brew install virajp/tap/claude-status`
-and `mise use --global "github:virajp/claude-status@latest"`.
+§11 Distribution. `npx @virajp.dev/claude-status --install` becomes a third
+route to a `claude-status` on `PATH`, beside
+`brew install virajp/tap/claude-status` and
+`mise use --global "github:virajp/claude-status@latest"`.
 
 **The npm package carries no binary.** It is an installer and nothing else,
 invoked through `npx` / `pnpx` / `bunx` and never globally installed. Its
@@ -116,7 +117,7 @@ already runs for the same reason.
 
 ## Target state
 
-`npm/install.mjs`, published as `@askviraj/claude-status`, with three flags.
+`npm/install.mjs`, published as `@virajp.dev/claude-status`, with three flags.
 
 ### `--install`
 
@@ -261,16 +262,17 @@ Each step names the failing test that defines done. All new tests land in
 Neither can be done by a commit here. **Both must land before the next tag**, or
 `publish-npm` fails a release that is otherwise fine.
 
-1. **Claim `@askviraj/claude-status`.** [decisions.md:1660](../decisions.md)
-   records it as unclaimed and says taking it is a separate decision — this
-   cycle takes it.
+1. **Own the `@virajp.dev` scope on npmjs.com.** The scope is the constraint,
+   not the name: npm accepts a scoped publish only under a scope its publisher
+   owns. `@askviraj/claude-status`, which [decisions.md:1660](../decisions.md)
+   records as unclaimed, **stays** unclaimed — this cycle publishes elsewhere
+   rather than taking it. Unscoped `claude-status` was measured taken on
+   2026-08-27.
 2. **Configure Trusted Publishing** on npmjs.com for this repo and the
-   `publish-npm` job. **Unverified and needs checking before step 11 is
-   written:** npm may require the package to exist before a trusted publisher
-   can be attached, in which case the *first* publish is manual or
-   token-authenticated and OIDC takes over from the second. The plan does not
-   assert which; whoever executes it confirms, and records the answer in
-   `docs/decisions.md`.
+   `publish-npm` job. **Resolved 2026-08-27, during execution:** npm will not
+   attach a trusted publisher to a package that does not exist (`npm/cli#8544`,
+   open), so the first publish of the name is manual or token-authenticated and
+   OIDC takes over from the second.
 
 ## Risks / drift
 
