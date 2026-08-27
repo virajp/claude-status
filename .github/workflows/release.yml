@@ -156,6 +156,26 @@ jobs:
       - name: Check the shared toolchain
         run: mise run code:toolchain
 
+      # **The same belt-and-braces `ci.yml` carries, and this job wanted it
+      # more.** Dropping `install_args` above made the `minimal`-profile resync
+      # rarer, not impossible. `ci.yml` was given this line on 2026-08-27 after
+      # the flake survived that fix; release.yml was not, and on the very next
+      # tag — v1.1.0 — it failed here with
+      # "'cargo-clippy' is not installed for the toolchain '1.98.0'", having
+      # just logged "downloading 3 components". `publish` and `bump-tap` were
+      # skipped, so a release nobody could distinguish from a broken one was
+      # lost to a third-party download profile.
+      #
+      # That is the worse half of the trade the comment above describes: on a
+      # pull request this costs a re-run, on a tag it costs the release. The
+      # two workflows had different exposure and the same bug, and only one was
+      # fixed.
+      #
+      # `rustup component add` is idempotent and costs nothing when the
+      # component is already present.
+      - name: Ensure clippy is actually installed
+        run: rustup component add clippy
+
       - name: Lint
         run: mise run code:lint
 

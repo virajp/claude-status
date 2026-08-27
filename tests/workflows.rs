@@ -1,4 +1,13 @@
-//! **No workflow may run an action on Node 20.**
+//! Invariants that hold across **every** workflow, not one of them.
+//!
+//! Both cases below are the same failure: a fix applied to `ci.yml` and not to
+//! `release.yml`, or the reverse. The workflows are edited one at a time and
+//! read one at a time, so "we already fixed that" is true of the file someone
+//! is looking at and false of the one that matters.
+//!
+//! ---
+//!
+//! # No workflow may run an action on Node 20
 //!
 //! GitHub is moving the Actions runner off Node 20. An action whose
 //! `runs.using` is `node20` currently prints a deprecation warning on every
@@ -141,6 +150,128 @@ fn no_workflow_runs_an_action_on_node_20() {
     );
 
     assert_eq!(offenders, Vec::<String>::new(), "a workflow runs an action on Node 20");
+}
+
+/// The lint commands that need clippy on the runner. `code:all` includes
+/// `code:lint`.
+const LINT_COMMANDS: &[&str] = &["code:lint", "code:all"];
+
+/// The idempotent step that makes the lint gate deterministic.
+const CLIPPY_GUARD: &str = "rustup component add clippy";
+
+/// Split a workflow into `(job name, body)`, comments stripped.
+///
+/// Comments are stripped for the reason the `uses:` scan strips them, and the
+/// stakes are higher here: `release.yml` explains the `minimal`-profile resync
+/// in a comment **eleven lines long**, naming the exact symptom, directly above
+/// the job that then failed on it. A scan that read prose would have called
+/// that job guarded.
+fn jobs(source: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut current: Option<(String, String)> = None;
+    let mut in_jobs = false;
+
+    for line in source.lines() {
+        let code = line.split('#').next().unwrap_or("");
+
+        if !in_jobs {
+            in_jobs = code.trim_end() == "jobs:";
+            continue;
+        }
+
+        // Any further top-level key ends the block.
+        if !code.trim().is_empty() && !code.starts_with(' ') {
+            break;
+        }
+
+        // A job header is a key at exactly two spaces of indent.
+        let is_header =
+            code.starts_with("  ") && !code.starts_with("   ") && code.trim_end().ends_with(':');
+        if is_header {
+            out.extend(current.take());
+            current = Some((code.trim().trim_end_matches(':').to_string(), String::new()));
+            continue;
+        }
+
+        if let Some((_, body)) = current.as_mut() {
+            body.push_str(code);
+            body.push('\n');
+        }
+    }
+
+    out.extend(current.take());
+    out
+}
+
+/// **A lint gate that fails at random is worse than no lint gate.**
+///
+/// `mise-action` installs the toolchain, and rustup has been observed
+/// resyncing it to a `minimal` profile at lint time — three runs of the *same*
+/// commit produced clippy twice and not the third. Dropping `install_args` made
+/// that rarer, not impossible, so `ci.yml` gained an explicit
+/// `rustup component add clippy` on 2026-08-27.
+///
+/// **`release.yml` did not, and the next tag paid for it.** v1.1.0 failed in
+/// its `test` job with "'cargo-clippy' is not installed for the toolchain
+/// '1.98.0'"; `publish` and `bump-tap` were skipped, and the release was lost
+/// to a third-party download profile rather than to anything wrong with the
+/// commit. The exposure was always worse here than in CI — a pull request costs
+/// a re-run, a tag costs the release — and it was the one left unfixed.
+#[test]
+fn every_job_that_lints_installs_clippy_first() {
+    let mut offenders = Vec::new();
+    let mut checked = 0usize;
+
+    for (file, source) in workflows() {
+        for (name, body) in jobs(&source) {
+            let Some(lint_at) = LINT_COMMANDS.iter().filter_map(|c| body.find(c)).min() else {
+                continue;
+            };
+            checked += 1;
+
+            match body.find(CLIPPY_GUARD) {
+                Some(guard_at) if guard_at < lint_at => {}
+                Some(_) => offenders
+                    .push(format!("{file}: job `{name}` installs clippy only after it has already linted")),
+                None => offenders.push(format!("{file}: job `{name}` lints with no `{CLIPPY_GUARD}` ahead of it")),
+            }
+        }
+    }
+
+    assert!(checked > 0, "no job runs a lint command — this scan is vacuous");
+    assert_eq!(offenders, Vec::<String>::new(), "a lint gate here can fail at random, and on a tag that costs the release");
+}
+
+/// **The control for the job splitter.** `every_job_that_lints_installs_clippy_first`
+/// passes trivially if `jobs` returns nothing or merges the workflow into one
+/// blob — the first would check no jobs, the second would let any job's clippy
+/// step vouch for every other job's lint. Both are checked here against input
+/// with a known answer.
+#[test]
+fn the_job_splitter_separates_jobs() {
+    let probe = "\
+on:
+  push:
+jobs:
+  alpha:
+    steps:
+      - run: mise run code:lint
+  beta:
+    runs-on: ubuntu-24.04
+    steps:
+      # - run: rustup component add clippy
+      - run: echo hi
+";
+
+    let found = jobs(probe);
+    let names: Vec<&str> = found.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, vec!["alpha", "beta"], "the splitter does not separate the jobs");
+    assert!(found[0].1.contains("code:lint"), "job `alpha` lost its body");
+    assert!(
+        !found[1].1.contains(CLIPPY_GUARD),
+        "the commented-out guard in `beta` was read as real, so a comment could vouch for a job"
+    );
+    assert!(!found[0].1.contains("echo hi"), "job `alpha` swallowed job `beta`'s body");
 }
 
 /// **The control.** The assertion above passes just as well when the parser

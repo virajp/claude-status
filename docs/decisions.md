@@ -1766,6 +1766,37 @@ upgrade does not have to argue with the test. The cost, taken knowingly: a *new*
 action introduced on `node20` is not caught, because the table names actions
 rather than enumerating them.
 
+### A fix to one workflow is not a fix, and v1.1.0 proved it
+
+**Decided 2026-08-27**, after the release it cost.
+
+`ci.yml` gained an explicit `rustup component add clippy` earlier the same day,
+because dropping `install_args` had made rustup's `minimal`-profile resync rarer
+without making it impossible. **`release.yml` has the same lint step and did not
+get the same line.** The very next tag, `v1.1.0`, failed in its `test` job with
+`'cargo-clippy' is not installed for the toolchain '1.98.0'`, having just logged
+"downloading 3 components". `publish` and `bump-tap` were skipped, so no assets
+were published and the tap was never rewritten.
+
+**The exposure was worse in the workflow that was left unfixed**, which is the
+part worth remembering. `ci.yml` already records the trade — a random failure on
+a pull request costs a re-run, the same failure on a tag costs the release — and
+the fix went to the cheap side first because that is where the flake had last
+been *seen*. Where a bug is observed and where it is expensive are different
+questions.
+
+**`every_job_that_lints_installs_clippy_first` now holds it across every
+workflow**, keyed on any job running `code:lint` or `code:all`. A per-file guard
+would have reproduced the original mistake: the failure mode here is not "a
+workflow is wrong", it is "the workflows disagree", and only a test that reads
+all of them can see that. It is why `tests/workflows.rs` is organised by
+invariant rather than by file.
+
+**The eleven-line comment above the failing step named the exact symptom.** It
+had described the `minimal`-profile resync, in that job, since before the run —
+and the job still failed on it, because a comment is not a step. That is why the
+guard strips comments before scanning.
+
 ### The download-artifact ignore rule was deleted, and its reasoning was wrong
 
 **Reversed 2026-08-27**, the same day it was taken.
