@@ -144,7 +144,7 @@ pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {
     // worked" reported as success is what makes a script wrong later.
     let code = i32::from(!(wrote && seeded));
 
-    // The same rule §4a applies to `--debug`: everything above is drawn from a
+    // The same rule that governs `--debug`: everything above is drawn from a
     // file this tool does not own — key names, and the `settings.json` path
     // itself — so the assembled report is swept once rather than at each write.
     // The report-keeping variant, because it is deliberately many lines.
@@ -680,7 +680,7 @@ mod tests {
     }
 
     /// The value quoted back on stderr came out of the user's file, so it goes
-    /// through the same filter every other terminal write does (§4a). It is
+    /// through the same filter every other terminal write does. It is
     /// bounded too: a `command` key could hold a megabyte.
     #[test]
     fn a_quoted_back_value_is_sanitized_and_bounded() {

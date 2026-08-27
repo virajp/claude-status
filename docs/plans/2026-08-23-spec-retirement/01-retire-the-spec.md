@@ -406,6 +406,31 @@ stays. What that leaves:
 
 - **Nothing outside `docs/` names it at all** — not `src/`, not `tests/`, not
   the site, not the workflows, not the issue forms.
+
+> **Amended 2026-08-27, and the amendment is the same failure this cycle is
+> about.** The claim above was true of the *filename* and false of the
+> *document*. Twenty-five citations of the form `contract §9`, `§4a`,
+> `§1's
+> invariant 3` survived, because the sweep grepped for
+> `statusline-behaviour` and for `contract §` — and matched neither `§1's` nor
+> anything under `.config/`, a directory it never looked in at all.
+>
+> The worst of them was **printed to the terminal**:
+> `.config/mise/tasks/build/statusline` told a maintainer on an unsupported host
+> to "see contract §9", a file that by then did not exist.
+>
+> All twenty-five are now re-pointed — to the test that pins the behaviour, to
+> `src/lib.rs` where the invariants are numbered now, or to `docs/decisions.md`.
+> What is left is the handful that *name* the retired contract as history
+> (`tests/fixtures/README.md`, two doc comments), which is the reference-versus-
+> record line holding, not leaking.
+>
+> **An amendment that updates the section it is thinking about and never sweeps
+> for what it falsified** is the exact failure mode this plan's *Current state*
+> attributes nearly all the contract's drift to. It happened here, in the step
+> whose whole job was sweeping, and it was caught only because the work was
+> re-read against the plan afterwards rather than declared done.
+
 - Inside `docs/`, only `docs/plans/` (the cycle that deletes it, plus landed
   plans recording what they were diffs against) and two provenance lines, in
   `decisions.md` and `usage-mirror-contract.md`, saying where their content came

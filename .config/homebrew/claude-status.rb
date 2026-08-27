@@ -50,8 +50,10 @@ class ClaudeStatus < Formula
   end
 
   test do
-    # §5 guarantees `--version` prints the bare version and nothing else, which
-    # makes it the one output shape safe to match on.
+    # `--version` prints the bare version and nothing else, which makes it the
+    # one output shape safe to match on. Pinned by
+    # `version_is_exactly_the_version_with_or_without_debug` in tests/e2e.rs,
+    # which asserts stdout equals the version exactly — not that it contains it.
     assert_match version.to_s, shell_output("#{bin}/claude-status --version")
   end
 end

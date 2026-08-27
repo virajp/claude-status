@@ -164,7 +164,8 @@ fn the_reference_payload_without_its_flag_is_the_missing_flag_error_and_not_a_ba
 
 /// Every reference payload has a documented invocation.
 ///
-/// The failure this closes is the one that produced §12's broken example: a
+/// The failure this closes is the one that produced the retired contract's
+/// broken example: a
 /// payload and the command that runs it lived in different places, so one could
 /// be changed without the other. A file added to `tests/fixtures/` and never
 /// written into its README is a payload nobody knows how to run.
@@ -706,7 +707,8 @@ fn configure_replaces_a_foreign_status_line_and_says_what_it_replaced() {
     assert_eq!(settings_of(&home)["statusLine"]["command"], "claude-status --statusline");
 
     // The value came out of the user's file, so it is quoted back on stderr —
-    // the one stream this binary sends untrusted content to (§4a).
+    // the one stream this binary sends untrusted content to, and every write
+    // to it goes through the `_shared::diag` chokepoint.
     let said = stderr(&out);
     assert!(said.contains("starship prompt --right"), "the user was not told what they lost: {said}");
     assert!(stdout(&out).contains("REPLACED"), "and the report marks the key: {}", stdout(&out));
@@ -741,8 +743,8 @@ fn configure_dry_run_prints_and_writes_nothing() {
     assert_eq!(snapshot(home.path()), before, "a dry run wrote to disk");
 }
 
-/// **`--debug` is a modifier on `--configure` too**, and §5 says a modifier
-/// "must not change stdout by a single byte".
+/// **`--debug` is a modifier on `--configure` too**, and a modifier must not
+/// change stdout by a single byte.
 ///
 /// `--configure` is the first mode that could break that claim: it is the only
 /// one that writes, and the only one that can exit non-zero. Two *separate*
@@ -800,8 +802,9 @@ fn configure_refuses_an_unrecognised_argument_rather_than_writing_anyway() {
 }
 
 /// The asymmetry is deliberate: the render surfaces keep ignoring what they do
-/// not recognise, because Claude Code invokes those and §1's invariant 3 says a
-/// render never fails visibly. Only the writing flag is strict.
+/// not recognise, because Claude Code invokes those and invariant 3 (see
+/// `src/lib.rs`) says a render never fails visibly. Only the writing flag is
+/// strict.
 #[test]
 fn a_render_surface_still_ignores_an_unrecognised_argument() {
     let home = Home::new(&safe_config());
@@ -1959,8 +1962,9 @@ fn with_an_empty_home_and_no_repo_a_full_bar_renders_and_nothing_is_created() {
 /// **The criterion names one carve-out and needs two.** `$AI_PLUGINS_USAGE_DIR`
 /// is the second: `--statusline` writes the usage mirror there and the caps
 /// hook writes `<sid>.state.json` beside it, both of which the criterion's
-/// wording forbids and neither of which this cycle may touch — §8 is a live
-/// contract with another repository and the plan puts it explicitly out of
+/// wording forbids and neither of which this cycle may touch — the usage
+/// mirror (`docs/usage-mirror-contract.md`) is a live contract with another
+/// repository and the plan puts it explicitly out of
 /// scope. So the usage directory is pointed **outside `$HOME`** and asserted
 /// separately: the mirror must land there, and `$HOME` must still gain nothing.
 ///
@@ -2033,7 +2037,7 @@ fn no_mode_writes_outside_the_cache_directory() {
         let repo_before = snapshot(repo.path());
         let before = outside_cache(home.path());
 
-        // The §8 carve-out, deliberately outside `$HOME` so the two are
+        // The usage-mirror carve-out, deliberately outside `$HOME` so the two are
         // separable: whatever lands here is the usage mirror, and whatever
         // lands under `$HOME` outside the cache is a violation.
         let usage = TempDir::new().unwrap();
@@ -2061,7 +2065,7 @@ fn no_mode_writes_outside_the_cache_directory() {
         assert_eq!(snapshot(repo.path()), repo_before, "{args:?} wrote inside the repo");
     }
 
-    // Not vacuous: §8's writer has to be live, or every assertion above holds
+    // Not vacuous: the mirror's writer has to be live, or every assertion holds
     // for a run in which nothing could have written to the usage directory in
     // the first place. `--statusline` with a `session_id` is what mirrors.
     let home = Home::new(&safe_config());

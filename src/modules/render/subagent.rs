@@ -129,8 +129,9 @@ pub fn desc_budget(cols: f64, config: &Config) -> usize {
 /// `description` else `label` else nothing, with every whitespace run collapsed
 /// to a single space and the result trimmed. An empty result omits the segment.
 ///
-/// None of this is in the contract, and all of it is observable: a description
-/// carrying a newline would otherwise break the row in half.
+/// None of this was written down anywhere until the panel was built, and all of
+/// it is observable: a description carrying a newline would break the row in
+/// half.
 pub fn description(task: &Value) -> Option<String> {
     let raw = task
         .get("description")
@@ -232,9 +233,9 @@ pub fn task_row(task: &Value, panel: &Panel, config: &Config) -> Vec<Segment> {
         bold: panel.head_bold,
     });
 
-    // name — **no fallback to `type`**. The contract's §3 table says there is
-    // one; the reference implementation has none, and the type glyph already
-    // carries what the fallback would have shown.
+    // name — **no fallback to `type`**. The retired behaviour contract's table
+    // claimed there was one; the reference implementation had none, and the
+    // type glyph already carries what the fallback would have shown.
     if let Some(name) = task.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) {
         let (bg, fg, bold) = style(&config.subagent.segments.name, "orange", config);
         segments.push(Segment { text: format!("{} {name}", sym("agent")), bg, fg, bold });
@@ -599,8 +600,8 @@ mod tests {
 
     #[test]
     fn the_name_never_falls_back_to_the_type() {
-        // The contract's §3 table says it does. The reference implementation
-        // does not, and the type glyph already carries the same information.
+        // The retired behaviour contract's table claimed it does. The reference
+        // implementation does not, and the type glyph carries the same thing.
         let config = shipped();
         let row = texts(&json!({ "id": 1, "type": "local_agent" }), &json!({}), &config);
         assert_eq!(row.len(), 1, "head only: {row:?}");

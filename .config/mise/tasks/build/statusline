@@ -119,7 +119,7 @@ if [[ -n "${usage_target:-}" ]]; then
     print_error "${usage_target} is not a published target."
     print_warn  "claude-status ships macOS only. Published targets:"
     supported_targets | awk '{print "    " $1}'
-    print_warn  "The list lives in .config/mise/tasks/_scripts/_rust; see contract §9."
+    print_warn  "The list lives in .config/mise/tasks/_scripts/_rust; see docs/decisions.md."
     exit 1
   fi
   build_one "${usage_target}"

@@ -2,7 +2,7 @@
 //!
 //! **Advisory and nothing else.** Nothing here reaches the render path, nothing
 //! it finds changes a byte of stdout, and nothing it finds moves the exit code.
-//! §1's third invariant is not negotiable in a diagnostics module: a config
+//! the third invariant is not negotiable in a diagnostics module: a config
 //! that renders today renders identically with every finding below printed
 //! against it.
 //!

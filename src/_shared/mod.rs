@@ -17,7 +17,7 @@ pub mod time;
 /// `narrate` in [`proc`] is the `--debug`-gated caller; this is the one that
 /// always writes. Callers pass the whole line, prefix included — the prefixes
 /// are static, so filtering them costs nothing and leaves one rule instead of
-/// two. §4a exists because the per-write alternative was tried and missed
+/// two. The chokepoint rule exists because the per-write alternative was tried and missed
 /// writers three times.
 ///
 /// **One line out per call, deliberately.** This uses the *row* filter, which

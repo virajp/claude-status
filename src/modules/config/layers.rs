@@ -82,7 +82,7 @@ pub enum LayerState {
     Absent,
     /// A file is there and did not contribute — unreadable, not JSON, or not a
     /// JSON object. Never silent, because nothing else in the binary is allowed
-    /// to complain about it: §1's invariant 3 means a broken layer costs its
+    /// to complain about it: invariant 3 means a broken layer costs its
     /// own settings and never the bar, which leaves `--debug` as the only place
     /// a user can find out.
     Unusable,
@@ -122,7 +122,7 @@ pub struct LayerSource {
     /// Only the repo layer can populate this, and only since it was narrowed
     /// to [`REPO_LAYER_KEY`]. It exists because a silently ignored key is the
     /// worst of the three possible answers: erroring would break the
-    /// never-fail rule (§1, invariant 3), merging is what the narrowing
+    /// never-fail rule (invariant 3), merging is what the narrowing
     /// forbids, and dropping it without saying so leaves the user editing a
     /// file that does nothing. So `--debug` names them.
     pub ignored: Vec<String>,
@@ -262,7 +262,7 @@ fn read_layer(path: Option<&Path>) -> Result<Option<Value>, ()> {
 /// Splits a repo layer into the one key it may set and the keys it may not.
 ///
 /// Ignoring rather than erroring, because the never-fail rule still holds
-/// (§1, invariant 3): a repo config carrying a stale `gauge` block must cost
+/// (invariant 3): a repo config carrying a stale `gauge` block must cost
 /// that block and never the bar. The dropped keys are returned rather than
 /// discarded so `--debug` can name them.
 fn narrow(entries: Map<String, Value>) -> (Map<String, Value>, Vec<String>) {

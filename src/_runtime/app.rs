@@ -40,7 +40,7 @@ pub fn run() -> i32 {
 /// One invocation's whole answer.
 ///
 /// The exit code is part of it because [`Mode::Configure`] can **refuse**:
-/// every other mode is infallible by construction — §1's invariant 3 makes a
+/// every other mode is infallible by construction — invariant 3 makes a
 /// render that cannot work still print a line and exit 0 — but a `--configure`
 /// that declined to touch a file has to be distinguishable by a script, and a
 /// message on stderr is not.
@@ -387,7 +387,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
 
         // A continuation row, in the same two columns, rather than a fourth
         // section. The keys a repo layer is not allowed to set are dropped
-        // silently everywhere else — the never-fail rule (§1, invariant 3)
+        // silently everywhere else — the never-fail rule (invariant 3)
         // leaves nowhere to complain to —
         // so this is the **only** place a user editing that file can find out
         // why it is doing nothing. It sits directly under the path it belongs
@@ -651,7 +651,7 @@ mod tests {
         assert!(out.contains("--statusline") && out.contains("--subagent"));
     }
 
-    /// Every mode but `--configure` exits 0 whatever it found, because §1's
+    /// Every mode but `--configure` exits 0 whatever it found, because the invariants'
     /// invariant 3 says a render never fails visibly. `--configure` is the one
     /// carve-out, and it is tested in its own module.
     #[test]

@@ -79,7 +79,7 @@ const DEFAULT_DESC_BUDGET_FRACTION: f64 = 0.45;
 // `deny_unknown_fields` in the **schemars** namespace, never serde's. It is
 // what puts `additionalProperties: false` in the generated schema; the same
 // attribute under `serde` would make one mistyped key discard the whole config
-// (see [`Config::new`]), which is the outcome §1's third invariant forbids.
+// (see [`Config::new`]), which is the outcome the third invariant forbids.
 #[cfg_attr(feature = "schema", schemars(rename = "claude-status config", deny_unknown_fields))]
 #[cfg_attr(feature = "schema", schemars(description = "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --debug. Nothing in the binary ever writes either file."))]
 #[serde(default, rename_all = "camelCase")]

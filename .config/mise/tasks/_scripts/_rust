@@ -42,7 +42,8 @@ BINARY_NAME="claude-status"
 #     `distribution/01` removed pnpm from the toolchain, so an Intel runner has
 #     nothing left to fail to install. What did not change is the bar below: a
 #     target costs a native `test` runner and a native `build` runner, and
-#     contract §9 will not take one back without them. Re-adding darwin-x64 is
+#     the decision record will not take one back without them. Re-adding
+#     darwin-x64 is
 #     now a decision about whether it is worth two runners, not a blocked one.
 #
 # Linux was surveyed before being declined and came back *viable* — credentials
@@ -50,7 +51,8 @@ BINARY_NAME="claude-status"
 # than Apple, and TLS pulls in no system library. It costs two native runners, a
 # glibc-versus-musl portability floor, and the end of local complete builds: a
 # Mac cross-compiles to another Apple slice with a rustup target and cannot
-# produce a Linux binary at all. See contract §9.
+# produce a Linux binary at all. See `docs/decisions.md`, which records the
+# Linux survey and why it was declined on cost rather than on feasibility.
 #
 # Everything that COUNTS targets derives from this function — `target_count`,
 # `_rust_reassemble`, and the release workflow's collect step, which names both
@@ -60,7 +62,8 @@ BINARY_NAME="claude-status"
 #   1. The `build` AND `test` matrices in `.github/workflows/release.yml` — one
 #      runner each, so no artifact reaches a release untested on its own
 #      architecture. That rule is why adding a target is expensive, and it is
-#      the rule contract §9 says must be met before any target comes back.
+#      the rule `docs/decisions.md` says must be met before any target comes
+#      back.
 #   2. The crate itself, in three places — **Windows will not compile** until
 #      every one of them goes back behind a `cfg`, and restoring only the first
 #      still fails, after a full CI matrix has run:

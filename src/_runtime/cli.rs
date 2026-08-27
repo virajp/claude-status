@@ -127,7 +127,7 @@ pub struct Cli {
     ///
     /// **Only [`Mode::Configure`] treats these as an error.** Every other mode
     /// ignores them, and must: Claude Code invokes the render surfaces, and a
-    /// stray argument there costing the user their status bar would break §1's
+    /// stray argument there costing the user their status bar would break the invariants'
     /// invariant 3 over a typo. `--configure` is the one mode that *writes*,
     /// with no receipt and no undo, so the same silence there means
     /// `--configure --dry-runn` overwrites a `settings.json` the user believed
