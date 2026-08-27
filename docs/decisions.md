@@ -1682,6 +1682,67 @@ actually lives now.
 
 ---
 
+## 15. Continuous integration
+
+**Not harvested.** Sections 1–14 came out of the retired behaviour contract;
+this one did not, because CI did not exist when that document did. The workflows
+carry their own reasoning at length in comments beside the steps — what belongs
+here is the part a comment cannot hold, which is why a choice changed.
+
+### The Node 20 deprecation was answered with a floor, not a pin
+
+**Decided 2026-08-27.**
+
+`actions/upload-artifact@v4`, `actions/download-artifact@v4` and
+`cloudflare/wrangler-action@v3` all declared `runs.using: node20`. GitHub warns
+on every step that uses one and will eventually stop running them — which would
+break `release.yml` and `site.yml`, the two workflows that ship anything, and
+neither of which runs on a pull request. Nothing would have surfaced it before a
+tag.
+
+**The floors were read out of each action's own `action.yml`, not out of its
+release notes**, and the notes would have misled: `upload-artifact@v5` announces
+Node 24 support while its `action.yml` still says `node20`. The first major that
+actually runs on Node 24 is v6 for `upload-artifact`, v7 for `download-artifact`
+and v4 for `wrangler-action`. The repository took the newest major of each — v7,
+v8, v4 — rather than the oldest that clears the bar.
+
+**`tests/workflows.rs` pins a floor rather than the exact major**, so a routine
+upgrade does not have to argue with the test. The cost, taken knowingly: a *new*
+action introduced on `node20` is not caught, because the table names actions
+rather than enumerating them.
+
+### The download-artifact ignore rule was deleted, and its reasoning was wrong
+
+**Reversed 2026-08-27**, the same day it was taken.
+
+**Was:** `.config/grype.yaml` suppressed GHSA-cxww-7g56-2vh6 against
+`actions/download-artifact`, on the grounds that `@v4` is a mutable major tag
+resolving far past the 4.1.3 the advisory names, and that grype **"reads the
+literal string `v4`, cannot order it against `4.1.3`, and reports the advisory
+as unfixed"**. Its stated expiry was pinning the actions to exact versions or
+SHAs.
+
+**The conclusion was right and the mechanism was not.** grype orders the tag
+perfectly well — it strips the `v` and compares `4` against `4.1.3`, which is
+genuinely lower, and that is why it matched. Nothing was unorderable. The
+finding was a false positive, but not for the reason the rule gave, and a rule
+that misdescribes the tool it works around is a rule nobody can re-check.
+
+**What retired it had nothing to do with its stated expiry.** Moving the
+workflows to `@v8` for the Node 24 reason above left grype comparing `8` against
+`4.1.3` and reporting nothing — **zero matches against the whole tree**,
+measured before and after the bump rather than argued. The actions remain on
+floating major tags; that choice was re-affirmed on 2026-08-27 and is unchanged,
+so the pinning the rule named as its expiry never happened.
+
+**The general point is the one worth keeping:** the rule's expiry condition was
+written as though it were the only way the rule could become wrong, and the rule
+was retired by a route nobody had listed. An ignore rule earns its place by
+being re-checked, not by carrying a condition.
+
+---
+
 ## Provenance
 
 Harvested 2026-08-26 from the behaviour contract

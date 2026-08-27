@@ -57,7 +57,7 @@ name: Site
 # `mise registry wrangler` resolves to `npm:wrangler` and nothing else. Pinning
 # it would put Node back in a tree that spent `distribution/01` removing it,
 # plus three native builds (`esbuild`, `sharp`, `workerd`) that mise would have
-# to be told to allow. `cloudflare/wrangler-action@v3` keeps Node on the runner
+# to be told to allow. `cloudflare/wrangler-action@v4` keeps Node on the runner
 # where it is already installed and out of the repository entirely.
 #
 # The site itself is built by zola, a single static Rust binary pinned in
@@ -151,7 +151,7 @@ jobs:
       # Handed to the deploy job below rather than rebuilt there, so the bytes
       # that were checked are the bytes that ship. On a pull request nothing
       # downloads it and it expires.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: site
           path: site/public
@@ -168,7 +168,7 @@ jobs:
       name: production
       url: https://claude-status.virajp.dev
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: site
           path: public
@@ -180,7 +180,7 @@ jobs:
       # no wrangler.toml, because a direct-upload Pages deploy needs none and a
       # config file would be a second place for the project name to be wrong.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

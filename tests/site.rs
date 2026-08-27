@@ -90,7 +90,7 @@ fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
 /// JavaScript toolchain back that `distribution/01` removed. So: **no JS
 /// lockfile and no `node_modules` among TRACKED files.** Zola is a single
 /// static Rust binary (`aqua:getzola/zola`; `otool -L` shows system libraries
-/// and nothing else), and `cloudflare/wrangler-action@v3` keeps wrangler's Node
+/// and nothing else), and `cloudflare/wrangler-action@v4` keeps wrangler's Node
 /// on the runner rather than in this repository — that is the whole design, and
 /// this is what holds it.
 #[test]
