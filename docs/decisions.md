@@ -1212,6 +1212,15 @@ what the rest of their machine trusts. A private root set is a claim to know
 better than the operating system, and on a managed laptop that claim is simply
 wrong.
 
+**`--debug` now names the store**, on the line above the failure, for `https`
+endpoints only — `roots OS trust store (macOS keychain)`. Diagnosing the
+original report meant reading `Cargo.toml`, because
+`invalid peer certificate: UnknownIssuer` names no store and so cannot be told
+apart from a genuinely bad certificate; the fix for one is to install a root
+where this binary looks, and without knowing where that is the reader cannot
+act. The string lives beside the `TlsConfig` in `http.rs` rather than in the
+reporter, so the claim and the configuration are edited together.
+
 **Two things worth knowing before touching this again:**
 
 - **It is not a laxer check**, only a different set of roots. An expired,

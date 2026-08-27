@@ -109,6 +109,23 @@ fn write_credentials(out: &mut String, report: &refresh::Report) {
 
 fn write_fetch(out: &mut String, report: &refresh::Report) {
     let _ = writeln!(out, "  fetch    GET {}", field(&report.url));
+
+    // **Which trust store a certificate failure is about.**
+    //
+    // `invalid peer certificate: UnknownIssuer` names no store, so a user
+    // behind a TLS-intercepting proxy cannot tell it apart from a genuinely
+    // bad certificate — and the fix for the first (install the proxy's root
+    // where this binary looks) is invisible without knowing where that is.
+    // That ambiguity is what made the office-network report of 2026-08-27 take
+    // a source read to diagnose.
+    //
+    // Gated on the scheme rather than printed always: over plain `http` no
+    // certificate is verified and naming a root store would be a claim about
+    // something that did not happen. Every other test in this subsystem points
+    // at an `http` stub, which is why the line is absent from their output.
+    if report.url.starts_with("https://") {
+        let _ = writeln!(out, "           roots {}", spend::http::ROOT_CERTS);
+    }
     match report.status {
         Some(status) => {
             let _ = writeln!(out, "           {status} in {}ms", report.elapsed_ms);

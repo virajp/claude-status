@@ -137,6 +137,68 @@ fn stub(status: u16, reason: &str, body: &'static str) -> String {
     format!("http://127.0.0.1:{port}/usage")
 }
 
+/// An `https://` endpoint whose peer answers with bytes that are not TLS.
+///
+/// Enough to drive the client through a real handshake and out the other side
+/// as a transport failure, without a certificate authority or a TLS server in
+/// the dev-dependencies — which this repository is deliberately sparing with.
+fn tls_stub() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\n\r\nnot tls at all");
+        }
+    });
+
+    format!("https://127.0.0.1:{port}/usage")
+}
+
+/// **A certificate failure has to say which trust store it is about.**
+///
+/// `invalid peer certificate: UnknownIssuer` names no store. Behind a
+/// TLS-intercepting corporate proxy it means "install your proxy's root where
+/// this binary looks"; against a genuinely bad certificate it means the
+/// opposite, and the two are identical on screen. The office-network report of
+/// 2026-08-27 needed somebody to read `Cargo.toml` to tell them apart, which is
+/// the gap this line closes.
+#[test]
+fn the_fetch_report_names_the_trust_root_source() {
+    let home = home(&config_with("always"), "team");
+    let out = debug(&home, &tls_stub());
+    let (stdout, _) = streams(&out);
+
+    assert!(
+        stdout.contains(claude_status::spend::http::ROOT_CERTS),
+        "the report does not say where the trust roots came from:\n{stdout}"
+    );
+    // The line is only worth anything next to the failure it explains.
+    assert!(stdout.contains("FAILED after"), "the non-TLS peer was not reported as a failure:\n{stdout}");
+    assert_no_token(&out, "tls");
+}
+
+/// **The control for the test above, and the reason it is gated on the scheme.**
+///
+/// Asserting the line is *present* would pass just as well if it were printed
+/// unconditionally — and printed over plain `http`, where nothing verified a
+/// certificate, it would be a claim about something that never happened. Every
+/// other case in this file points at an `http` stub, so this pins their output
+/// too.
+#[test]
+fn plain_http_claims_no_trust_root_source() {
+    let home = home(&config_with("always"), "team");
+    let out = debug(&home, &stub(200, "OK", MODERN));
+    let (stdout, _) = streams(&out);
+
+    assert!(stdout.contains("200 in"), "the stub did not answer, so this proves nothing:\n{stdout}");
+    assert!(
+        !stdout.contains(claude_status::spend::http::ROOT_CERTS),
+        "a plain-http fetch verified no certificate, but the report named a trust store:\n{stdout}"
+    );
+}
+
 #[test]
 fn on_an_empty_cache_debug_fetches_and_leaves_one_behind() {
     // The case the whole step exists for: a first install, where a passive

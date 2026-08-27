@@ -47,6 +47,18 @@ pub fn url() -> String {
     }
 }
 
+/// Where `agent()` gets its trust roots, in the words `--debug` reports.
+///
+/// **It lives here, beside the `TlsConfig` it describes, so the two are edited
+/// in one place.** A `--debug` line claiming the OS store while the agent had
+/// quietly gone back to baked roots would be worse than printing nothing: the
+/// whole reason this line exists is that the failure it diagnoses —
+/// `invalid peer certificate: UnknownIssuer` behind a corporate proxy — is
+/// indistinguishable, from the outside, from a genuinely bad certificate. The
+/// reader needs to know which store to install a CA into, and a stale answer
+/// sends them to the wrong one.
+pub const ROOT_CERTS: &str = "OS trust store (macOS keychain)";
+
 /// The agent every fetch goes through.
 ///
 /// **`RootCerts::PlatformVerifier` is the load-bearing line.** ureq's rustls
