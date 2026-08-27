@@ -27,13 +27,16 @@ Apple Silicon macOS, with Homebrew:
 
 ```sh
 brew trust --formula virajp/tap/claude-status
+brew tap virajp/tap
 brew install --formula virajp/tap/claude-status
 claude-status --configure
 ```
 
 `brew trust` is not optional — Homebrew 6 will not load a third-party formula it
 has not been told to trust, so the install fails without it. You do it once, not
-per upgrade.
+per upgrade. **`brew tap` is not optional either**: the fully-qualified name is
+enough for `brew trust`, but `brew install` reports it cannot find the formula
+until the tap is added.
 
 Or with [mise](https://mise.jdx.dev):
 

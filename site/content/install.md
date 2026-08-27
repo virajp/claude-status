@@ -8,10 +8,11 @@ Apple Silicon macOS. Two routes, and both end at the same wiring step.
 
 ## Homebrew
 
-Two commands, and the first is not optional:
+Three commands, and none of them is optional:
 
 ```sh
 brew trust --formula virajp/tap/claude-status
+brew tap virajp/tap
 brew install --formula virajp/tap/claude-status
 ```
 
@@ -20,7 +21,14 @@ trust**, so the install fails on its own. `brew trust` records the decision in
 `~/.homebrew/trust.json` and you make it once, not per upgrade. Most tutorials
 predate this and show a single `brew install`; that is why it does not work.
 
-`brew upgrade` keeps it current from then on.
+**`brew tap` is needed even though the formula is fully qualified.** The
+qualified name is enough for `brew trust`, which is why the first command
+succeeds without it — but `brew install` then reports it cannot find the
+formula. Adding the tap explicitly is what fixes it, and the order above is the
+order that works.
+
+`brew upgrade` keeps it current from then on, and neither of the first two
+commands is repeated.
 
 ## mise
 

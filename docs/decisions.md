@@ -1558,10 +1558,42 @@ nothing in this repo's suite can see them**, and makes the first release depend
 on a manual step somebody has to get right once. Neither cost is worth a patch
 over a render.
 
-### The install is two commands, and neither is avoidable
+### The install is three commands, and none is avoidable
 
-**Corrected 2026-08-26.** Both halves, because the correction's generalisation
-is the most transferable thing in this file.
+**Corrected twice — 2026-08-26 and again 2026-08-27** — and the second
+correction is the first one's own lesson landing a second time.
+
+**Corrected 2026-08-27 to three commands**, in this order:
+
+```sh
+brew trust --formula virajp/tap/claude-status
+brew tap virajp/tap
+brew install --formula virajp/tap/claude-status
+```
+
+**Was (2026-08-26):** two commands, `brew trust --formula …` then
+`brew install --formula …`, on the reasoning that a fully-qualified formula name
+makes an explicit tap unnecessary.
+
+**What the qualified name actually buys is `brew trust`, not `brew install`.**
+`brew trust --formula virajp/tap/claude-status` succeeds against an untapped
+repository — which is why the pair looked complete — and `brew install` then
+reports it cannot find the formula. The tap has to be added between them.
+
+**Found the same way as last time, and that is the point.** A colleague
+installing on a clean machine hit it on 2026-08-27; nothing in the repo could
+have. The owner's machine has `virajp/tap` tapped *and*
+`virajp/tap/claude-status` in `~/.homebrew/trust.json`, so it cannot reproduce a
+first install at all — and the previous correction had already written down why
+that matters, in the paragraph below, without that being enough to prevent the
+recurrence.
+
+> **The generalisation, restated because it caught us twice: a claim about a
+> first-run experience cannot be verified by anyone who has already had it — and
+> knowing that does not help unless somebody with a clean machine actually runs
+> it.**
+
+The 2026-08-26 correction, kept in full because its shape is what repeated:
 
 **Was:** "Only the fully-qualified form works. Homebrew 6.0.0 (2026-06-11)
 requires explicit trust for non-official taps, so `brew tap virajp/tap` followed

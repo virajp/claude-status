@@ -44,6 +44,7 @@ Apple Silicon macOS, with Homebrew:
 
 ```sh
 brew trust --formula virajp/tap/claude-status
+brew tap virajp/tap
 brew install --formula virajp/tap/claude-status
 claude-status --configure
 ```
@@ -57,6 +58,8 @@ claude-status --configure
 
 `brew trust` is not optional — Homebrew 6 will not load a third-party formula it
 has not been told to trust, so the install fails without it. You do it once.
+`brew tap` is not optional either: the qualified name carries `brew trust`, but
+`brew install` cannot find the formula without the tap.
 
 `--configure` is the real last step, not a formality: it is what wires Claude
 Code to the binary. [Install](@/install.md) covers both routes in full.

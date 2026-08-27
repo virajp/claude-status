@@ -160,23 +160,31 @@ the numeric App ID, which is the one thing about the setup that catches people
 out. The minted token is scoped to the tap, narrowed to `contents: write`, and
 revoked when the job ends.
 
-**The install is two commands, and neither is avoidable:**
+**The install is three commands, and none is avoidable:**
 
 ```sh
 brew trust --formula virajp/tap/claude-status
+brew tap virajp/tap
 brew install --formula virajp/tap/claude-status
 ```
 
 Homebrew 6 requires explicit trust for the **formula**, not merely for the tap,
 so qualifying the name fully does not avoid it — there is no one-command
-install. This file previously claimed there was; see
-[the correction](docs/decisions.md#the-install-is-two-commands-and-neither-is-avoidable)
-for how that got through, which is worth reading before writing any other "this
-is the command" line here.
+install. And the qualified name carries `brew trust` but **not** `brew install`,
+which is why the tap is a step of its own rather than something the third
+command infers.
+
+**This file has now claimed the wrong number twice** — first one command, then
+two. See
+[the correction](docs/decisions.md#the-install-is-three-commands-and-none-is-avoidable),
+which keeps every version and how each got through; it is worth reading before
+writing any other "this is the command" line here.
 
 Trust is recorded in `~/.homebrew/trust.json` and is a one-time step per
-machine, not per upgrade. That is also why it is easy to get wrong: once you
-have trusted the formula, the broken instructions work for you.
+machine, not per upgrade — as is the tap. That is also why both are easy to get
+wrong: once you have trusted the formula and tapped the repo, the broken
+instructions work for you. **Neither can be checked on a machine that has
+already done it.**
 
 #### Bumping the formula by hand
 
