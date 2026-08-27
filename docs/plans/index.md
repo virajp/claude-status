@@ -110,12 +110,18 @@ them stops being maintained without anybody noticing**.
 Half of the note this replaces was wrong: `cli.rs`'s help text already gave the
 vanity domain, with a test pinning it. Only the formula was behind.
 
-**The tap's copy is still the old one** until the next release renders it — the
-formula there is generated per release and cannot be edited in place, which is
-the property that stops it drifting.
+**Closed by `v1.1.0` on 2026-08-27.** The tap's copy was the old one until a
+release rendered it — the formula there is generated per release and cannot be
+edited in place, which is the property that stops it drifting, and is also why
+this sat open. `bump-tap` has now run: the published formula gives
+`homepage "https://claude-status.virajp.dev"`, and `pages.dev` appears in it
+zero times.
 
-Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — currently
-empty.
+Accepted but not yet cut into a cycle: [`backlog.md`](./backlog.md) — **three
+entries**, all moved there on 2026-08-27 from cycles that had already closed
+`done`: the config generator's wasm bar preview, code signing and notarisation,
+and Linux targets. It read "currently empty" until then, which was true of what
+anyone had *raised* and false of what had been *deferred*.
 
 ## The direction these replace
 
