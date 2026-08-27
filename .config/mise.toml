@@ -60,6 +60,18 @@ zola           = { version = "latest" }
 # dev until the first release attempt failed on a runner that did not have it.
 dprint = { version = "latest" }
 
+# In the BASE for exactly the reason dprint is, and found the same way — by a
+# runner failing on a tool a maintainer's machine had. `taplo` is dprint's TOML
+# formatter, invoked through an `exec` plugin, so without it `code:format`
+# cannot process a single `.toml` and `code:all` dies before it lints. It sat
+# in `mise.dev.toml` until CI started running the formatter on 2026-08-27.
+#
+# `gitleaks` and `grype` are `code:sec`, which `code:all` runs last and CI now
+# runs on every push.
+gitleaks = { version = "latest" }
+grype    = { version = "latest" }
+taplo    = { version = "latest" }
+
 # Generates the release notes from the commit history, using the changelog
 # block in `.config/git-conventional-commits.yaml` that already describes the
 # headlines and URLs this project wants. In the BASE because `verify` runs it

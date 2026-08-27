@@ -11,10 +11,15 @@ status.missing_tools = "always"
 # out to it, that test runs in CI, and `MISE_ENV=ci` does not load this file.
 # Declaring it here meant it resolved on a maintainer's machine and was absent
 # on a runner — which is how the first release attempt failed.
-gitleaks   = { version = "latest" }
-grype      = { version = "latest" }
+# `gitleaks`, `grype` and `taplo` are NOT here either, for the same reason and
+# after the same failure: `code:all` runs all three on a CI runner, and
+# `MISE_ENV=ci` does not load this file. `taplo` is the one that bit —
+# dprint shells out to it for every `.toml`, so `code:format` could not run in
+# CI at all. Nothing caught it until CI existed, because `release.yml` runs
+# lint and test and never the formatter.
+#
+# `pre-commit` stays: CI runs the tasks directly and never the hooks.
 pre-commit = { version = "latest" }
-taplo      = { version = "latest" }
 
 # No cross-compilation toolchain is pinned. Both published targets are macOS,
 # and `rustup target add` is the whole story on a Mac — see build:statusline.
