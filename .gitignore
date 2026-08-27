@@ -21,6 +21,16 @@ site/public/
 site/static/claude-status.schema.json
 site/static/claude-status.defaults.json
 
+# the two images the npm readme loads over https, staged into the static tree
+# by `site:assets` on every build. Copies of `assets/`, kept at a stable
+# `media/` address because a published npm version names its URLs forever. They
+# are ignored for the same reason as the two above: a tracked second copy is a
+# file that drifts from its source with nothing to say so — and for an image
+# that has already happened here once. See the task for the whole reasoning;
+# `tests/site.rs` asserts these two lines are still here.
+site/static/media/lockup.png
+site/static/media/statusline.png
+
 
 # Added by cargo
 

@@ -1680,31 +1680,43 @@ fn every_image_in_the_npm_readme_is_absolute() {
     );
 }
 
-/// **The readme's asset URLs are pinned to a release tag, and the staging task
-/// repoints them.**
+/// **The readme's images are served by the site, never by GitHub raw.**
 ///
-/// An npm version is immutable and its readme should be too. A `main` URL
-/// silently repoints every version ever published the moment the image
-/// changes — so a user reading the page for 1.0.0 sees 3.0.0's screenshot.
+/// This replaces a test that pinned them to a release tag on
+/// `raw.githubusercontent.com`. That design was sound in isolation — an npm
+/// version is immutable, so its readme arguably should be — and it was dropped
+/// for an operational reason that outranks it: **raw.githubusercontent.com has
+/// been going down under load**, and a readme that will not render is worse
+/// than one showing a newer screenshot than its own release.
 ///
-/// Both halves are pinned here because either alone is useless: a tracked file
-/// that carries a tag nothing rewrites goes stale at the first release, and a
-/// rewrite with nothing to match finds nothing and exits 0.
+/// So the addresses must be the site's, and they must be under `/media/`,
+/// which `site:assets` stages and `site:build` deliberately does not
+/// fingerprint. A fingerprinted address would break every readme already on
+/// the registry the next time the site deployed.
 #[test]
-fn the_readme_asset_urls_are_tag_pinned_and_restamped_at_publish() {
+fn every_image_in_the_npm_readme_is_served_by_the_site() {
     let readme = read("npm/readme.md");
-    let task = read(".config/mise/tasks/release/npm-package");
 
-    let tagged = readme.matches("raw.githubusercontent.com/virajp/claude-status/v").count();
-    assert!(
-        tagged > 0,
-        "npm/readme.md has no tag-pinned asset URL — either the images moved, or they are pinned to a \
-         branch, which repoints every published version's readme when an image changes"
-    );
+    // The comment explains why GitHub raw was abandoned and has to keep saying
+    // so, which is why this looks past comment prose to real image URLs only.
+    let live: Vec<&str> = readme
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("<!--") && !l.trim_start().starts_with("     "))
+        .filter(|l| l.contains(".png") || l.contains(".svg"))
+        .collect();
 
-    assert!(
-        task.contains("readme.md"),
-        "release/npm-package no longer touches readme.md, so every published version would carry the \
-         tag that happens to be committed rather than its own"
-    );
+    assert!(!live.is_empty(), "the readme has no images at all — this test is guarding nothing");
+
+    for line in &live {
+        assert!(
+            !line.contains("raw.githubusercontent.com"),
+            "an image is served by GitHub raw, which has been going down under load: {}",
+            line.trim()
+        );
+        assert!(
+            line.contains("https://claude-status.virajp.dev/media/"),
+            "an image is not served from the site's stable /media/ path: {}",
+            line.trim()
+        );
+    }
 }

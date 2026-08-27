@@ -1,14 +1,23 @@
-<!-- Absolute, and pinned to a release tag — npmjs.com cannot serve a file out of
-     the tarball, so a relative path renders as a broken image no matter what
-     `files` ships. The tag is stamped by `.config/mise/tasks/release/npm-package`
-     at publish time, so each published version points at its own assets; a
-     `main` URL would repoint every version ever published the next time the
-     image changed. The site is NOT usable here: `site:build` fingerprints
-     statusline.png and og-card.png, so their addresses change every release —
-     `the_build_fingerprints_every_asset_that_can_change` in tests/site.rs. -->
+<!-- Absolute, and served by the site rather than by raw.githubusercontent.com.
+     npmjs.com cannot serve a file out of the tarball, so a relative path renders
+     as a broken image no matter what `files` ships — only an absolute URL works,
+     and the root readme stays repo-relative on purpose.
+
+     GitHub raw was the first answer here and was WRONG for a readme that has to
+     stay up: raw.githubusercontent.com has been going down under load. So these
+     point at claude-status.virajp.dev, which serves the same two images from
+     `/media/` — staged by `site:assets`, deliberately NOT fingerprinted, and
+     kept out of the `immutable` cache rules so a corrected image can actually
+     reach people.
+
+     `/media/` is a stable address, so these need no tag and no restamping. The
+     tradeoff is taken knowingly: every published version's readme shows the
+     CURRENT artwork rather than the artwork of its own release. For a logo and
+     a screenshot that is what you want, and it is the price of not depending on
+     a host that is down. -->
 
 <img
-  src="https://raw.githubusercontent.com/virajp/claude-status/v1.1.1/assets/lockup.png"
+  src="https://claude-status.virajp.dev/media/lockup.png"
   alt="claude-status"
   width="380"
 />
@@ -28,7 +37,7 @@ date.
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
 4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
 session cost. The second shows the project name and the git branch with a dirty
-marker.](https://raw.githubusercontent.com/virajp/claude-status/v1.1.1/assets/statusline.png)
+marker.](https://claude-status.virajp.dev/media/statusline.png)
 
 ## Install
 

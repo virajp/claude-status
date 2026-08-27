@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Copy the schema and the shipped defaults into the site's static tree"
+#MISE description="Copy the schema, the shipped defaults and the readme images into the site's static tree"
 #MISE dir="{{ config_root }}"
 
 set -e
@@ -93,4 +93,45 @@ done
 # `tests/site.rs::the_schema_and_the_shipped_defaults_are_staged_rather_than_committed`,
 # which compares source against staged copy at a point where they can differ.
 
-print_header "Schema and defaults staged in site/static/"
+# ---------------------------------------------------------------------------
+# THE README IMAGES, AT AN ADDRESS THAT NEVER MOVES
+# ---------------------------------------------------------------------------
+#
+# The npm package's readme is rendered by npmjs.com from a published tarball,
+# so every image in it must be an absolute URL. It used to name
+# raw.githubusercontent.com; this site serves them instead, because GitHub's raw
+# host has been going down often enough that the package page renders with two
+# broken images while nothing about the package is wrong.
+#
+# `site/static/statusline.png` ALREADY EXISTS and is fingerprinted by
+# `site:build`. This is a SECOND copy, at `media/`, and the duplication is the
+# point: the site's own pages want the cache-busting that fingerprinting gives
+# them, and a published npm version is immutable — the readme in
+# `@virajp.dev/claude-status@1.2.3` names one URL forever and cannot chase a
+# name that changes every deploy. So the two copies answer two different
+# questions, and neither can be dropped for the other.
+#
+# `media/` is therefore never fingerprinted and never `immutable`; see the
+# `_headers` block in `site:build`, which is generated from what was actually
+# hashed so it cannot hand a stable address a year-long cache.
+#
+# Not gitignoring these would put a THIRD tracked copy of the screenshot in the
+# tree. `tests/site.rs::the_two_tracked_screenshots_are_the_same_image` records
+# what happens then: a re-render lands in one copy and not the other, both
+# files are valid PNGs, both pages render, and nothing says so.
+
+MEDIA_DIR="${SITE_STATIC}/media"
+mkdir -p "${MEDIA_DIR}"
+
+print_header "Copying the readme images into site/static/media/ ..."
+
+for image in lockup.png statusline.png; do
+  [ -f "${MISE_PROJECT_ROOT}/assets/${image}" ] || {
+    print_error "assets/${image} is missing — every published npm readme points at /media/${image} and would render a broken image on the registry"
+    exit 1
+  }
+  # `cp` and not a symlink, for the reason above the staging loop.
+  command cp "${MISE_PROJECT_ROOT}/assets/${image}" "${MEDIA_DIR}/${image}"
+done
+
+print_header "Schema, defaults and readme images staged in site/static/"

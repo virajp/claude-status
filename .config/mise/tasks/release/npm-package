@@ -87,33 +87,18 @@ cp -R npm "$out"
 printf '{\n  "tag": "%s",\n  "name": "%s",\n  "sha256": "%s"\n}\n' \
   "$tag" "$name" "$digest" > "$out/asset.json"
 
-# The readme's images, repointed at THIS release's tag.
+# **The readme's asset URLs are NOT stamped here, and that is deliberate.**
 #
-# npmjs.com cannot serve a file out of the tarball, so shipping `assets/` would
-# not render them — only an absolute URL does, which is why these are
-# raw.githubusercontent rather than repo-relative like the root readme's.
+# They were, for one release: pinned to the tag and rewritten per publish,
+# because an npm version is immutable and its readme arguably should be too.
+# That design depended on raw.githubusercontent.com, which has been going down
+# under load — a readme that cannot render is worse than one showing a newer
+# screenshot. So the images moved to the site's `/media/`, which is a stable
+# address, and there is nothing left to rewrite.
 #
-# Pinned to the tag rather than to `main` because an npm version is immutable
-# and its readme should be too: a `main` URL silently repoints every version
-# ever published the moment the image changes. The site cannot host them at all
-# — `site:build` fingerprints statusline.png and og-card.png, so their
-# addresses change every release.
-#
-# Rewrites whatever tag the tracked file carries, so the tracked copy stays a
-# real released pair the way `npm/asset.json` and the Homebrew formula do.
-sed -E "s#(raw\.githubusercontent\.com/virajp/claude-status/)v[0-9]+\.[0-9]+\.[0-9]+#\1${tag}#g" \
-  "$out/readme.md" > "$out/readme.md.new"
-mv "$out/readme.md.new" "$out/readme.md"
-
-# Read back, because `sed` exits 0 whether or not it matched — the same failure
-# the version substitution below guards against. A readme still pointing at an
-# older tag publishes clean and shows that release's screenshot forever.
-stale="$(grep -cE "raw\.githubusercontent\.com/virajp/claude-status/v[0-9]+\.[0-9]+\.[0-9]+" "$out/readme.md" || true)"
-current="$(grep -cF "raw.githubusercontent.com/virajp/claude-status/${tag}/" "$out/readme.md" || true)"
-if [ "$stale" != "$current" ] || [ "$current" -eq 0 ]; then
-  echo "readme.md carries $stale tagged asset URLs but only $current at ${tag} — the substitution did not take" >&2
-  exit 1
-fi
+# The tradeoff travelled with them: every published version's readme now shows
+# the CURRENT artwork rather than its own release's. Pinned by
+# `every_image_in_the_npm_readme_is_served_by_the_site` in tests/npm.rs.
 
 # `sed` matches the value and leaves the rest of the line alone, so a `version`
 # key that is last in the object keeps its lack of a trailing comma.

@@ -1146,6 +1146,342 @@ fn the_build_fingerprints_every_asset_that_can_change() {
 }
 
 // ---------------------------------------------------------------------------
+// The readme images, served from this site at an address that never moves
+// ---------------------------------------------------------------------------
+
+/// The word list from `site:assets`'s `for image in …; do` line.
+///
+/// Parsed rather than substring-matched, for the reason `staged_sources`
+/// records: the task's explanatory header names both images in prose, so a
+/// `contains` would pass no matter what the loop actually copied.
+fn staged_images(assets: &str) -> Vec<String> {
+    let line = assets
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("for image in "))
+        .expect("site:assets still stages the readme images from a `for image in …; do` loop");
+
+    line.trim_start_matches("for image in ")
+        .trim_end_matches("; do")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+/// The two images the npm readme loads over https, and where `site:assets`
+/// stages them.
+const STAGED_MEDIA: [(&str, &str); 2] =
+    [("assets/lockup.png", "site/static/media/lockup.png"), ("assets/statusline.png", "site/static/media/statusline.png")];
+
+/// **The npm readme's images reach a browser without a tracked third copy.**
+///
+/// The package's readme is rendered by npmjs.com from the published tarball,
+/// so its images have to be absolute URLs. They named
+/// raw.githubusercontent.com and now name this site, which means this site has
+/// to actually serve them — at `media/`, which is deliberately outside the
+/// fingerprinting below.
+///
+/// `site/static/statusline.png` already exists, and this is a **second** copy
+/// of the same bytes. That is not an oversight: the landing page wants the
+/// cache-busting a hashed name gives it, and a published npm version is
+/// immutable — the readme inside an already-released tarball names one URL
+/// forever and cannot chase a name that changes every deploy.
+///
+/// Tracking the copies would make three tracked copies of the screenshot, and
+/// `the_two_tracked_screenshots_are_the_same_image` already records what
+/// happens with two: a re-render lands in one of them, both files are valid
+/// PNGs, both pages render, and nothing says so. So they are build output —
+/// staged, gitignored, and compared against their sources here.
+#[test]
+fn the_readme_images_are_staged_at_a_stable_address_rather_than_committed() {
+    let ignore = read(".gitignore");
+    let assets = read(".config/mise/tasks/site/assets");
+    let tracked = tracked_files();
+
+    for (source, staged) in STAGED_MEDIA {
+        let image = source.rsplit('/').next().expect("the source has a filename");
+
+        assert!(
+            !tracked.iter().any(|p| p == staged),
+            "{staged} has been committed — it is a copy of {source}, and a tracked copy is one a re-render \
+             updates on one side only"
+        );
+        assert!(
+            ignore.lines().any(|l| l.trim() == staged),
+            ".gitignore no longer ignores {staged}, so the next build leaves it ready to be committed by accident"
+        );
+        assert!(
+            staged_images(&assets).iter().any(|i| i == image),
+            "the site:assets task no longer stages {source}, so every published npm readme pointing at \
+             /media/{image} renders a broken image on the registry"
+        );
+
+        // Byte equality, when a build has actually run — conditional and loud
+        // about it, exactly as the schema's staging test is and for the same
+        // reason: a fresh checkout has no staged copy at all, and an assertion
+        // that silently passes in that state guards nothing.
+        let staged_path = root().join(staged);
+        if staged_path.exists() {
+            assert_eq!(
+                std::fs::read(root().join(source)).expect("the source exists"),
+                std::fs::read(&staged_path).expect("the staged copy is readable"),
+                "{staged} has drifted from {source} — re-run `mise run site:assets`"
+            );
+        } else if std::env::var_os("CI").is_some() {
+            panic!(
+                "{staged} is missing under CI. `code:test` stages it through its `site:assets` dependency, so an absence here means that dependency is gone and this byte comparison has been passing without comparing anything."
+            );
+        } else {
+            eprintln!("skipped the byte comparison for {staged}: no build has run in this checkout");
+        }
+    }
+
+    // Neither list may grow without the other. `.gitignore` names the staged
+    // copies by exact path, so a third image staged by the task alone would be
+    // untracked-but-committable, and every assert above iterates STAGED_MEDIA
+    // and would never look at it.
+    let mut by_task = staged_images(&assets);
+    by_task.sort();
+    let mut by_test: Vec<String> =
+        STAGED_MEDIA.iter().map(|(source, _)| (*source).rsplit('/').next().expect("a filename").to_string()).collect();
+    by_test.sort();
+    assert_eq!(
+        by_task, by_test,
+        "site:assets and STAGED_MEDIA have drifted apart; an image staged by the task but not named in \
+         STAGED_MEDIA is neither gitignored nor byte-compared against its source"
+    );
+}
+
+/// **Nothing under `media/` is ever fingerprinted.**
+///
+/// Every other asset on this site gets a content hash in its name, and the
+/// reason is written out above `the_build_fingerprints_every_asset_that_can_change`:
+/// a changed file at a new address can never be served against HTML that does
+/// not ask for it.
+///
+/// `media/` is the one place where that is the wrong answer, because its
+/// consumer is not this site's HTML. It is the readme inside a published npm
+/// tarball, and **a published npm version cannot be edited** — the URL in
+/// `@virajp.dev/claude-status@1.2.3`'s readme is the URL it will name forever.
+/// Hashing one of these files would 404 every copy of the readme already on
+/// the registry, which is the only failure here that deploying again cannot
+/// fix.
+#[test]
+fn the_readme_images_the_npm_package_points_at_are_never_fingerprinted() {
+    let build = read(".config/mise/tasks/site/build");
+
+    let listed: Vec<String> = build
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("for asset in "))
+        .expect("the build no longer has a fingerprint list — this guard is scanning for nothing")
+        .trim_start_matches("for asset in ")
+        .trim_end_matches("; do")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+
+    // The list is the one the other guards read, so a parse that has stopped
+    // working is caught here rather than read as a clean pass.
+    assert!(listed.contains(&"style.css".to_string()), "the fingerprint list parsed as {listed:?}");
+
+    let hashed_media: Vec<&String> = listed.iter().filter(|a| a.starts_with("media/")).collect();
+    assert!(
+        hashed_media.is_empty(),
+        "{hashed_media:?} would be fingerprinted. Those are addresses a published npm version points at \
+         forever — renaming one breaks every readme already on the registry, and no later deploy can \
+         reach them"
+    );
+
+    // And the same property in the built output, where it is a fact rather
+    // than a reading of the script. Developer-only, for the reason
+    // `the_generator_page_reads_as_documentation_without_its_script` records:
+    // `code:test` deliberately does not pull `zola` into the Rust test path.
+    let media = root().join("site/public/media");
+    if media.is_dir() {
+        for (source, _) in STAGED_MEDIA {
+            let name = source.rsplit('/').next().expect("a filename");
+            assert!(
+                media.join(name).is_file(),
+                "site/public/media/{name} is not in the build output under its exact name — the npm readme's \
+                 image URL 404s"
+            );
+        }
+    } else {
+        eprintln!("skipped the built-output check for media/: run `mise run site:build` in this checkout");
+    }
+}
+
+/// Cloudflare's `_headers` matching, implemented as its documentation
+/// describes it: "a splat pattern — signified by an asterisk (`*`) — will
+/// greedily match all characters", and at most one splat per pattern.
+///
+/// **Greedily, and that includes `/`.** It is the whole reason the immutable
+/// rules below are exact paths, and it is asserted as a control rather than
+/// assumed — see the test.
+fn header_rule_matches(pattern: &str, path: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == path,
+        Some((prefix, suffix)) => {
+            path.len() >= prefix.len() + suffix.len() && path.starts_with(prefix) && path.ends_with(suffix)
+        }
+    }
+}
+
+/// A `_headers` file as `(pattern, header lines)`. A pattern is at column 0 and
+/// starts with `/`; its headers are the indented lines under it.
+fn header_rules(text: &str) -> Vec<(String, Vec<String>)> {
+    let mut rules: Vec<(String, Vec<String>)> = Vec::new();
+    for line in text.lines() {
+        if line.starts_with('/') {
+            rules.push((line.trim().to_string(), Vec::new()));
+        } else if line.starts_with(' ')
+            && !line.trim().is_empty()
+            && !line.trim_start().starts_with('#')
+            && let Some((_, headers)) = rules.last_mut()
+        {
+            headers.push(line.trim().to_string());
+        }
+    }
+    rules
+}
+
+/// The literal text `site:build` writes into `_headers`, from its heredocs.
+/// The per-asset rules in between are emitted by a loop and are not here.
+fn headers_heredocs(build: &str) -> String {
+    const OPEN: &str = "cat <<'HEADERS'\n";
+    let mut out = String::new();
+    let mut rest = build;
+    let mut found = 0;
+    while let Some(at) = rest.find(OPEN) {
+        rest = &rest[at + OPEN.len()..];
+        let end = rest.find("\nHEADERS").expect("a heredoc that opens also closes");
+        out.push_str(&rest[..end]);
+        out.push('\n');
+        rest = &rest[end..];
+        found += 1;
+    }
+    assert!(found >= 2, "found {found} `_headers` heredoc(s) in site:build — this scan is reading the wrong thing");
+    out
+}
+
+/// **`_headers` cannot give anything under `/media/` an `immutable` year.**
+///
+/// The immutable rules were `/*.css`, `/*.js`, `/*.png`, `/*.svg`. Cloudflare's
+/// splat "will greedily match all characters" — `/` included — so `/*.png`
+/// matched `/media/lockup.png` too, and `media/` is precisely the tree that
+/// must **not** be held: it is where the npm readme's images live, at a stable
+/// address a published version names forever. A year of `immutable` on a
+/// corrected logo is a wrong picture that never reaches anyone who already
+/// loaded it, on a URL no deploy can take back.
+///
+/// An added `/media/*` rule would not have fixed it either. Cloudflare applies
+/// every rule that matches — "an incoming request which matches multiple
+/// rules' URL patterns will inherit all rules' headers", with a repeated
+/// header "joined with a comma separator" — which is what the note at the foot
+/// of the generated file already records having seen. So the globs are gone,
+/// replaced by one exact path per fingerprinted file, emitted from what the
+/// build actually hashed.
+#[test]
+fn the_generated_headers_cannot_make_media_immutable() {
+    const MEDIA: [&str; 2] = ["/media/lockup.png", "/media/statusline.png"];
+
+    // **The control, first**, because everything below rests on it: the
+    // matcher must reproduce the greedy splat. If `/*.png` ever stops matching
+    // a path two segments deep here, this test is measuring nothing and a
+    // revert to the glob would sail through it.
+    assert!(header_rule_matches("/*.png", "/media/lockup.png"), "the splat is not being matched greedily across `/`");
+    assert!(header_rule_matches("/*", "/media/lockup.png"), "`/*` must match everything");
+    assert!(!header_rule_matches("/lockup.abcdef123456.png", "/media/lockup.abcdef123456.png"), "an exact path matched a subdirectory");
+
+    let build = read(".config/mise/tasks/site/build");
+    let literal = headers_heredocs(&build);
+
+    // Every rule written literally into the file. None of them may carry
+    // `immutable`, because the immutable rules are the generated ones.
+    let immutable_literals: Vec<String> = header_rules(&literal)
+        .into_iter()
+        .filter(|(_, headers)| headers.iter().any(|h| h.contains("immutable")))
+        .map(|(pattern, _)| pattern)
+        .collect();
+    assert_eq!(
+        immutable_literals,
+        Vec::<String>::new(),
+        "an `immutable` rule is typed into _headers by hand. Every one of them has to come from the \
+         fingerprint output, because a hand-written pattern is how a glob comes back"
+    );
+
+    // **The control for that scan**, so it cannot pass by being pointed at
+    // nothing. The same reading of the same shape, with the old glob in it.
+    let reverted = "/*\n  Cache-Control: public, max-age=0, must-revalidate\n/*.png\n  Cache-Control: public, max-age=31536000, immutable\n";
+    assert_eq!(
+        header_rules(reverted)
+            .into_iter()
+            .filter(|(_, headers)| headers.iter().any(|h| h.contains("immutable")))
+            .map(|(pattern, _)| pattern)
+            .collect::<Vec<String>>(),
+        vec!["/*.png".to_string()],
+        "the scan above does not see a bare `/*.png` immutable rule, so reverting to the glob would pass it"
+    );
+
+    // The rules that do exist are written from the fingerprinting's own
+    // output, one exact path each. A second list kept alongside is the drift
+    // the generated file exists to rule out.
+    assert!(
+        build.contains(r#"for hashed in "${HASHED[@]}"#),
+        "the immutable rules are no longer emitted from what was fingerprinted"
+    );
+    assert!(
+        build.contains(r#"printf '/%s\n  Cache-Control: public, max-age=31536000, immutable\n' "${hashed}""#),
+        "the per-asset rule is no longer one exact path carrying the immutable year"
+    );
+
+    // And the built file, when there is one — the property as a fact rather
+    // than as a reading of the script. Developer-only, for the reason
+    // `the_generator_page_reads_as_documentation_without_its_script` records.
+    let built = root().join("site/public/_headers");
+    if !built.exists() {
+        eprintln!("skipped the built _headers check: run `mise run site:build` in this checkout");
+        return;
+    }
+
+    let rules = header_rules(&std::fs::read_to_string(&built).expect("the built _headers is readable"));
+    let immutable: Vec<&(String, Vec<String>)> =
+        rules.iter().filter(|(_, headers)| headers.iter().any(|h| h.contains("immutable"))).collect();
+    assert!(
+        immutable.len() >= 5,
+        "only {} immutable rule(s) in the built _headers — the fingerprinted assets are not being given their \
+         year, and every check below would be vacuous",
+        immutable.len()
+    );
+
+    for path in MEDIA {
+        let holding: Vec<&String> =
+            immutable.iter().filter(|(pattern, _)| header_rule_matches(pattern, path)).map(|(pattern, _)| pattern).collect();
+        assert!(
+            holding.is_empty(),
+            "{path} is matched by the immutable rule(s) {holding:?}. That address is named by every published \
+             npm readme and cannot be re-pointed, so a year-long cache there is permanent"
+        );
+
+        // It must still get exactly one Cache-Control, and it must be the
+        // revalidating default. A path with no rule at all falls back to
+        // whatever the host feels like, which is not a decision anyone made.
+        let applying: Vec<&String> = rules
+            .iter()
+            .filter(|(pattern, headers)| header_rule_matches(pattern, path) && headers.iter().any(|h| h.starts_with("Cache-Control:")))
+            .map(|(pattern, _)| pattern)
+            .collect();
+        assert_eq!(
+            applying,
+            vec![&"/*".to_string()],
+            "{path} is given a Cache-Control by {applying:?}. Cloudflare applies every matching rule and joins \
+             a repeated header with a comma, so more than one is a header with two answers in it"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // website/02-config-generator — the schema-driven form
 // ---------------------------------------------------------------------------
 
