@@ -28,8 +28,15 @@ fi
 GRYPE_CFG=(); [[ -f "${MISE_PROJECT_ROOT}/.config/grype.yaml" ]] && GRYPE_CFG=(--config "${MISE_PROJECT_ROOT}/.config/grype.yaml")
 LEAK_CFG=(); [[ -f "${MISE_PROJECT_ROOT}/.config/gitleaks.toml" ]] && LEAK_CFG=(--config "${MISE_PROJECT_ROOT}/.config/gitleaks.toml")
 
+# `--fail-on medium` — medium and above breaks the build; low and negligible are
+# printed and pass. Until 2026-08-27 grype took no threshold at all, so it
+# exited 0 whatever it found and the scan was advisory in the worst sense: a
+# High sat in the output of every run for weeks. A finding nobody has to act on
+# teaches you to skim the section it lives in, which costs you the true positive
+# later. Anything genuinely not worth acting on belongs in `.config/grype.yaml`
+# as an ignore rule that says why — not in the output as noise.
 print_header "Scanning dependencies with grype ..."
-grype "${MISE_PROJECT_ROOT}" --name "$(basename "${MISE_PROJECT_ROOT}")" "${GRYPE_CFG[@]}" "${GRYPE_FLAGS[@]}"
+grype "${MISE_PROJECT_ROOT}" --name "$(basename "${MISE_PROJECT_ROOT}")" --fail-on medium "${GRYPE_CFG[@]}" "${GRYPE_FLAGS[@]}"
 
 print_header "Scanning for secrets with gitleaks ..."
 gitleaks dir "${MISE_PROJECT_ROOT}" "${LEAK_CFG[@]}" --redact 50 "${LEAK_FLAGS[@]}"
