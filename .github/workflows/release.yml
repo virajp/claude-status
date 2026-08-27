@@ -713,7 +713,14 @@ jobs:
           # it is passed so the intent is readable in the job rather than
           # inferred from the absence of a token.
           echo "Publishing $name@$VERSION ..."
-          if ! npm publish --provenance --access public target/npm; then
+          # `./target/npm`, and the `./` is load-bearing. npm reads a bare
+          # `target/npm` as the GIT SHORTHAND `github:target/npm` — owner/repo
+          # — not as a directory, and fails with EALLOWGIT before it ever
+          # reaches the registry. Measured on the v1.1.1 run, which had passed
+          # actionlint, shellcheck and the whole suite: nothing here executes
+          # `npm publish`, so only a real tag could find it. Pinned by
+          # `the_publish_command_names_the_staged_directory_as_a_path`.
+          if ! npm publish --provenance --access public ./target/npm; then
             echo "::error::the npm publish failed. v$VERSION IS RELEASED — the GitHub Release and its assets are complete and untouched by this job. Re-run this job alone once npm is reachable, or once $name has had the one manual first publish a Trusted Publisher registration requires (see this job's comment)."
             exit 1
           fi

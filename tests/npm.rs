@@ -1571,3 +1571,36 @@ fn the_publish_npm_job_installs_no_tools_it_does_not_use() {
         "the job installs tools it never uses; every one is a way for a shipped release to end up with no npm package"
     );
 }
+
+/// **The staged directory is named as a path, and the `./` is the whole test.**
+///
+/// `npm publish <dir>` reads a bare `target/npm` as the git shorthand
+/// `github:target/npm` — owner/repo — and dies with `EALLOWGIT` before it ever
+/// contacts the registry. So the publish that was supposed to be the last step
+/// of a release fails having proven nothing about whether the package or the
+/// credentials were ever workable.
+///
+/// **Measured, not theorised.** The v1.1.1 run failed exactly this way, on a
+/// job that had passed `actionlint`, `shellcheck` and every other test in this
+/// file. Nothing in this repository executes `npm publish` — it needs a
+/// registry and a credential — so a real tag was the only thing that could
+/// find it, and it cost a released version to do so.
+///
+/// This is a source scan and is weaker than the thing it pins: it cannot prove
+/// the publish works, only that the argument is still spelled as a path.
+#[test]
+fn the_publish_command_names_the_staged_directory_as_a_path() {
+    let workflow = read(".github/workflows/release.yml");
+    let publish_npm = job(&workflow, "publish-npm");
+
+    let publish_line = publish_npm
+        .lines()
+        .find(|l| l.contains("npm publish"))
+        .expect("the publish-npm job no longer runs `npm publish` — this test is guarding nothing");
+
+    assert!(
+        publish_line.contains("./target/npm"),
+        "`npm publish` names the staged directory without a leading `./`, so npm reads it as the git shorthand `github:target/npm` and fails with EALLOWGIT before reaching the registry: {}",
+        publish_line.trim()
+    );
+}
