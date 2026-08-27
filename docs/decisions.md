@@ -1181,6 +1181,51 @@ found, the HTTP status, what was extracted — and, at the end, a verdict:
 
 **It is the single most useful line the tool prints.**
 
+### The spend fetch trusts the OS, not a baked root set
+
+**Reversed 2026-08-27**, reported from an office network.
+
+**Was:** ureq with rustls and its default `WebPkiRoots` — Mozilla's root set,
+compiled into the binary. The argument was never *for* baked roots on their
+merits; it was against `native-tls`, whose `openssl-sys` on linux-gnu wants
+headers at build time and a versioned `libssl.so` at run time, which would end
+the single-binary distribution story. Baked roots were what fell out of avoiding
+that, and nobody weighed them separately.
+
+**What it cost:** behind a TLS-intercepting corporate proxy, the certificate
+chain terminates at a root that MDM installed in the login keychain. `curl`,
+`git` and Claude Code itself all trust it, because they ask the OS. This binary
+asked Mozilla, and returned
+`FAILED after 137ms — io: invalid peer certificate: UnknownIssuer`. **There was
+no flag, no environment variable and no config key that could have fixed it** —
+the user's only options were to leave the network or stop using the spend
+segment.
+
+**Reversed to `RootCerts::PlatformVerifier`** (ureq's `platform-verifier`
+feature, via `rustls-platform-verifier` → the macOS Security framework). **The
+reason for the original ban is untouched**: this is still rustls and still links
+no openssl, so the single-binary story survives — `cargo build` pulls
+`security-framework` and `core-foundation`, not `openssl-sys`.
+
+**The rule this is a case of:** a tool a user installs with `brew` should trust
+what the rest of their machine trusts. A private root set is a claim to know
+better than the operating system, and on a managed laptop that claim is simply
+wrong.
+
+**Two things worth knowing before touching this again:**
+
+- **It is not a laxer check**, only a different set of roots. An expired,
+  mismatched or self-signed certificate is rejected exactly as before.
+- **The feature flag is not self-enforcing, and fails in the worst possible
+  place.** With `platform-verifier` off, `Cargo.toml` still resolves, the code
+  still compiles, and ureq panics *at run time* — "Rustls + PlatformVerifier
+  requires feature: platform-verifier" — inside the detached refresh child, on
+  the first real HTTPS request. Measured by commenting the feature out, at which
+  point every pre-existing test in `spend::http` still passed, because they all
+  speak plain `http://` to a closed port and never reach TLS.
+  `https_is_negotiated_and_fails_closed` exists to close that gap and forces a
+  real handshake.
+
 ---
 
 ## 10. The usage mirror — a contract with another repository

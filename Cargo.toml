@@ -38,11 +38,25 @@ serde = { default-features = false, features = [
 
 # The single network call, in a detached refresh child — never on the render
 # path. No async runtime: one blocking request cannot justify tokio against the
-# startup-time argument that motivated this rewrite. rustls with baked webpki
-# roots rather than native-tls, whose openssl-sys on linux-gnu would need
-# headers at build time and a versioned libssl.so at run time, ending the
-# single-binary distribution story.
-ureq = { default-features = false, features = [ "rustls" ], version = "3.4" }
+# startup-time argument that motivated this rewrite. rustls rather than
+# native-tls, whose openssl-sys on linux-gnu would need headers at build time
+# and a versioned libssl.so at run time, ending the single-binary distribution
+# story.
+#
+# `platform-verifier` pulls `rustls-platform-verifier`, which hands certificate
+# verification to the OS — the macOS Security framework here. **It replaces the
+# baked webpki roots, and that is the point**: webpki carries Mozilla's root
+# set and nothing else, so a corporate TLS-intercepting proxy — whose root is
+# installed in the login keychain by MDM, and which every other tool on the
+# machine therefore trusts — failed with
+# `invalid peer certificate: UnknownIssuer` and no way for the user to fix it.
+# The reason for the ban on native-tls is unaffected: this is still rustls, and
+# still links no openssl. See
+# [The spend fetch trusts the OS, not a baked root set](docs/decisions.md#the-spend-fetch-trusts-the-os-not-a-baked-root-set).
+ureq = { default-features = false, features = [
+"platform-verifier",
+"rustls",
+], version = "3.4" }
 
 # Untyped `Value` parsing, the deep merge, cache/mirror serialisation, and the
 # one `from_value` that turns the merged config into types. `std` must stay
