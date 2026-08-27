@@ -219,10 +219,24 @@ jobs:
           fi
           echo "$bin -> $reported"
 
+      # **The uploaded file carries its target in its name.** Every target
+      # builds a binary called `claude-status`, so an artifact set that keeps
+      # that name can only be told apart by the directory it lands in — and
+      # that directory is decided by `download-artifact`, whose rule for it
+      # changed under us (see the download step in `publish`). Staging under a
+      # unique name moves the distinction into the filename, where nothing
+      # outside this repository gets a vote.
+      - name: Stage the binary under a target-unique name
+        run: |
+          set -e
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/claude-status" \
+             "dist/claude-status-${{ matrix.target }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/claude-status
+          path: dist/claude-status-${{ matrix.target }}
           if-no-files-found: error
           retention-days: 1
 
@@ -251,10 +265,33 @@ jobs:
           name: release-notes
           path: notes
 
+      # **`merge-multiple: true` is what makes this layout knowable.**
+      #
+      # Without it, `download-artifact` decides the directory structure by how
+      # many artifacts the pattern happened to match, and it does not decide it
+      # the same way across versions. Under v4 a pattern always nested each
+      # artifact under its own name. Under v8 — the README says it outright,
+      # "this change also applies to patterns that only match a single
+      # artifact" — a pattern matching exactly one extracts flat instead. This
+      # repository publishes exactly one target, so the v4→v8 bump silently
+      # moved every binary up a directory and `v1.1.0` died on
+      # `cp: cannot stat 'artifacts/binary-aarch64-apple-darwin/claude-status'`,
+      # after `test` and `build` had already spent their minutes.
+      #
+      # The trap in the default is worse than the breakage: the layout would
+      # have flipped back to nested the moment a second target was added, so a
+      # fix that merely matched today's shape would break again on the change
+      # that `supported_targets` is designed to make a one-liner.
+      #
+      # Flattening deliberately is safe only because the staging step in `build`
+      # gives every binary a target-unique filename; with the old
+      # `claude-status`-for-everyone naming this would have silently overwritten
+      # one target's binary with another's. The two changes go together.
       - uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: artifacts
+          merge-multiple: true
 
       # Put each binary back where the collect step below reads it, and restore
       # the executable bit — upload-artifact does not preserve it, and a

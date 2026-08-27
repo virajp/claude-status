@@ -1766,6 +1766,40 @@ upgrade does not have to argue with the test. The cost, taken knowingly: a *new*
 action introduced on `node20` is not caught, because the table names actions
 rather than enumerating them.
 
+### The artifact layout is decided here, not by `download-artifact`
+
+**Decided 2026-08-27**, after it broke the second `v1.1.0` attempt.
+
+`publish` downloaded the build artifacts with `pattern: binary-*` and let the
+action choose the directory structure. Under `download-artifact@v4` a pattern
+always nested each artifact under its own name, so `_rust_reassemble` read
+`artifacts/binary-<target>/claude-status`. **v8 changed that for a pattern
+matching exactly one artifact** — its README says so plainly, "this change also
+applies to patterns that only match a single artifact" — and this repository
+publishes exactly one target, so the bump moved every binary up a directory.
+`publish` died on `cp: cannot stat`, after `verify`, `test` and `build` had all
+gone green and spent their minutes.
+
+**The default was a trap rather than merely a breakage.** Matching today's shape
+would have worked until a *second* target was added, at which point the layout
+flips back to nested — breaking the release on the change `supported_targets`
+exists to make a one-liner, and breaking it in the job that runs last.
+
+**So the layout is now this repository's decision.** `build` stages each binary
+as `claude-status-<target>` and `publish` passes `merge-multiple: true`, which
+flattens unconditionally. The two halves are one decision: flattening is only
+safe because the filenames are unique, and with the old
+`claude-status`-for-everyone naming it would have silently overwritten one
+target's binary with another's.
+
+**What actually let this reach a tag** is that nothing ran `_rust_reassemble`.
+It is the only step that creates the path every downstream asset is built from,
+its input came from a third party, and the sole way to discover it disagreed
+with that third party was to cut a release.
+`reassembles_the_layout_the_release_workflow_downloads` now runs it against the
+layout the workflow produces — confirmed to reproduce the exact `cp` failure
+when pointed back at the v4 path.
+
 ### A fix to one workflow is not a fix, and v1.1.0 proved it
 
 **Decided 2026-08-27**, after the release it cost.

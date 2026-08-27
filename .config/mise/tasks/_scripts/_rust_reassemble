@@ -2,11 +2,22 @@
 #MISE description="Put CI's downloaded build artifacts back where the release collect step expects them"
 #MISE hide=true
 
-# Each build job uploads one binary; `actions/download-artifact` lands them in
-# `artifacts/binary-<target>/`. This puts them back under `target/<triple>/
-# release/`, which is the ONLY thing that creates the path the release
-# workflow's collect step copies and tars from — delete this and the release
-# job fails before it ever reaches `gh release create`.
+# Each build job uploads one binary as `claude-status-<target>`, and the
+# release workflow downloads them all flat into `artifacts/`. This puts them
+# back under `target/<triple>/release/`, which is the ONLY thing that creates
+# the path the release workflow's collect step copies and tars from — delete
+# this and the release job fails before it ever reaches `gh release create`.
+#
+# **The flat layout and the per-target filename are one decision, not two.**
+# This used to read `artifacts/binary-<target>/claude-status`, because
+# `download-artifact` nested each artifact under its own name. It stopped doing
+# that for a pattern matching a single artifact, and `v1.1.0` failed here. The
+# workflow now flattens explicitly and names each file for its target, so the
+# path below depends on nothing outside this repository.
+#
+# `reassembles_the_layout_the_release_workflow_downloads` in `tests/release.rs`
+# runs this script against that layout, which is the only thing that would
+# catch the pair drifting apart again.
 #
 # The `chmod` below is load-bearing for the same reason: upload-artifact drops
 # the executable bit, and nothing else restores it, so without it the release
@@ -24,7 +35,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_rust"
 while read -r target _os _cpu; do
   [[ -z "${target}" ]] && continue
   mkdir -p "target/${target}/release"
-  cp "artifacts/binary-${target}/${BINARY_NAME}" "target/${target}/release/${BINARY_NAME}"
+  cp "artifacts/${BINARY_NAME}-${target}" "target/${target}/release/${BINARY_NAME}"
   chmod 755 "target/${target}/release/${BINARY_NAME}"
   echo "  restored target/${target}/release/${BINARY_NAME}"
 done < <(supported_targets)

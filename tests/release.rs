@@ -190,6 +190,63 @@ fn the_reproducible_helper_lives_beside_the_other_release_shell() {
     );
 }
 
+/// **The step between the build and the release had no test at all, and a
+/// version bump walked straight through the gap.**
+///
+/// `_rust_reassemble` is the only thing that creates `target/<triple>/release/`
+/// in the `publish` job, and everything downstream — the tarball, the digests,
+/// the formula's `sha256` — is built from what it puts there. Its input layout
+/// is decided by `actions/download-artifact`, which is to say by a third party:
+/// v4 nested each artifact under its own name, v8 extracts a pattern matching a
+/// single artifact flat instead. `v1.1.0` failed on exactly that, in `publish`,
+/// after `verify`, `test` and `build` had all gone green.
+///
+/// Nothing in the suite ran this script, so the only thing that could catch the
+/// script and the workflow disagreeing was cutting a tag. This runs it against
+/// the layout the workflow actually produces.
+///
+/// **The control is the second half.** Asserting the binary arrives proves
+/// little on its own — a script that ignored its input entirely would pass if
+/// the file happened to exist. So the content is distinctive and checked, and
+/// the executable bit is checked too: `upload-artifact` drops it, `chmod 755`
+/// here is what restores it, and a release that ships a non-executable binary
+/// inside a tarball is broken in a way no other gate looks at.
+#[test]
+fn reassembles_the_layout_the_release_workflow_downloads() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    let target = "aarch64-apple-darwin";
+
+    // The layout `merge-multiple: true` produces: every artifact flat in
+    // `artifacts/`, each file named for its target by the staging step.
+    let artifacts = dir.path().join("artifacts");
+    std::fs::create_dir_all(&artifacts).expect("artifacts dir");
+    let staged = artifacts.join(format!("claude-status-{target}"));
+    std::fs::write(&staged, "not really a binary, but distinctive").expect("staged binary");
+    // Deliberately not executable — the real artifact arrives this way.
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+
+    // Absolute: the helper runs from the scratch directory, which is where the
+    // script's own relative `artifacts/` and `target/` paths must resolve.
+    let script = format!("{}/.config/mise/tasks/_scripts/_rust_reassemble", root().display());
+    let out = bash(&script, dir.path());
+    assert!(
+        out.status.success(),
+        "the reassemble step failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let restored = dir.path().join("target").join(target).join("release").join("claude-status");
+    let body = std::fs::read_to_string(&restored)
+        .unwrap_or_else(|e| panic!("{} was not created: {e}", restored.display()));
+    assert_eq!(body, "not really a binary, but distinctive", "the wrong file was copied");
+
+    let mode = std::fs::metadata(&restored).expect("metadata").permissions().mode();
+    assert_eq!(mode & 0o111, 0o111, "the executable bit was not restored — the tarball would ship an unrunnable binary");
+}
+
 /// Return one job's YAML body from `release.yml`.
 fn job(workflow: &str, name: &str) -> String {
     let after = workflow
