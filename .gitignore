@@ -44,3 +44,9 @@ docs/plans/archived/
 # else under .claude/ is shared configuration and belongs in the repo.
 .claude/worktrees/
 .claude/settings.local.json
+
+# vwf's worktree pool, the sibling of .claude/worktrees/ above. Ignored for the
+# same reason and for one more: a worktree created here and left untracked
+# makes the *main* checkout read dirty, so the bar's own dirty marker stops
+# meaning what it says while any cycle is in flight.
+.worktrees/

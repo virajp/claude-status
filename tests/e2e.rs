@@ -1663,6 +1663,95 @@ fn a_scalar_where_a_block_belongs_costs_that_block_and_nothing_else() {
     );
 }
 
+/// A linked worktree's dirty state is read **in the worktree**, not in the
+/// checkout its `.git` file points at.
+///
+/// Nothing in `resolve_markers` is worktree-aware — it runs `git diff` and
+/// `git ls-files` with the cwd `find_root_and_branch` resolved, which for a
+/// linked worktree is the worktree itself. That is exactly why this is pinned
+/// here: the wiring is *incidental*, so nothing else in the suite would notice
+/// it breaking, and the failure is silent. A dirty worktree would simply
+/// render clean, which reads as "no changes" rather than as a fault.
+///
+/// This is the only case in the suite that runs a **real** `git worktree add`.
+/// Everywhere else a repo is a hand-written `.git/HEAD`, which is cheaper and
+/// enough — but a `.git` *file* written by hand is a fixture agreeing with the
+/// parser, not with git. The `gitdir:` pointer, the `commondir` beside it and
+/// the per-worktree index are git's to lay out, and the dirty pipeline reads
+/// all three.
+///
+/// **The main checkout is left clean and rendered as the control.** Without it
+/// a `+` on the worktree's bar is equally consistent with the markers having
+/// been computed in the common checkout — the precise bug this exists to
+/// catch — and the test would pass while proving nothing.
+#[test]
+fn a_dirty_linked_worktree_renders_its_own_dirty_marker() {
+    /// Identity passed per-invocation: `run_in` clears the environment for the
+    /// binary, but this helper is the *test* calling git, and a machine with no
+    /// `user.email` cannot commit.
+    fn git(cwd: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid"])
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git runs in the test environment");
+        assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    let home = Home::new(&safe_config());
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+
+    // `-b main` explicitly: `init.defaultBranch` belongs to whoever is running
+    // the suite, and the control below asserts on the branch name.
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("tracked.txt"), "one\n").unwrap();
+    // Ignored *and committed*, so the checkout is still clean once the worktree
+    // exists. An untracked `.worktrees/` would make the control dirty for a
+    // reason that has nothing to do with what is being measured.
+    std::fs::write(repo.join(".gitignore"), ".worktrees/\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-qm", "one"]);
+
+    let worktree = repo.join(".worktrees").join("feature");
+    git(&repo, &["worktree", "add", "-q", "-b", "feature", worktree.to_str().unwrap()]);
+
+    // One tracked line added, in the worktree only. Tracked rather than
+    // untracked on purpose: an untracked file contributes a flat `+1` however
+    // many there are, so it would pass without `git diff` ever being read.
+    std::fs::write(worktree.join("tracked.txt"), "one\ntwo\n").unwrap();
+
+    let payload = |dir: &Path| {
+        serde_json::json!({
+            "model": { "display_name": "Opus 4.8" },
+            "workspace": { "current_dir": dir },
+            "context_window": { "used_percentage": 26, "context_window_size": 1_000_000 },
+        })
+        .to_string()
+    };
+
+    let in_worktree = stdout(&run(&home, &["--statusline"], &payload(&worktree), &[]));
+    assert!(
+        in_worktree.contains("feature +"),
+        "a dirty worktree rendered clean: {}",
+        in_worktree.escape_debug()
+    );
+
+    let in_checkout = stdout(&run(&home, &["--statusline"], &payload(&repo), &[]));
+    assert!(
+        in_checkout.contains("main"),
+        "the control never resolved the checkout's branch, so it proves nothing: {}",
+        in_checkout.escape_debug()
+    );
+    assert!(
+        !in_checkout.contains("main +"),
+        "the clean checkout picked up the worktree's change: {}",
+        in_checkout.escape_debug()
+    );
+}
+
 #[test]
 fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
     // The whole git budget is 250 ms *shared*. Run against a `git` that never
