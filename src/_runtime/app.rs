@@ -56,7 +56,7 @@ pub fn run() -> i32 {
 /// # Why `Mode::Help` is carved out
 ///
 /// It is already putting `HELP` on stdout. Both streams land in the same
-/// terminal, so a second copy is the same fifty lines twice — and the
+/// terminal, so a second copy is the same help twice — and the
 /// motivating case, someone typing `claude-status --debug` at a prompt, is
 /// exactly that mode.
 ///
@@ -545,9 +545,14 @@ fn describe_entry(entry: &SegmentEntry) -> String {
 /// Reads the three keys Claude Code invokes this binary through, so a stale
 /// `settings.json` after an upgrade is visible rather than merely puzzling.
 ///
-/// All three are always reported, `<not set>` included — HELP tells the user to
-/// run `--doctor` to see what is wired, and a key omitted from the report is
+/// All three are always reported, `<not set>` included: `--doctor` is where a
+/// user is sent to see what is wired, and a key omitted from the report is
 /// indistinguishable from a key the report does not know about.
+///
+/// The sentence saying so used to live in `HELP` and was cited here by name.
+/// It left when the help was cut back to an index; the obligation did not,
+/// because it never came from the help — it comes from this being the only
+/// surface that reads those keys.
 fn claude_wiring() -> Vec<String> {
     let Some(home) = home() else {
         return vec!["$HOME is unset".to_string()];
@@ -688,11 +693,20 @@ mod tests {
         assert!(out.contains("--statusline"), "it names the fix");
     }
 
+    /// The two flags this used to require — `--statusline` and `--subagent` —
+    /// left `HELP` deliberately: Claude Code invokes them, a user never types
+    /// them, and the website carries them now. The surfaces a person *does*
+    /// type took their place, so the test still distinguishes a real help from
+    /// a one-line stub.
+    ///
+    /// The test above still requires `--statusline` in `MISSING_FLAG`, which is
+    /// the one place naming it earns its space: that line is what a user sees
+    /// when their `settings.json` has gone stale.
     #[test]
-    fn help_is_multi_line_and_names_both_surfaces() {
+    fn help_is_multi_line_and_names_the_flags_a_user_types() {
         let out = dispatch(plain(Mode::Help)).stdout;
         assert!(out.lines().count() > 5);
-        assert!(out.contains("--statusline") && out.contains("--subagent"));
+        assert!(out.contains("--configure") && out.contains("--doctor"));
     }
 
     /// Every mode but `--configure` exits 0 whatever it found, because the invariants'
@@ -730,8 +744,9 @@ mod tests {
 
     #[test]
     fn the_wiring_report_covers_the_caps_hook_as_well_as_the_two_surfaces() {
-        // HELP tells users to run --doctor "to see what is currently wired", and
-        // names three keys. A report covering two of them cannot answer that.
+        // `--doctor` is where a user is sent to see what is currently wired,
+        // and Claude Code is wired through three keys. A report covering two of
+        // them cannot answer that.
         let (_home, rows) = wiring_for(serde_json::json!({
             "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
             "subagentStatusLine": { "type": "command", "command": "/bin/claude-status --subagent" },

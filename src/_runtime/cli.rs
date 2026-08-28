@@ -21,74 +21,24 @@ pub const REFRESH_FLAG: &str = "--refresh";
 pub const HELP: &str = r#"claude-status — the Claude Code powerline status line
 
 USAGE:
-    claude-status --statusline   render the main bar from a payload on stdin
-    claude-status --subagent     render the subagent panel from stdin (NDJSON)
     claude-status --configure    wire Claude Code to this binary
-    claude-status --refresh      refresh the spend cache and exit
-    claude-status --caps-hook    vwf PostToolUse cap actuator; silent unless breached
     claude-status --doctor       report configuration, wiring and a sample render
+    claude-status --refresh      refresh the spend cache and exit
     claude-status --version      print the version and exit
     claude-status --help         print this help
 
 MODIFIERS:
-    --doctor    also usable on any of the above. It narrates to stderr and
-                never changes a byte of stdout.
+    --doctor    (earlier flag was --debug) also usable on any surface: it
+                narrates to stderr and never changes a byte of stdout.
     --dry-run   with --configure: print every change and write nothing.
 
-    RENAMED: --doctor was called --debug. The old spelling is no longer
-    recognised anywhere — as a surface flag or as a modifier — so
-    `--statusline --debug` now names --debug as unrecognised and draws the bar
-    without narrating. Change it wherever you have it written down,
-    ~/.claude/settings.json included.
-
-    An unrecognised argument is NAMED ON STDERR, followed by this help, and
-    then every surface but --configure carries on: a stray token can never
-    cost you a status bar, and it can never change a byte of stdout either.
-    --configure refuses instead: it writes, it cannot be undone, and a typo in
-    --dry-run must not turn a preview into a real overwrite.
-
-WHAT --configure WRITES:
-    Three keys in ~/.claude/settings.json, each invoking `claude-status` by
-    name from your PATH:
-
-      "statusLine":         { "type": "command", "command": "claude-status --statusline",
-                              "padding": 0, "refreshInterval": 4 }
-      "subagentStatusLine": { "type": "command", "command": "claude-status --subagent" }
-      "hooks": { "PostToolUse": [ { "hooks": [ { "type": "command",
-                              "command": "claude-status --caps-hook" } ] } ] }
-
-    Every other key in that file is left as it was, and another tool's
-    PostToolUse hooks are kept alongside ours. A statusLine belonging to
-    someone else IS replaced — --configure prints what it replaced, and there
-    is no undo, so set yours again to get it back.
-
-    It also creates ~/.config/claude-status/config.json when you have none,
-    holding a "$schema" pointer and nothing else. An existing one is never
-    touched.
-
-    Run --doctor to see what is currently wired.
-
-CONFIGURATION:
-    ~/.config/claude-status/config.json      your settings — only the keys that
-                                             differ from the shipped defaults
-    <repo-root>/.config/claude-status.json   the per-repo layer
-
-    Nothing has to exist. With no config file anywhere the bar renders from the
-    defaults compiled into this binary, and that is a supported state.
-
-    THE PER-REPO LAYER sets exactly one key: "projectName", the name the
-    `project` segment draws for that repository. You rarely need it: with no
-    name set anywhere the segment already draws the git root's directory name,
-    and this key only calls it something else. Every other key in it is
-    ignored, and --doctor names the ones it dropped. Write it by hand:
-
-      {
-        "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
-        "projectName": "my-repo"
-      }
+    An unrecognised argument is named on stderr, with this help after it.
+    Every surface but --configure then carries on; --configure refuses.
 
 MORE:
     https://claude-status.virajp.dev
+    Configuring the bar, the per-repo layer, every segment, and the
+    surfaces Claude Code invokes for you.
 "#;
 
 /// The one-line answer when Claude Code invoked us with no surface flag.
@@ -294,9 +244,11 @@ mod tests {
     /// this is the one test that wants it to.
     #[test]
     fn help_records_that_doctor_was_previously_called_debug() {
-        assert!(HELP.contains("RENAMED:"), "the rename has no heading a reader can find");
         assert!(HELP.contains("--debug"), "the old name is not written down anywhere in the binary");
-        assert!(HELP.contains("no longer\n    recognised"), "and that it stopped working, not merely moved");
+        // One parenthetical beside the new name, not a section. The reader who
+        // needs this is scanning for `--doctor` and recognising the old word
+        // next to it; anyone wanting the reasoning has the website.
+        assert!(HELP.contains("--doctor    (earlier flag was --debug)"), "the note is not beside the flag it explains");
     }
 
     #[test]
@@ -310,54 +262,65 @@ mod tests {
         assert!(!parse_args(&["--configure"], false).dry_run);
     }
 
-    /// **Criterion 7.** `--help` is the only documentation that ships in the
-    /// binary now that the npm installer is gone, and after `config-relocation`
-    /// deleted the autoseed the repo layer has **no other discovery route** —
-    /// a vague `--help` is the feature being gone in practice.
+    /// **This test is criterion 7 inverted, and the inversion is the point.**
+    ///
+    /// Criterion 7 said `--help` was the only documentation shipping in the
+    /// binary, so "a vague `--help` is the feature being gone in practice" —
+    /// and the test that held it asserted a **floor**: five sections, forty
+    /// lines, the repo-config path, `projectName`, `refreshInterval`, the
+    /// `settings.json` shapes. That premise expired when the website shipped.
+    /// Help is now the index and the site is the documentation, so the same
+    /// concern needs the **opposite** assertion: a ceiling.
+    ///
+    /// It is inverted rather than deleted for the reason the repo-config pair
+    /// was. Dropping it would leave the one surface a user meets first with no
+    /// guard at all, and length is precisely what regresses here — every
+    /// future flag will want three explaining lines.
     #[test]
-    fn help_documents_the_repo_layer_the_website_and_what_configure_writes() {
-        // **Structure first, because the substrings below do not imply it.**
-        // A nine-line blob carrying nothing but the asserted keywords satisfies
-        // every `contains` in this test, and satisfies nothing a user needs —
-        // which is the whole point of a criterion whose own reasoning is that
-        // "a vague `--help` is the feature being gone in practice". The section
-        // headers and the length are what make it documentation rather than a
-        // keyword soup.
-        for section in ["USAGE:", "MODIFIERS:", "WHAT --configure WRITES:", "CONFIGURATION:", "MORE:"] {
+    fn help_stays_short_and_sends_the_reader_to_the_website() {
+        assert!(
+            HELP.lines().count() < 30,
+            "HELP grew back to {} lines — details belong on the website",
+            HELP.lines().count(),
+        );
+
+        // The flags a person types. Structure still matters: a keyword soup
+        // under one heading would satisfy the ceiling and help nobody.
+        for section in ["USAGE:", "MODIFIERS:", "MORE:"] {
             assert!(HELP.contains(section), "the {section} section is gone");
         }
-        assert!(HELP.lines().count() > 40, "HELP collapsed to {} lines", HELP.lines().count());
-
-        assert!(HELP.contains(".config/claude-status.json"), "the repo config path");
-        assert!(HELP.contains("projectName"), "the one key it may set");
-        assert!(HELP.contains("Every other key in it is\n    ignored"), "and that the rest are not");
-        // **This URL does not resolve yet.** `website/01` ships the site, and
-        // the plan index already records that it should land before
-        // `distribution/02` so the formula's caveats do not print a dead link.
-        // Naming it here is the recorded decision, not a guess — dropping the
-        // clause because the site is not up would leave the repo layer with no
-        // documented home at all.
-        assert!(HELP.contains("https://claude-status.virajp.dev"), "the website URL");
-
-        // The paths and the shapes `--configure` writes, so a reader can check
-        // their own file against this without running anything.
-        assert!(HELP.contains("~/.claude/settings.json"));
-        assert!(HELP.contains("~/.config/claude-status/config.json"));
-        for flag in ["--statusline", "--subagent", "--caps-hook", "--refresh", "--configure", "--dry-run", "--doctor"] {
+        for flag in ["--configure", "--doctor", "--refresh", "--version", "--help", "--dry-run"] {
             assert!(HELP.contains(flag), "{flag} is undocumented");
         }
-        assert!(HELP.contains("refreshInterval"), "the bar's refresh cadence is part of the shape");
 
-        // Two comments in `app.rs` rest on this sentence; `--doctor` is where a
-        // user is sent to see what is actually wired.
-        assert!(HELP.contains("Run --doctor to see what is currently wired."));
+        // **The surfaces Claude Code invokes are deliberately absent.** They
+        // are wired by `--configure` and never typed, so listing them spends
+        // three lines of the first thing a user reads on three flags they will
+        // never use. `MISSING_FLAG` still names the two of them that matter to
+        // someone whose `settings.json` went stale.
+        for wired in ["--statusline", "--subagent", "--caps-hook"] {
+            assert!(!HELP.contains(wired), "{wired} is back in HELP — Claude Code calls it, the user does not");
+        }
+        assert!(MISSING_FLAG.contains("--statusline"), "and the line that DOES need to name one no longer does");
+
+        // Everything cut has to have somewhere to have gone.
+        assert!(HELP.contains("https://claude-status.virajp.dev"), "the website URL");
     }
 
-    /// The example in `--help` has to be an example of the real thing.
-    #[test]
-    fn the_help_examples_schema_url_is_the_one_the_writer_emits() {
-        assert!(HELP.contains(crate::config::write::SCHEMA_URL), "the `$schema` pointer in HELP has drifted");
-    }
+    /// **Deleted, not weakened.** `the_help_examples_schema_url_is_the_one_the_writer_emits`
+    /// guarded a hand-written `$schema` example inside `HELP` against drifting
+    /// from `config::write::SCHEMA_URL`. `HELP` carries no example now — the
+    /// website does — so there is no second copy left to drift, and a test
+    /// asserting that would be asserting nothing.
+    ///
+    /// The URL itself is still pinned where it is still duplicated: the
+    /// writer emits it, and `site/` is checked against the committed schema by
+    /// `tests/site.rs`.
+    ///
+    /// This note is the deletion's receipt. Without it the next reader finds a
+    /// constant with no test and adds one back.
+    #[allow(dead_code)]
+    const SCHEMA_EXAMPLE_LEFT_HELP: () = ();
 
     #[test]
     fn the_no_flag_case_turns_on_whether_stdin_is_a_tty() {

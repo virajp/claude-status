@@ -522,6 +522,12 @@ reason about than any amount of care about *when* it writes.
 Discoverability moves entirely to `--help` and the website as a result. The repo
 layer being supported is not the same as anyone knowing it exists.
 
+**Amended 2026-08-28** (`doctor-rename`). Of those two, the **website** now
+carries it; `--help` only points there. See
+[`--help` is an index, not the documentation](#--help-is-an-index-not-the-documentation--reversing-criterion-7).
+The obligation this paragraph creates is unchanged — someone still has to tell
+the user the layer exists — but the binary is no longer the one doing it.
+
 ### `--configure` seeds an empty user config
 
 **Decided 2026-08-23** (`cli-surface`). With no file at layer 2 it creates
@@ -848,11 +854,60 @@ reason. That one had never shipped; this one has. The alias was rejected anyway
 because a silent alias makes the old name permanent, and the mitigation is
 better than compatibility: the old spelling now falls into the unrecognised-
 argument arm, which **names it on stderr and prints the help after it**, and
-that help carries a `RENAMED:` block saying what replaced it. A user who kept
-`--debug` in `settings.json` is told, once per render, in words.
+that help names the old flag beside the new one. A user who kept `--debug` in
+`settings.json` is told, once per render, in words.
+
+The note started as a four-line `RENAMED:` block and was cut the same day to the
+parenthetical `--doctor    (earlier flag was --debug)` — see the help-scope
+entry below. The reader who needs it is scanning for `--doctor` and recognising
+the old word next to it; the reasoning is the website's job.
 
 The version bump is a **patch**, which understates it — this removes a flag.
 Recorded as the maintainer's call rather than argued for.
+
+### `--help` is an index, not the documentation — reversing criterion 7
+
+**Decided 2026-08-28** (`doctor-rename`), reversing the criterion recorded in
+[a render reads, it never writes](#a-render-reads-it-never-writes) and the two
+tests that held it.
+
+**What it was:** `--help` carried five sections and about seventy lines — every
+surface including the three Claude Code invokes for you, the full shape
+`--configure` writes into `settings.json`, both config paths, the repo layer's
+one permitted key, and a `$schema` example. The reasoning was criterion 7: with
+the npm installer deleted and the autoseed gone, `--help` was **the only
+documentation that shipped**, so "vague about the repo layer" and "the repo
+layer is undiscoverable" were the same statement. The tests asserted a floor —
+`HELP.lines().count() > 40`.
+
+**What it is now:** about twenty lines. The five flags a person types, the two
+modifiers, one line on what an unrecognised argument does, and the website. The
+tests assert a **ceiling**, `< 30`, and additionally assert that `--statusline`,
+`--subagent` and `--caps-hook` are **absent**.
+
+**Why it reversed.** The premise expired when the website shipped. Criterion 7
+was written when there was nowhere else for a user to be sent; there is now, it
+is linked from the help, and the same content lives there in a form that can
+carry tables and examples. What is left is the cost — the first thing a new user
+reads was seventy lines, most of it about files most users never create, since
+the bar is useful out of the box with no config at all.
+
+**The wired surfaces are absent, not merely deprioritised.** `--configure` sets
+them up and a user never types them, so a line each spends the top of the help
+on flags its reader cannot use. `MISSING_FLAG` still names `--statusline` and
+`--subagent`, which is the one place naming them earns the space: it is what a
+user sees when their `settings.json` has gone stale. A test asserts that too, so
+cutting them from the help cannot quietly cut them from there.
+
+**Both guards were inverted rather than deleted**, on the same reasoning as
+[layer 3 may set `projectName` and nothing else](#layer-3-may-set-projectname-and-nothing-else)'s
+inverted pair: length is exactly what regresses here, because every future flag
+will want three lines to explain itself. One test was genuinely deleted —
+`the_help_examples_schema_url_is_the_one_the_writer_emits`, which guarded the
+`$schema` example in `HELP` against drifting from `config::write::SCHEMA_URL`.
+With no example left there is no second copy to drift; a `#[allow(dead_code)]`
+note in `cli.rs` records the deletion so the constant is not found untested and
+re-guarded.
 
 ### An unrecognised argument is named on stderr — reversing the silence
 

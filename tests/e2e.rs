@@ -1332,30 +1332,35 @@ fn no_flag_with_piped_stdin_prints_exactly_one_diagnostic_line() {
     assert!(out.status.success());
 }
 
-/// **Criterion 7**, at the surface. `cli.rs` pins `HELP`'s contents; this pins
-/// that the binary actually prints them, which is the claim a user makes when
-/// they run it.
+/// **Criterion 7, inverted**, at the surface. `cli.rs` pins `HELP`'s contents;
+/// this pins that the binary actually prints them, which is the claim a user
+/// makes when they run it.
 ///
-/// `--help` is now the only documentation that ships in the binary, and after
-/// `config-relocation` deleted the autoseed the repo layer has no other
-/// discovery route at all — so "vague about it" and "gone" are the same thing.
+/// The criterion said `--help` was the binary's only documentation, so a vague
+/// one was the feature being gone. The website is that documentation now, and
+/// `--help` is the index that points at it — so where this test once asserted
+/// a floor of forty lines and five sections, it asserts a **ceiling**. The
+/// concern did not change; what satisfies it did.
 #[test]
-fn help_lists_every_surface_and_documents_the_repo_layer() {
+fn help_is_a_short_index_that_points_at_the_website() {
     let home = Home::new(&safe_config());
     let out = run(&home, &["--help"], "", &[]);
     let text = stdout(&out);
+
+    assert!(text.lines().count() < 30, "help grew back to {} lines:\n{text}", text.lines().count());
     // Structure, not just keywords: a blob containing every substring below and
     // nothing else passes a `contains`-only test while being useless as help.
-    for section in ["USAGE:", "MODIFIERS:", "WHAT --configure WRITES:", "CONFIGURATION:", "MORE:"] {
+    for section in ["USAGE:", "MODIFIERS:", "MORE:"] {
         assert!(text.contains(section), "the {section} section is gone:\n{text}");
     }
-    assert!(text.lines().count() > 40, "help collapsed to {} lines:\n{text}", text.lines().count());
-    for flag in ["--statusline", "--subagent", "--refresh", "--configure", "--caps-hook", "--dry-run"] {
+    for flag in ["--configure", "--doctor", "--refresh", "--version", "--dry-run"] {
         assert!(text.contains(flag), "{flag} is undocumented:\n{text}");
     }
-    assert!(text.contains(".config/claude-status.json"), "the repo config path:\n{text}");
-    assert!(text.contains("projectName"), "the one key it may set:\n{text}");
-    assert!(text.contains("https://claude-status.virajp.dev"), "the project URL:\n{text}");
+    // The wired surfaces are absent on purpose — Claude Code calls them.
+    for wired in ["--statusline", "--subagent", "--caps-hook"] {
+        assert!(!text.contains(wired), "{wired} is back in the help a user reads:\n{text}");
+    }
+    assert!(text.contains("https://claude-status.virajp.dev"), "everything cut needs somewhere to have gone:\n{text}");
     assert!(out.status.success());
 }
 
@@ -1686,7 +1691,7 @@ fn an_unrecognised_argument_is_named_on_stderr_and_leaves_stdout_byte_identical(
 
     let err = stderr(&strayed);
     assert!(err.contains(r#"unrecognised argument "--nonsense""#), "the token is not named: {}", err.escape_debug());
-    for section in ["USAGE:", "MODIFIERS:", "CONFIGURATION:"] {
+    for section in ["USAGE:", "MODIFIERS:", "MORE:"] {
         assert!(err.contains(section), "the {section} section of the help did not follow it");
     }
 }
@@ -1710,7 +1715,7 @@ fn the_old_debug_flag_is_named_as_unrecognised_and_narrates_nothing() {
     assert!(!err.contains("repo root:"), "--debug still turned narration on: {}", err.escape_debug());
     // And the help it printed carries the rename, so the user is not merely
     // told the flag is wrong — they are told what replaced it.
-    assert!(err.contains("RENAMED:") && err.contains("--doctor"), "the help on stderr does not explain the rename");
+    assert!(err.contains("(earlier flag was --debug)"), "the help on stderr does not name what replaced it");
 
     let new = run(&home, &["--statusline", "--doctor"], FIXTURE, &[]);
     assert!(stderr(&new).contains("repo root:"), "the control failed: --doctor stopped narrating");
