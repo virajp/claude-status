@@ -387,7 +387,7 @@ impl Sandbox {
 /// The importing is what makes the module's shape load-bearing: an
 /// `install.mjs` that did anything on import would download and place a binary
 /// here.
-const PROBE: &str = r#"import { ASSET, VERSION, chooseInstallDir, classifyExisting, helpText, isRunnerShim, parseArgs, unwireSettings } from "./install.mjs";
+const PROBE: &str = r#"import { ASSET, VERSION, chooseInstallDir, classifyExisting, helpText, installCandidates, isRunnerShim, parseArgs, unwireSettings } from "./install.mjs";
 
 const answer = eval(process.argv[2]);
 process.stdout.write(JSON.stringify(answer === undefined ? null : answer));
@@ -493,6 +493,42 @@ fn the_package_declares_the_only_platform_the_release_carries() {
 ///
 /// **The last assertion is the control.** All-null answers also come from a
 /// parser that never reports an error at all.
+/// **The regression 1.1.6 shipped, and the reason it was only found by running
+/// the real command.**
+///
+/// `which` returns the FIRST match. Under a package runner the shim is always
+/// first, so skipping it and giving up reported "nothing installed" on a
+/// machine with a Homebrew install two entries further down — and the installer
+/// then placed a second `claude-status` in `~/.local/bin`, shadowed by the
+/// first. That is precisely the two-channels-fighting case `classifyExisting`
+/// exists to prevent, reintroduced by the fix for the shim.
+///
+/// `which -a` and take the first non-shim. The first case below is the real
+/// `which -a` output from the machine that hit it.
+#[test]
+fn the_scan_looks_past_the_runners_shim_to_a_real_install() {
+    let node = node_or_skip!("the PATH scan");
+    let staged = pure(&node);
+
+    let real = "/Users/v/Library/Caches/pnpm/dlx/3aa68349/mtd3tgq3-e3q/node_modules/.bin/claude-status\n\
+                /opt/homebrew/bin/claude-status\n\
+                /Users/v/.local/bin/claude-status";
+    let candidates = staged.probe(&format!("installCandidates({})", serde_json::to_string(real).unwrap()));
+    assert_eq!(
+        candidates,
+        serde_json::json!(["/opt/homebrew/bin/claude-status", "/Users/v/.local/bin/claude-status"]),
+        "the shim must be dropped and everything after it kept, in PATH order",
+    );
+
+    // Nothing but shims is genuinely nothing installed — the case the runner
+    // hits on a clean machine, where installing is the right answer.
+    let only_shims = staged.probe(r#"installCandidates("/x/node_modules/.bin/claude-status")"#);
+    assert_eq!(only_shims, serde_json::json!([]), "a shim-only PATH is an empty PATH for this purpose");
+
+    // And the control: no output at all is not an error.
+    assert_eq!(staged.probe("installCandidates(null)"), serde_json::json!([]));
+}
+
 /// **The npx route was broken for every user, and this is the guard.**
 ///
 /// `npx`, `pnpx` and `bunx` put the package's own `node_modules/.bin` at the

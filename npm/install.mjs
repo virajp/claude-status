@@ -438,27 +438,46 @@ export function isRunnerShim(resolvedPath) {
 }
 
 /**
- * `which claude-status`, resolved through every symlink, or null.
+ * Every `which -a` hit that could be an install, in PATH order.
  *
- * Null also when the hit is this installer's own runner shim — see
- * [`isRunnerShim`]. Both the raw hit and the resolved path are tested, because
- * the runners disagree about which one lands in `node_modules`: npm symlinks
- * `.bin/claude-status` into the package, while pnpm writes a real shell shim
- * and leaves the realpath where it was.
+ * **`-a`, not the first hit, and that is the whole point.** Under a package
+ * runner the shim is always first, so a `locate` that read one line and gave up
+ * on finding a shim would report "nothing installed" on a machine that has a
+ * Homebrew install two entries further down — and then install a SECOND
+ * claude-status into `~/.local/bin`, shadowed by the first, which is exactly
+ * the two-channels-fighting case `classifyExisting` exists to prevent. That
+ * regression shipped in 1.1.6 and was caught by running the real command.
+ */
+export function installCandidates(whichOutput) {
+  return (whichOutput ?? "")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line !== "" && !isRunnerShim(line));
+}
+
+/**
+ * The first `claude-status` on PATH that is not a package runner's shim,
+ * resolved through every symlink, or null.
+ *
+ * Both the raw hit and the resolved path are tested against [`isRunnerShim`],
+ * because the runners disagree about which one lands in `node_modules`: npm
+ * symlinks `.bin/claude-status` into the package, while pnpm writes a real
+ * shell shim and leaves the realpath where it was.
  */
 function locate() {
-  const found = run("which", [COMMAND]);
-  if (found === null || isRunnerShim(found)) {
-    return null;
+  for (const hit of installCandidates(run("which", ["-a", COMMAND]))) {
+    let resolved;
+    try {
+      resolved = realpathSync(hit);
+    }
+    catch {
+      resolved = hit;
+    }
+    if (!isRunnerShim(resolved)) {
+      return resolved;
+    }
   }
-  let resolved;
-  try {
-    resolved = realpathSync(found);
-  }
-  catch {
-    resolved = found;
-  }
-  return isRunnerShim(resolved) ? null : resolved;
+  return null;
 }
 
 function pathEntries() {

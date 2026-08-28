@@ -2019,18 +2019,34 @@ installed at all, and the message named a path inside a cache directory they had
 never heard of. It is the failure mode `--force` exists for, fired at a file
 nobody asked to touch.
 
-`locate` now returns null for any hit with a `node_modules` path segment. The
-rule is safe for a reason rather than by luck: `chooseInstallDir` never selects
-a directory under `node_modules` — only `~/.local/bin` or `~/bin` — so a
-`claude-status` found in one was never placed by this installer and is never a
-destination it would choose. Both the raw `which` hit and its realpath are
-tested, because the runners disagree about which one lands in `node_modules`:
-npm symlinks into the package, pnpm writes a real shim and leaves the realpath
-alone. Segment, not substring, on the same terms as `Cellar`.
+`locate` now scans `which -a` and takes the first hit **without** a
+`node_modules` path segment. The rule is safe for a reason rather than by luck:
+`chooseInstallDir` never selects a directory under `node_modules` — only
+`~/.local/bin` or `~/bin` — so a `claude-status` found in one was never placed
+by this installer and is never a destination it would choose. Both the raw
+`which` hit and its realpath are tested, because the runners disagree about
+which one lands in `node_modules`: npm symlinks into the package, pnpm writes a
+real shim and leaves the realpath alone. Segment, not substring, on the same
+terms as `Cellar`.
 
 The test's **controls carry it**: a rule that answered "yes" to everything would
 pass the shim cases and silently disable the protection over a Homebrew binary,
 which is worse than the bug it fixes.
+
+**`-a` is the second half, and 1.1.6 shipped without it.** The first attempt
+read one line from `which` and returned null on finding a shim — but `which`
+reports only the FIRST match, and under a runner the shim is always first. So on
+a machine with a Homebrew install two entries further down, the installer
+reported nothing installed and placed a **second** `claude-status` in
+`~/.local/bin`, shadowed by the first: exactly the two-channels-fighting case
+`classifyExisting` exists to prevent, reintroduced by the fix for the shim.
+
+**Only running the real command found it.** The unit test passed, the suite
+passed, and the published 1.1.6 was wrong.
+`npx @virajp.dev/claude-status
+--install` on a machine with a brew install is
+the check that fails, and it is worth writing down that no amount of the tests
+above substituted for it.
 
 ### The refusal says what was found, why, and what to type
 
