@@ -70,6 +70,11 @@ The binary lands in a directory under your home that is already on your `PATH`,
 nothing qualifies it installs into `~/.local/bin` anyway, prints the line to add
 to your shell, and exits non-zero.
 
+It also writes a receipt to `~/.local/state/claude-status/install-receipt.json`.
+That file is what makes the next run an upgrade rather than a refusal — it is
+how the installer knows the binary on your `PATH` is one it placed. Delete it
+and the next `--install` will decline to touch that binary without `--force`.
+
 ### The installer's flags
 
 These are the installer's own, and they are not the binary's — the binary's

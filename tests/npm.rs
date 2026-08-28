@@ -387,7 +387,7 @@ impl Sandbox {
 /// The importing is what makes the module's shape load-bearing: an
 /// `install.mjs` that did anything on import would download and place a binary
 /// here.
-const PROBE: &str = r#"import { ASSET, VERSION, chooseInstallDir, classifyExisting, helpText, parseArgs, unwireSettings } from "./install.mjs";
+const PROBE: &str = r#"import { ASSET, VERSION, chooseInstallDir, classifyExisting, helpText, isRunnerShim, parseArgs, unwireSettings } from "./install.mjs";
 
 const answer = eval(process.argv[2]);
 process.stdout.write(JSON.stringify(answer === undefined ? null : answer));
@@ -493,6 +493,55 @@ fn the_package_declares_the_only_platform_the_release_carries() {
 ///
 /// **The last assertion is the control.** All-null answers also come from a
 /// parser that never reports an error at all.
+/// **The npx route was broken for every user, and this is the guard.**
+///
+/// `npx`, `pnpx` and `bunx` put the package's own `node_modules/.bin` at the
+/// front of `PATH` before running it, and this package declares a bin named
+/// `claude-status`. So `which claude-status` found the shim for the process
+/// doing the looking — on a machine with nothing installed at all — and
+/// `--install` refused to replace it:
+///
+/// ```text
+/// claude-status: /…/pnpm/dlx/3aa68349…/node_modules/.bin/claude-status
+/// was not placed by this installer, or has changed since it was
+/// ```
+///
+/// **The last two cases are the controls, and they are the point.** A rule
+/// that answered "yes" to everything would pass the first three assertions and
+/// silently disable the installer's real protection over a Homebrew binary —
+/// which is a worse bug than the one being fixed. `my_node_modules_backup`
+/// pins segment-matching over substring-matching, the same distinction
+/// `classifyExisting` draws for `Cellar`.
+#[test]
+fn a_package_runners_own_shim_is_not_mistaken_for_an_installed_binary() {
+    let node = node_or_skip!("the runner-shim rule");
+    let staged = pure(&node);
+
+    for path in [
+        // pnpm dlx — the exact path from the report.
+        "/Users/v/Library/Caches/pnpm/dlx/3aa68349f2e37dbf4e65d9d25ae75d28/mtd3tgq3-e3q/node_modules/.bin/claude-status",
+        // npm's cache, and a project-local install.
+        "/Users/v/.npm/_npx/abc123/node_modules/.bin/claude-status",
+        "/Users/v/project/node_modules/.bin/claude-status",
+    ] {
+        let shim = staged.probe(&format!("isRunnerShim({})", serde_json::to_string(path).unwrap()));
+        assert_eq!(shim, serde_json::Value::Bool(true), "a runner shim was taken for an install: {path}");
+    }
+
+    for path in [
+        // The two directories `chooseInstallDir` can actually return...
+        "/Users/v/.local/bin/claude-status",
+        "/Users/v/bin/claude-status",
+        // ...another channel's, which must stay protected...
+        "/opt/homebrew/Cellar/claude-status/1.1.5/bin/claude-status",
+        // ...and a substring that is not a segment.
+        "/Users/v/my_node_modules_backup/bin/claude-status",
+    ] {
+        let shim = staged.probe(&format!("isRunnerShim({})", serde_json::to_string(path).unwrap()));
+        assert_eq!(shim, serde_json::Value::Bool(false), "a real install was skipped as a shim: {path}");
+    }
+}
+
 #[test]
 fn every_flag_the_help_lists_is_a_flag_the_parser_accepts() {
     let node = node_or_skip!("the installer's help against its parser");

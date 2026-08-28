@@ -100,12 +100,20 @@ export const VERSION =
 export const ASSET = JSON.parse(readFileSync(beside("asset.json"), "utf8"));
 
 /**
- * The whole flag surface, in one string.
+ * The flag surface, and nothing else.
  *
  * `every_flag_the_help_lists_is_a_flag_the_parser_accepts` reads the flags back
- * out of this text, so NO FLAG THE PARSER DOES NOT TAKE MAY APPEAR HERE — the
- * binary's own `--statusline`/`--subagent`/`--caps-hook` are described below in
- * prose for that reason, not out of squeamishness.
+ * out of this text, so NO FLAG THE PARSER DOES NOT TAKE MAY APPEAR HERE — which
+ * is also why the binary's own surfaces are not named here with their dashes.
+ * That test needs at least six flags to be sure it is scanning the right thing,
+ * and the six below are exactly the six the parser accepts.
+ *
+ * KEEP IT SHORT. This used to carry `WHAT --install DOES` and
+ * `WHAT --uninstall DOES` — where the binary lands, the digest check, the
+ * receipt path, the three settings keys, what an uninstall leaves behind — and
+ * ran to fifty-eight lines. All of it is on the website, which can format a
+ * table and be corrected without a release. The first thing a user reads should
+ * be the flags and where to go for the rest.
  */
 export function helpText() {
   return `claude-status — install the Claude Code powerline status line
@@ -120,40 +128,17 @@ USAGE:
 
 MODIFIERS:
     --configure      wire Claude Code afterwards without asking
-    --no-configure   do not wire it, do not ask, and print the one command
-                     you would run yourself. A decline, not a failure.
+    --no-configure   do not wire it, and do not ask. A decline, not a failure.
     --force          act on a claude-status this installer cannot prove it
-                     placed — overwriting it on install, removing it on
-                     uninstall.
+                     placed
 
-    --configure and --no-configure together is refused rather than ranked.
-    With neither, you are asked on a terminal, and nothing is wired without
-    one.
-
-WHAT --install DOES:
-    Downloads claude-status ${ASSET.tag} for macOS on Apple Silicon, checks it
-    against a digest pinned in this package, and places it in the first of
-    ~/.local/bin or ~/bin that is on your PATH. Never a directory outside
-    your home — not /usr/local/bin, not /opt/homebrew/bin.
-
-    An existing claude-status installed by Homebrew or mise is left alone,
-    with the upgrade command for that channel printed instead.
-
-    Wiring writes three keys in ~/.claude/settings.json. Every other key is
-    left as it was, and another tool's PostToolUse hooks are kept beside
-    ours. A status line belonging to someone else IS replaced, and there is
-    no undo.
-
-    A receipt lands in ~/.local/state/claude-status/install-receipt.json. It
-    is what makes the next install an upgrade rather than a refusal.
-
-WHAT --uninstall DOES:
-    Removes the binary this installer placed and takes those three keys back
-    out, keeping every other key and every other tool's hooks. Your
-    ~/.config/claude-status/config.json is left alone — it is yours.
+    Passing --configure and --no-configure together is refused, not ranked.
+    With neither, you are asked on a terminal, and nothing is wired without one.
 
 MORE:
     https://claude-status.virajp.dev
+    Where the binary lands, what is verified, what the wiring writes, and
+    how this route differs from brew and mise.
 `;
 }
 
@@ -424,18 +409,56 @@ function run(command, args) {
   return result.stdout.trim() || null;
 }
 
-/** `which claude-status`, resolved through every symlink, or null. */
+/**
+ * Whether a `which` hit is a package runner's shim for THIS installer rather
+ * than an installed binary.
+ *
+ * `npx`, `pnpx` and `bunx` all put the package's own `node_modules/.bin` at the
+ * FRONT of PATH before running it — and this package declares a bin named
+ * `claude-status`. So `which claude-status` finds the shim belonging to the very
+ * process doing the looking, on a machine with nothing installed at all.
+ *
+ * Left unhandled that shim classified as `unknown`, and `--install` refused to
+ * replace a file that is not an install and that nobody asked it to touch. The
+ * whole npx route failed, for every user, with a message naming a path inside a
+ * cache directory they had never heard of:
+ *
+ *     claude-status: /…/pnpm/dlx/3aa68349…/node_modules/.bin/claude-status
+ *     was not placed by this installer, or has changed since it was
+ *
+ * A `node_modules` path SEGMENT is the test, and it is safe for a reason rather
+ * than by luck: `chooseInstallDir` never selects a directory under
+ * `node_modules` — it only ever picks `~/.local/bin` or `~/bin` — so a
+ * `claude-status` found in one was never placed by this installer and is never
+ * a destination it would choose. Matching the segment and not the substring is
+ * the same care `classifyExisting` takes over `Cellar`.
+ */
+export function isRunnerShim(resolvedPath) {
+  return resolvedPath.split("/").includes("node_modules");
+}
+
+/**
+ * `which claude-status`, resolved through every symlink, or null.
+ *
+ * Null also when the hit is this installer's own runner shim — see
+ * [`isRunnerShim`]. Both the raw hit and the resolved path are tested, because
+ * the runners disagree about which one lands in `node_modules`: npm symlinks
+ * `.bin/claude-status` into the package, while pnpm writes a real shell shim
+ * and leaves the realpath where it was.
+ */
 function locate() {
   const found = run("which", [COMMAND]);
-  if (found === null) {
+  if (found === null || isRunnerShim(found)) {
     return null;
   }
+  let resolved;
   try {
-    return realpathSync(found);
+    resolved = realpathSync(found);
   }
   catch {
-    return found;
+    resolved = found;
   }
+  return isRunnerShim(resolved) ? null : resolved;
 }
 
 function pathEntries() {
@@ -518,11 +541,19 @@ function resolve(path) {
   }
 }
 
+/**
+ * The one refusal a user is likely to meet, so it says what was found, why it
+ * was left alone, and what to type — in that order.
+ *
+ * The previous wording opened with an absolute path and a passive clause that
+ * trailed off mid-sentence ("or has changed since it was"), which read as a
+ * fault in the tool rather than a decision it had taken deliberately.
+ */
 function refuse(path, verb) {
-  say(
-    `claude-status: ${path} was not placed by this installer, or has changed since it was`,
-  );
-  say(`  it is not ours to ${verb} — pass --force to ${verb} it anyway`);
+  say(`claude-status: a claude-status is already installed at`);
+  say(`  ${path}`);
+  say(`  This installer did not place that file, or it changed after it did,`);
+  say(`  so it will not ${verb} it. Re-run with --force to ${verb} it anyway.`);
 }
 
 /** The line that puts a directory on PATH, in the shell the user is running. */

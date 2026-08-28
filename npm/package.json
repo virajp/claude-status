@@ -1,6 +1,6 @@
 {
   "name": "@virajp.dev/claude-status",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Installer for claude-status, the Claude Code powerline status line. Downloads the release binary against a pinned digest; carries no binary itself.",
   "license": "MIT",
   "homepage": "https://claude-status.virajp.dev",

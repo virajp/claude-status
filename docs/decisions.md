@@ -1999,6 +1999,66 @@ and clearing one is a supported thing for a user to do; a receipt is neither
 regenerable nor safe to lose. **Clearing a cache must not strand the
 uninstall.**
 
+### A package runner's own shim is not an installed binary
+
+**Fixed 2026-08-28** (`installer-shim`), reported from a real run.
+
+`npx`, `pnpx` and `bunx` put the package's own `node_modules/.bin` at the front
+of `PATH` before running it, and this package declares a bin named
+`claude-status`. So `which claude-status` found **the shim belonging to the
+process doing the looking**, `classifyExisting` called it `unknown`, and
+`--install` refused to replace it:
+
+```text
+claude-status: /…/pnpm/dlx/3aa68349…/node_modules/.bin/claude-status was not
+placed by this installer, or has changed since it was
+```
+
+**The npx route was broken for every user**, including one with nothing
+installed at all, and the message named a path inside a cache directory they had
+never heard of. It is the failure mode `--force` exists for, fired at a file
+nobody asked to touch.
+
+`locate` now returns null for any hit with a `node_modules` path segment. The
+rule is safe for a reason rather than by luck: `chooseInstallDir` never selects
+a directory under `node_modules` — only `~/.local/bin` or `~/bin` — so a
+`claude-status` found in one was never placed by this installer and is never a
+destination it would choose. Both the raw `which` hit and its realpath are
+tested, because the runners disagree about which one lands in `node_modules`:
+npm symlinks into the package, pnpm writes a real shim and leaves the realpath
+alone. Segment, not substring, on the same terms as `Cellar`.
+
+The test's **controls carry it**: a rule that answered "yes" to everything would
+pass the shim cases and silently disable the protection over a Homebrew binary,
+which is worse than the bug it fixes.
+
+### The refusal says what was found, why, and what to type
+
+**Decided 2026-08-28** (`installer-shim`). The wording above opened with an
+absolute path and a passive clause that trailed off mid-sentence — "or has
+changed since it was" — which reads as a fault in the tool rather than a
+decision it took deliberately. It now names the file on its own line, says this
+installer did not place it, and ends with the flag to re-run with.
+
+### The installer's `--help` is an index too
+
+**Decided 2026-08-28** (`installer-shim`), applying
+[`--help` is an index, not the documentation](#--help-is-an-index-not-the-documentation--reversing-criterion-7)
+to the surface it was missed on. The binary's help was cut the same day and the
+installer's was left at fifty-eight lines, carrying `WHAT --install DOES` and
+`WHAT --uninstall DOES`: where the binary lands, the digest check, the receipt
+path, the three settings keys, what an uninstall leaves behind.
+
+All of it is on the website, which can format a table and be corrected without a
+release. **The receipt path was the one fact with no other home**, so it was
+added to the site before it was cut from here — the same rule the binary's cut
+followed.
+
+Twenty-four lines now. The flag list stays complete because
+`every_flag_the_help_lists_is_a_flag_the_parser_accepts` scans this text and
+needs at least six flags to be sure it is reading the right thing; the six the
+parser accepts are exactly the six listed.
+
 ### Consent to `--configure` has three states, and the third is a decline
 
 **Decided 2026-08-27** (`npm-installer`). `--install --configure` runs it,
