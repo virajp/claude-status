@@ -23,7 +23,6 @@ pub const HELP: &str = r#"claude-status — the Claude Code powerline status lin
 USAGE:
     claude-status --configure    wire Claude Code to this binary
     claude-status --doctor       report configuration, wiring and a sample render
-    claude-status --refresh      refresh the spend cache and exit
     claude-status --version      print the version and exit
     claude-status --help         print this help
 
@@ -289,7 +288,7 @@ mod tests {
         for section in ["USAGE:", "MODIFIERS:", "MORE:"] {
             assert!(HELP.contains(section), "the {section} section is gone");
         }
-        for flag in ["--configure", "--doctor", "--refresh", "--version", "--help", "--dry-run"] {
+        for flag in ["--configure", "--doctor", "--version", "--help", "--dry-run"] {
             assert!(HELP.contains(flag), "{flag} is undocumented");
         }
 
@@ -298,8 +297,14 @@ mod tests {
         // three lines of the first thing a user reads on three flags they will
         // never use. `MISSING_FLAG` still names the two of them that matter to
         // someone whose `settings.json` went stale.
-        for wired in ["--statusline", "--subagent", "--caps-hook"] {
-            assert!(!HELP.contains(wired), "{wired} is back in HELP — Claude Code calls it, the user does not");
+        // `--refresh` sits with them for the same reason but a different
+        // caller: `resolve_spend` spawns THIS binary with it, detached, when
+        // the cache goes stale. Typing it is the identical call — same
+        // `bypass_dedupe: false`, so a no-op on a fresh cache — and it prints
+        // nothing, because it was built for a child whose stdio is /dev/null.
+        // `--doctor` is the one that forces a fetch and shows the answer.
+        for wired in ["--statusline", "--subagent", "--caps-hook", "--refresh"] {
+            assert!(!HELP.contains(wired), "{wired} is back in HELP — the tool calls it, the user does not");
         }
         assert!(MISSING_FLAG.contains("--statusline"), "and the line that DOES need to name one no longer does");
 

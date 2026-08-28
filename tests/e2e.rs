@@ -1353,11 +1353,12 @@ fn help_is_a_short_index_that_points_at_the_website() {
     for section in ["USAGE:", "MODIFIERS:", "MORE:"] {
         assert!(text.contains(section), "the {section} section is gone:\n{text}");
     }
-    for flag in ["--configure", "--doctor", "--refresh", "--version", "--dry-run"] {
+    for flag in ["--configure", "--doctor", "--version", "--dry-run"] {
         assert!(text.contains(flag), "{flag} is undocumented:\n{text}");
     }
-    // The wired surfaces are absent on purpose — Claude Code calls them.
-    for wired in ["--statusline", "--subagent", "--caps-hook"] {
+    // The wired surfaces are absent on purpose — the tool calls them, not the
+    // user. `--refresh` included: the render spawns this binary with it.
+    for wired in ["--statusline", "--subagent", "--caps-hook", "--refresh"] {
         assert!(!text.contains(wired), "{wired} is back in the help a user reads:\n{text}");
     }
     assert!(text.contains("https://claude-status.virajp.dev"), "everything cut needs somewhere to have gone:\n{text}");

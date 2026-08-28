@@ -161,25 +161,35 @@ must not turn a preview into a real write.
 One binary, several surfaces, each selected by an explicit flag. They split by
 who does the calling.
 
-### Claude Code calls these
+### Called for you
 
-Wired by `--configure`, and you will not type them yourself.
+You will not type any of these, and `--help` does not list them.
 
-| Flag           | Does                                                   |
-| -------------- | ------------------------------------------------------ |
-| `--statusline` | render the main bar from a payload on stdin            |
-| `--subagent`   | render the subagent panel from stdin (NDJSON)          |
-| `--caps-hook`  | the `PostToolUse` cap actuator; silent unless breached |
+The first three are wired by `--configure` and invoked by Claude Code. The
+fourth is invoked by **the bar itself**: when the spend cache goes stale a
+render spawns this same binary with `--refresh`, detached, and draws the cached
+figure immediately rather than waiting. A render never fetches.
+
+| Flag           | Called by   | Does                                                   |
+| -------------- | ----------- | ------------------------------------------------------ |
+| `--statusline` | Claude Code | render the main bar from a payload on stdin            |
+| `--subagent`   | Claude Code | render the subagent panel from stdin (NDJSON)          |
+| `--caps-hook`  | Claude Code | the `PostToolUse` cap actuator; silent unless breached |
+| `--refresh`    | the bar     | refresh the spend cache and exit                       |
+
+Typing `--refresh` yourself is the **same call the child makes**, not a stronger
+one: it honours the same staleness rule, so on a fresh cache it does nothing,
+and it prints nothing either way — it was built for a child whose output goes to
+`/dev/null`. To force a fetch and see the result, use `--doctor`.
 
 ### You call these
 
 | Flag          | Does                                             |
 | ------------- | ------------------------------------------------ |
 | `--configure` | wire Claude Code to this binary                  |
-| `--refresh`   | refresh the spend cache and exit                 |
 | `--doctor`    | report configuration, wiring and a sample render |
 | `--version`   | print the version and exit                       |
-| `--help`      | the full list, with detail                       |
+| `--help`      | the flag list, and a link back here              |
 
 Two modifiers pair with them: `--doctor` works on any surface and narrates to
 stderr without changing a byte of stdout, and `--dry-run` pairs with

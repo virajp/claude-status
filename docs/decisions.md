@@ -899,6 +899,20 @@ on flags its reader cannot use. `MISSING_FLAG` still names `--statusline` and
 user sees when their `settings.json` has gone stale. A test asserts that too, so
 cutting them from the help cannot quietly cut them from there.
 
+**`--refresh` went with them**, on the same rule and a different caller: it is
+**the bar** that spawns it, not Claude Code. `resolve_spend` re-invokes this
+binary with it, detached, when the cache goes stale, then draws the cached
+figure without waiting. Typing it yourself is the identical call —
+`bypass_dedupe: false`, so a no-op on a fresh cache — and it prints nothing
+either way, because `the_refresh_child_is_recognised_and_silent` pins the
+silence the `/dev/null` child was designed around. **A listed flag that can do
+nothing and say nothing teaches a user that the tool is broken.** `--doctor` is
+what forces a fetch and shows the answer, and it stays listed.
+
+The flag is not removed, only unadvertised: anything that already scripts it
+keeps working, and `REFRESH_FLAG` is still the constant the spawn and the parser
+share.
+
 **Both guards were inverted rather than deleted**, on the same reasoning as
 [layer 3 may set `projectName` and nothing else](#layer-3-may-set-projectname-and-nothing-else)'s
 inverted pair: length is exactly what regresses here, because every future flag
