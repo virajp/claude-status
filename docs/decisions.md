@@ -165,6 +165,13 @@ characters before it is written, on **both** rendering surfaces and in
 `--doctor`. See
 [§6, Escapes and untrusted input](#6-escapes-and-untrusted-input).
 
+**Amended 2026-08-28** (`colour`). Colour on the diagnostic surfaces is escapes,
+and this invariant is why it was possible without weakening anything: text is
+**filtered first and painted second**, so every escape in the result was put
+there by `_shared::paint` and nothing a config value, a path or an argv token
+carried can reach the terminal. The filter did not change by a character. See
+[Colour goes on after the filter](#colour-goes-on-after-the-filter-never-before).
+
 ### 5 — an unresolvable `$HOME` means absent, never relative
 
 **Added 2026-08-21** (`macos-only`), after review found four callers of the
@@ -967,6 +974,56 @@ The name is a **constant** (`cli::REFRESH_FLAG`) rather than a literal in two
 places, because a render spawns a detached child with it and **that child's
 stdio is `/dev/null`** — a caller and a parser that drifted apart would leave
 the spend segment silently frozen, with nothing on any stream to say why.
+
+### Colour goes on after the filter, never before
+
+**Decided 2026-08-28** (`colour`). The human-facing surfaces — `--doctor`,
+`--configure`, and the stderr diagnostics — carry green/yellow/red. Three things
+made that safe rather than a hole in invariant 4.
+
+**Order.** `sanitize` strips every control character, ESC included. Painting
+before it would simply have the colour stripped; painting after it means every
+escape in the output provably came from `paint`, because the sweep has already
+removed all the others. This is not a new idiom — `--doctor`'s SAMPLE RENDER was
+already appended *after* the sweep "because it is the one part whose escapes are
+meant to be there". The rule generalised; the filter did not move.
+
+**A side channel, not colour in the string.** `paint::Marked` accumulates text
+plus `(line, health)` marks and implements `fmt::Write`, so the existing
+`writeln!(out, …)` calls are unchanged and the five `&mut String` helpers needed
+only a type swapped in their signature. Marks are applied after the sweep. This
+rests on the filter preserving line count, which
+`line_count_survives_the_report_filter` pins — if it could renumber a line,
+every mark after that point would paint the wrong row, silently, in the one
+surface a user reads to find out what is wrong.
+
+**Health, not severity of prose.** Green is working, yellow is absent-but-fine
+or written-and-ignored, red is actively failing. `Health::Note` — most lines —
+is uncoloured, because a report where everything is coloured says no more than
+one where nothing is.
+
+**`Absent` config layers are NOT yellow**, though the first sketch of this had
+them so. A machine with no config file anywhere is a *supported* state; the bar
+renders from the embedded defaults and nothing is wrong. Painting the common
+case as needing attention would tell every new user their install is off.
+`Unusable` is red, because a file **is** there and contributed nothing.
+
+**TTY-gated, and `NO_COLOR` is honoured** when present and non-empty, per
+<https://no-color.org>. Each stream answers for itself: `--doctor > report.txt`
+run in a terminal leaves stderr a tty and stdout a file. The bar is exempt from
+the gate — Claude Code reads it through a pipe and still wants colour.
+
+**Three surfaces are never painted**, and the reason is the same for all three:
+a machine parses them. `--version` is read by the release workflow and the
+`build:statusline` smoke test; `--caps-hook`'s stdout is injected verbatim into
+an agent's context; `--subagent` is NDJSON. A decoration on any of them is a
+broken build or a corrupted payload, not a nicer terminal. `--help` is not
+painted either, for a different reason: an index of flags reports no state, so
+there is nothing in it that is green or red.
+
+**`diag` takes the health as a parameter rather than inferring it.** Inference
+here means grepping our own prose for the word "error", which breaks the first
+time a path contains it.
 
 ### `--configure` is the binary's whole setup story
 

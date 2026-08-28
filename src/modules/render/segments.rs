@@ -42,7 +42,7 @@ fn build(
 
     if !KNOWN.contains(&id) {
         // Warn and omit. Never fail the render, and never touch stdout.
-        crate::_shared::diag(&format!("statusline: unknown segment {id:?}"));
+        crate::_shared::diag(crate::_shared::paint::Health::Warn, &format!("statusline: unknown segment {id:?}"));
         return None;
     }
 

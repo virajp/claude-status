@@ -40,7 +40,7 @@ pub fn set_narrate(on: bool) {
 /// and a value that added one could forge a second `claude-status:` line.
 fn narrate(message: &str) {
     if NARRATE.load(Ordering::Relaxed) {
-        crate::_shared::diag(&format!("claude-status: {message}"));
+        crate::_shared::diag(crate::_shared::paint::Health::Note, &format!("claude-status: {message}"));
     }
 }
 

@@ -166,12 +166,13 @@ impl Config {
         // reads forgivingly, nothing is left to object.
         if !root.is_object() {
             crate::_shared::diag(
+                crate::_shared::paint::Health::Warn,
                 "claude-status: the merged config is not an object; using the shipped defaults",
             );
             return Self::default();
         }
         serde_json::from_value(root).unwrap_or_else(|e| {
-            crate::_shared::diag(&format!(
+            crate::_shared::diag(crate::_shared::paint::Health::Warn, &format!(
                 "claude-status: the merged config could not be read ({e}); using the shipped defaults"
             ));
             Self::default()
@@ -208,7 +209,7 @@ impl Config {
         match Matcher::compile(pattern) {
             Ok(m) => m,
             Err(e) => {
-                crate::_shared::diag(&format!(
+                crate::_shared::diag(crate::_shared::paint::Health::Warn, &format!(
                     "claude-status: worktreePattern {pattern:?} is not a valid regex ({e}); using {DEFAULT_WORKTREE_PATTERN:?}"
                 ));
                 Matcher::compile(DEFAULT_WORKTREE_PATTERN).expect("the default pattern is a literal")

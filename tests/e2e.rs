@@ -1669,6 +1669,46 @@ fn a_scalar_where_a_block_belongs_costs_that_block_and_nothing_else() {
     );
 }
 
+/// **Nothing this binary writes to a pipe carries an escape it did not mean.**
+///
+/// Colour is TTY-gated, and every surface here is running with both streams
+/// piped — which is how the whole suite runs, and how Claude Code invokes the
+/// bar. So a stray escape in any of these is either the gate failing open or a
+/// hostile value getting through the filter, and the two are indistinguishable
+/// from the outside. That is the point: this test does not care which.
+///
+/// `--doctor` is checked only **up to SAMPLE RENDER**, because everything after
+/// that heading is a rendered bar and is supposed to be full of SGR codes. It
+/// is appended after the filter for exactly that reason.
+#[test]
+fn a_piped_surface_emits_no_escape_the_renderer_did_not_put_there() {
+    let home = Home::new(&safe_config());
+
+    let doctor = stdout(&run(&home, &["--doctor"], "", &[]));
+    let (before_sample, sample) = doctor.split_once("SAMPLE RENDER").expect("the report names its sample");
+    assert!(
+        !before_sample.contains('\u{1b}'),
+        "the piped report carried an escape: {}",
+        before_sample.escape_debug()
+    );
+    assert!(sample.contains('\u{1b}'), "the control failed: the sample render is supposed to be coloured");
+
+    // The other two human-facing surfaces, whole.
+    for args in [&["--configure", "--dry-run"][..], &["--help"]] {
+        let out = run(&home, args, "", &[]);
+        assert!(!stdout(&out).contains('\u{1b}'), "{args:?} coloured a pipe: {}", stdout(&out).escape_debug());
+        assert!(!stderr(&out).contains('\u{1b}'), "{args:?} coloured piped stderr: {}", stderr(&out).escape_debug());
+    }
+
+    // And the stderr diagnostics, which are the ones that took a `Health`.
+    let strayed = run(&home, &["--statusline", "--nonsense"], FIXTURE, &[]);
+    assert!(
+        !stderr(&strayed).contains('\u{1b}'),
+        "a piped diagnostic was painted: {}",
+        stderr(&strayed).escape_debug()
+    );
+}
+
 /// An unrecognised argument is **named on stderr with the help after it**, and
 /// costs the surface nothing.
 ///

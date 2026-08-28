@@ -25,6 +25,27 @@ the same bar and an explanation of it.
 
 Your access token never appears on either stream.
 
+## Colour
+
+The report is coloured by **health**: green is working, yellow is
+absent-but-fine or something you wrote that the binary ignored, red is actively
+failing. Most lines are neither and stay plain — you should be able to find the
+red without reading the words.
+
+A config layer that is simply **absent is not yellow**. Running with no config
+file anywhere is a supported state, and the bar renders from the defaults
+compiled into the binary; there is nothing to attend to. A layer goes red only
+when a file *is* there and contributed nothing.
+
+Colour appears only when the stream is a terminal, so
+`claude-status --doctor > report.txt` and `… | grep` stay clean — worth knowing
+before you paste a report into an issue. Setting `NO_COLOR` to any non-empty
+value turns it off everywhere.
+
+`--version`, `--caps-hook` and `--subagent` are never coloured under any
+circumstances. Those are read by machines, and a decoration there is a broken
+build or a corrupted payload.
+
 ## What it prints
 
 An illustrative report, assembled to show every section at once — the layer

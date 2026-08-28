@@ -59,6 +59,7 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 use crate::_runtime::app::Outcome;
+use crate::_shared::paint::{self, Health, Marked};
 use crate::_shared::paths::home;
 use crate::config::write::SCHEMA_KEY;
 use crate::config::{Config, layers, write};
@@ -117,7 +118,7 @@ pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {
     // own previous install.
     for change in &wiring.changes {
         if let Some(replaced) = &change.replaced {
-            crate::_shared::diag(&format!(
+            crate::_shared::diag(Health::Warn, &format!(
                 "claude-status: replacing the {} you had set: {}",
                 change.key,
                 quote(replaced),
@@ -125,10 +126,18 @@ pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {
         }
     }
 
-    let mut out = String::new();
+    let mut out = Marked::new();
     let _ = writeln!(out, "CLAUDE CODE ({})", tilde(&settings_path, &home));
     for change in &wiring.changes {
         let _ = writeln!(out, "  {:20} {}", change.key, verdict(change));
+        // `REPLACED` is the one destructive verdict and the only red here:
+        // something the user had is gone and there is no undo. Everything else
+        // is a key now wired the way they asked for.
+        out.mark(if matches!(change.ownership, Ownership::Foreign) && change.changed {
+            Health::Bad
+        } else {
+            Health::Ok
+        });
     }
     let wrote = report_write(&mut out, &settings_path, &home, &wiring, dry_run);
 
@@ -148,7 +157,9 @@ pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {
     // file this tool does not own — key names, and the `settings.json` path
     // itself — so the assembled report is swept once rather than at each write.
     // The report-keeping variant, because it is deliberately many lines.
-    Outcome { stdout: crate::render::sanitize_report(&out), code }
+    let (assembled, marks) = out.into_parts();
+    let painted = paint::lines(&crate::render::sanitize_report(&assembled), &marks, paint::stdout());
+    Outcome { stdout: painted, code }
 }
 
 /// Reads `settings.json`, distinguishing **absent** from **broken**.
@@ -209,7 +220,7 @@ fn read_settings(path: &Path) -> Result<Value, String> {
 /// A refusal: nothing on stdout, the reason on stderr, and a non-zero exit so a
 /// script can tell.
 fn refuse(reason: &str) -> Outcome {
-    crate::_shared::diag(&format!("claude-status: refusing to configure — {reason} (run --help)"));
+    crate::_shared::diag(Health::Bad, &format!("claude-status: refusing to configure — {reason} (run --help)"));
     Outcome { stdout: String::new(), code: 1 }
 }
 
@@ -237,12 +248,13 @@ fn verdict(change: &Change) -> &'static str {
 
 /// Returns whether the file is now in the state this run promised. A dry run
 /// and a no-op both count: neither left anything undone.
-fn report_write(out: &mut String, path: &Path, home: &Path, wiring: &Wiring, dry_run: bool) -> bool {
+fn report_write(out: &mut Marked, path: &Path, home: &Path, wiring: &Wiring, dry_run: bool) -> bool {
     if !wiring.changed() {
         // Not "wrote it anyway": leaving the file completely alone is what
         // makes a second run byte-identical rather than merely value-identical,
         // and this tool has no business normalising someone else's indentation.
         let _ = writeln!(out, "  nothing to change — left untouched");
+        out.mark(Health::Ok);
         return true;
     }
 
@@ -312,11 +324,13 @@ fn report_write(out: &mut String, path: &Path, home: &Path, wiring: &Wiring, dry
     match write_json_atomic_pretty_mode(&target, &wiring.settings, mode) {
         Ok(()) => {
             let _ = writeln!(out, "  wrote {}", named(&target, path, home, existing.as_ref()));
+            out.mark(Health::Ok);
             true
         }
         Err(e) => {
-            crate::_shared::diag(&format!("claude-status: could not write {} — {e}", tilde(path, home)));
+            crate::_shared::diag(Health::Bad, &format!("claude-status: could not write {} — {e}", tilde(path, home)));
             let _ = writeln!(out, "  FAILED to write {}", tilde(path, home));
+        out.mark(Health::Bad);
             false
         }
     }
@@ -355,7 +369,7 @@ fn warn_if_hardlinked(existing: Option<&std::fs::Metadata>, target: &Path, home:
     if links >= 2 {
         // A symlink is *not* this case and must not warn: it was resolved
         // above, so `target` is the real file and its own link count is read.
-        crate::_shared::diag(&format!(
+        crate::_shared::diag(Health::Warn, &format!(
             "claude-status: {} has {links} hard links — the write replaces the file, so the other name{} {tense} \
              stop tracking it",
             tilde(target, home),
@@ -377,7 +391,7 @@ fn warn_if_hardlinked(existing: Option<&std::fs::Metadata>, target: &Path, home:
     // consequence the output would otherwise hide completely.
     let writable = existing.is_none_or(|m| m.permissions().mode() & 0o200 != 0);
     if !writable {
-        crate::_shared::diag(&format!(
+        crate::_shared::diag(Health::Warn, &format!(
             "claude-status: {} is read-only — an atomic replace needs no write permission on the file, so it {tense} \
              be rewritten anyway (its mode is preserved)",
             tilde(target, home),
@@ -417,7 +431,7 @@ fn named(target: &Path, path: &Path, home: &Path, existing: Option<&std::fs::Met
 /// reordered — the file is the user's, and a writer that "helpfully" rewrote it
 /// would have to round-trip a degraded config, which is lossy by construction
 /// (`config/write.rs`).
-fn report_seed(out: &mut String, path: &Path, home: &Path, dry_run: bool) -> bool {
+fn report_seed(out: &mut Marked, path: &Path, home: &Path, dry_run: bool) -> bool {
     // `symlink_metadata`, not `exists()`: the latter follows the link, so a
     // config symlinked into a dotfiles repo whose target is temporarily missing
     // would read as absent — and the write below is a rename, which would
@@ -425,6 +439,7 @@ fn report_seed(out: &mut String, path: &Path, home: &Path, dry_run: bool) -> boo
     // something this tool did not put there.
     if path.symlink_metadata().is_ok() {
         let _ = writeln!(out, "  already there — left untouched");
+        out.mark(Health::Ok);
         return true;
     }
     if dry_run {
@@ -450,6 +465,7 @@ fn report_seed(out: &mut String, path: &Path, home: &Path, dry_run: bool) -> boo
     match write::write(path, &Config::default()) {
         Ok(()) => {
             let _ = writeln!(out, "  created, holding a \"{SCHEMA_KEY}\" pointer and nothing else");
+            out.mark(Health::Ok);
             true
         }
         Err(e) => {
@@ -457,8 +473,9 @@ fn report_seed(out: &mut String, path: &Path, home: &Path, dry_run: bool) -> boo
             // the report "is the thing people paste into an issue, and the
             // username is the one part of these paths that is nobody's
             // business" — which a bare `display()` here quietly undid.
-            crate::_shared::diag(&format!("claude-status: could not write {} — {e}", tilde(path, home)));
+            crate::_shared::diag(Health::Bad, &format!("claude-status: could not write {} — {e}", tilde(path, home)));
             let _ = writeln!(out, "  FAILED to create it");
+            out.mark(Health::Bad);
             false
         }
     }

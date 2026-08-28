@@ -10,6 +10,7 @@ use std::io::{IsTerminal, Read, Write as _};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
+use crate::_shared::paint::{self, Health, Marked};
 use crate::_shared::paths::home;
 use crate::cli::{Cli, HELP, MISSING_FLAG, Mode, VERSION};
 use crate::config::layers::{self, Layers};
@@ -74,7 +75,7 @@ fn report_unknown(cli: &Cli) {
     // hands straight to the terminal. `diag` then filters what escaping alone
     // leaves, one line at a time.
     for arg in &cli.unknown {
-        crate::_shared::diag(&format!("claude-status: unrecognised argument {arg:?} (run --help)"));
+        crate::_shared::diag(Health::Warn, &format!("claude-status: unrecognised argument {arg:?} (run --help)"));
     }
     if cli.mode != Mode::Help {
         crate::_shared::diag_report(HELP);
@@ -134,7 +135,7 @@ fn refresh_spend() -> String {
 fn render_statusline(doctor: bool) -> String {
     let narrate = |msg: &str| {
         if doctor {
-            crate::_shared::diag(&format!("claude-status: {msg}"));
+            crate::_shared::diag(Health::Note, &format!("claude-status: {msg}"));
         }
     };
 
@@ -142,7 +143,7 @@ fn render_statusline(doctor: bool) -> String {
         Ok(bar) => bar,
         Err(payload) => {
             // The real error goes to stderr; stdout still gets a usable line.
-            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
+            crate::_shared::diag(Health::Bad, &format!("claude-status error: {}", panic_message(&payload)));
             FALLBACK_LINE.to_string()
         }
     }
@@ -156,7 +157,7 @@ fn caps_hook() -> String {
     match catch_unwind(AssertUnwindSafe(build_caps_directive)) {
         Ok(out) => out,
         Err(payload) => {
-            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
+            crate::_shared::diag(Health::Bad, &format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }
@@ -227,7 +228,7 @@ fn render_subagent() -> String {
     match catch_unwind(AssertUnwindSafe(build_panel)) {
         Ok(panel) => panel,
         Err(payload) => {
-            crate::_shared::diag(&format!("claude-status error: {}", panic_message(&payload)));
+            crate::_shared::diag(Health::Bad, &format!("claude-status error: {}", panic_message(&payload)));
             String::new()
         }
     }
@@ -380,8 +381,8 @@ fn continuation(state: &str, message: &str) -> String {
     }
 }
 
-fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
-    let mut out = String::new();
+fn doctor_report_with(spend_section: &dyn Fn(&Config) -> Marked) -> String {
+    let mut out = Marked::new();
     let _ = writeln!(out, "claude-status {VERSION}");
 
     let cwd = std::env::current_dir().ok();
@@ -428,6 +429,17 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // `tests/e2e.rs` pin.
         let state = source.state.label();
         let _ = writeln!(out, "  {:8} {state:14} {}", source.label, field(&path));
+        // **`Absent` is deliberately NOT yellow.** A machine with no config
+        // file anywhere is a *supported* state — the bar renders from the
+        // embedded defaults and nothing is wrong — so painting the common case
+        // as needing attention would tell every new user their install is off.
+        // `Unusable` is red because a file IS there and contributed nothing,
+        // and `--doctor` is the only place that can be said.
+        out.mark(match source.state {
+            layers::LayerState::Loaded => Health::Ok,
+            layers::LayerState::Absent => Health::Note,
+            layers::LayerState::Unusable => Health::Bad,
+        });
 
         // A continuation row, in the same two columns, rather than a fourth
         // section. The keys a repo layer is not allowed to set are dropped
@@ -460,6 +472,7 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
                     ),
                 ),
             );
+            out.mark(Health::Warn);
         }
 
         // What this layer said that the binary could not make sense of, or
@@ -473,12 +486,14 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // on every line.
         for finding in source.raw.as_ref().map(|raw| validate::findings(raw, &validation)).unwrap_or_default() {
             let _ = writeln!(out, "{}", continuation("", &field(&finding.line())));
+            out.mark(Health::Warn);
         }
     }
 
     let _ = writeln!(out, "\nCLAUDE WIRING (~/.claude/settings.json)");
-    for line in claude_wiring() {
+    for (health, line) in claude_wiring() {
         let _ = writeln!(out, "  {}", field(&line));
+        out.mark(health);
     }
 
     let _ = writeln!(out, "\nEFFECTIVE LAYOUT");
@@ -504,7 +519,7 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let _ = writeln!(out, "  dirty:    +{} -{}", git_facts.additions, git_facts.deletions);
 
     let _ = writeln!(out, "\nSPEND");
-    out.push_str(&spend_section(&config));
+    out.append(spend_section(&config));
 
     // **The one place `--doctor` output is filtered** (invariant 4: only the
     // renderer emits escapes). Everything assembled above is diagnostic text drawn from untrusted
@@ -519,7 +534,17 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     // section headers in a report the user reads to diagnose their machine.
     // The sweep is the backstop for what a `field` call misses; it is not the
     // only defence, because on its own it cannot be one.
-    let mut out = crate::render::sanitize_report(&out);
+    let (assembled, marks) = out.into_parts();
+    let filtered = crate::render::sanitize_report(&assembled);
+
+    // **Painted after the sweep, for the same reason SAMPLE RENDER is appended
+    // after it.** Colour is escapes, and the sweep strips escapes; doing it in
+    // the other order would simply delete the colour. Doing it in this order
+    // also means every escape below provably came from `paint` rather than
+    // from a path, a segment id or a config value, because the sweep has
+    // already removed every other one. The filter is not relaxed by a single
+    // character to make this work.
+    let mut out = paint::lines(&filtered, &marks, paint::stdout());
 
     // Appended AFTER the sweep, because it is the one part whose escapes are
     // meant to be there: `render_main` emits the SGR codes itself, and every
@@ -553,9 +578,9 @@ fn describe_entry(entry: &SegmentEntry) -> String {
 /// It left when the help was cut back to an index; the obligation did not,
 /// because it never came from the help — it comes from this being the only
 /// surface that reads those keys.
-fn claude_wiring() -> Vec<String> {
+fn claude_wiring() -> Vec<(Health, String)> {
     let Some(home) = home() else {
-        return vec!["$HOME is unset".to_string()];
+        return vec![(Health::Bad, "$HOME is unset".to_string())];
     };
     let path = home.join(".claude").join("settings.json");
     // Missing and unreadable are **different answers**, and the `cli-surface`
@@ -564,26 +589,37 @@ fn claude_wiring() -> Vec<String> {
     // whose file will not parse to run the one command that will decline to fix
     // it, with nothing here to say why.
     let settings = match std::fs::read_to_string(&path) {
+        // Yellow, not red: nothing is broken, and the row already names the
+        // one command that fixes it.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return vec![format!("{} does not exist — run --configure to create it", path.display())];
+            return vec![(Health::Warn, format!("{} does not exist — run --configure to create it", path.display()))];
         }
-        Err(e) => return vec![format!("{} could not be read — {e}", path.display())],
+        // Red: a file is there and this binary cannot use it, which is also
+        // the case `--configure` refuses rather than repairs.
+        Err(e) => return vec![(Health::Bad, format!("{} could not be read — {e}", path.display()))],
         Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
             Ok(settings) => settings,
-            Err(e) => return vec![format!("{} is not valid JSON — {e}", path.display())],
+            Err(e) => return vec![(Health::Bad, format!("{} is not valid JSON — {e}", path.display()))],
         },
     };
 
-    let mut rows: Vec<String> = ["statusLine", "subagentStatusLine"]
+    // A wired key is green and an unwired one yellow. Yellow rather than red
+    // throughout: a user who wants only the bar and not the caps hook has a
+    // perfectly good install with one key unset, and calling that broken would
+    // train them to ignore the colour.
+    let mut rows: Vec<(Health, String)> = ["statusLine", "subagentStatusLine"]
         .iter()
         .map(|key| match settings.get(key).and_then(|k| k.get("command")).and_then(|c| c.as_str()) {
-            Some(command) => format!("{key:20} {command}"),
-            None => format!("{key:20} <not set>"),
+            Some(command) => (Health::Ok, format!("{key:20} {command}")),
+            None => (Health::Warn, format!("{key:20} <not set>")),
         })
         .collect();
 
-    let hook = caps_hook_command(&settings).unwrap_or("<not set>");
-    rows.push(format!("{:20} {hook}", settings::HOOK_KEY));
+    let hook = caps_hook_command(&settings);
+    rows.push((
+        if hook.is_some() { Health::Ok } else { Health::Warn },
+        format!("{:20} {}", settings::HOOK_KEY, hook.unwrap_or("<not set>")),
+    ));
     rows
 }
 
@@ -730,7 +766,7 @@ mod tests {
     /// what `claude_wiring` makes of it. The guard restores `$HOME` on drop, so
     /// a failing assertion cannot strand it — the hazard the note above records.
     #[cfg(test)]
-    fn wiring_for(settings: serde_json::Value) -> (tempfile::TempDir, Vec<String>) {
+    fn wiring_for(settings: serde_json::Value) -> (tempfile::TempDir, Vec<(Health, String)>) {
         let home = tempfile::TempDir::new().unwrap();
         let dir = home.path().join(".claude");
         std::fs::create_dir_all(&dir).unwrap();
@@ -740,6 +776,17 @@ mod tests {
         env.set("HOME", home.path().to_str().unwrap());
         let rows = claude_wiring();
         (home, rows)
+    }
+
+    /// Wiring rows as one string, for the tests that assert on their text
+    /// rather than on the health beside it.
+    fn joined(rows: &[(Health, String)]) -> String {
+        rows.iter().map(|(_, line)| line.as_str()).collect::<Vec<_>>().join("\n")
+    }
+
+    /// As [`joined`], for the two tests that build the rows themselves.
+    fn wiring_text() -> String {
+        claude_wiring().into_iter().map(|(_, line)| line).collect::<Vec<_>>().join("\n")
     }
 
     #[test]
@@ -757,7 +804,7 @@ mod tests {
             },
         }));
 
-        let report = rows.join("\n");
+        let report = joined(&rows);
         assert!(report.contains("--statusline"), "{report}");
         assert!(report.contains("--subagent"), "{report}");
         assert!(report.contains("--caps-hook"), "the caps hook must be reported: {report}");
@@ -766,13 +813,31 @@ mod tests {
     /// `--configure` creates a missing `settings.json` and **refuses** one it
     /// cannot parse, so a report that calls both "missing or unreadable" sends
     /// half its readers to run the command that will decline to help them.
+    /// The health beside each wiring row, which is what the colour is drawn
+    /// from. Asserted here rather than through the painted report, because the
+    /// suite runs with stdout piped and the colour correctly switched off —
+    /// so a report assertion would pass no matter what health was chosen.
+    #[test]
+    fn the_wiring_rows_carry_the_health_of_what_they_found() {
+        let (_home, rows) = wiring_for(serde_json::json!({
+            "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
+        }));
+        let health: Vec<Health> = rows.iter().map(|(h, _)| *h).collect();
+        assert_eq!(health[0], Health::Ok, "a wired key is green");
+        // Yellow, not red, for both of the unset ones: an install with only the
+        // bar wired is a working install, and calling it broken teaches the
+        // reader to ignore the colour.
+        assert_eq!(health[1], Health::Warn, "subagentStatusLine is unset");
+        assert_eq!(health[2], Health::Warn, "the caps hook is unset");
+    }
+
     #[test]
     fn a_missing_settings_file_and_an_unparseable_one_read_differently() {
         let home = tempfile::TempDir::new().unwrap();
         let mut env = crate::_shared::env_lock();
         env.set("HOME", home.path().to_str().unwrap());
 
-        let absent = claude_wiring().join("\n");
+        let absent = wiring_text();
         assert!(absent.contains("does not exist"), "{absent}");
         assert!(absent.contains("--configure"), "it names the fix: {absent}");
 
@@ -780,7 +845,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("settings.json"), "{ not json").unwrap();
 
-        let broken = claude_wiring().join("\n");
+        let broken = wiring_text();
         assert!(broken.contains("not valid JSON"), "{broken}");
         assert!(!broken.contains("--configure"), "a file --configure will refuse must not be sold as its job: {broken}");
     }
@@ -791,7 +856,7 @@ mod tests {
             "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
         }));
 
-        let report = rows.join("\n");
+        let report = joined(&rows);
         assert_eq!(rows.len(), 3, "all three keys are always reported: {report}");
         assert!(report.contains("PostToolUse"), "{report}");
     }
@@ -809,7 +874,7 @@ mod tests {
             },
         }));
 
-        let report = rows.join("\n");
+        let report = joined(&rows);
         assert!(report.contains("context-caps.js"), "a stale hook must be visible: {report}");
     }
 
@@ -831,7 +896,7 @@ mod tests {
             let (_home, rows) = wiring_for(serde_json::json!({
                 "hooks": { "PostToolUse": [{ "hooks": [{ "type": "command", "command": command }] }] },
             }));
-            let reported = rows.join("\n").contains(command);
+            let reported = joined(&rows).contains(command);
             let ours = settings::hook_ownership_of(Some(&serde_json::json!(command)))
                 != settings::Ownership::Foreign;
             assert_eq!(reported, ours, "{command:?} is reported={reported} but owned={ours}");
@@ -848,7 +913,7 @@ mod tests {
             },
         }));
 
-        let report = rows.join("\n");
+        let report = joined(&rows);
         assert!(!report.contains("some-other-linter"), "a foreign hook is not ours to report: {report}");
         assert!(report.contains("PostToolUse"), "{report}");
     }
@@ -876,7 +941,7 @@ mod tests {
         let _env = crate::_shared::env_lock();
         // Stubbed rather than live: `spend_report` fetches, and no unit test
         // may reach the spend endpoint.
-        let out = doctor_report_with(&|_| "  stubbed\n".to_string());
+        let out = doctor_report_with(&|_| "  stubbed\n".into());
         for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SPEND", "SAMPLE RENDER"] {
             assert!(out.contains(section), "missing {section} in:\n{out}");
         }

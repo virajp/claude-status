@@ -15,6 +15,8 @@
 
 use std::fmt::Write as _;
 
+use crate::_shared::paint::{Health, Marked};
+
 
 use crate::config::Config;
 use crate::fmt::human_duration;
@@ -29,14 +31,16 @@ fn field(value: &str) -> String {
 }
 
 /// Builds the `SPEND` section, fetching as it goes.
-pub fn spend_report(config: &Config, now_ms: i64) -> String {
-    let mut out = String::new();
+pub fn spend_report(config: &Config, now_ms: i64) -> Marked {
+    let mut out = Marked::new();
     let spend_config = &config.spend;
     // `--doctor` exists to name what is wrong, so an unresolvable `$HOME` is
     // reported here rather than silently producing an empty report.
     let Some(path) = cache::path() else {
         let _ = writeln!(out, "  cache    UNAVAILABLE — $HOME is unset, so there is nowhere to cache");
+        out.mark(Health::Bad);
         let _ = writeln!(out, "\n  VERDICT  spend cannot work without $HOME. Nothing was fetched.");
+        out.mark(Health::Bad);
         return out;
     };
 
@@ -45,10 +49,15 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     match before.as_ref() {
         None => {
             let _ = writeln!(out, "           MISSING — first run");
+            out.mark(Health::Warn);
         }
         Some(cached) => {
             let age = human_duration(Some((now_ms - cached.ts) as f64));
             let _ = writeln!(out, "           written {age} ago, failures={}", cached.failures);
+            // Green only while the refresh child is actually succeeding. A
+            // cache that is being written by a failing fetch still has a
+            // timestamp, so age alone cannot tell the two apart.
+            out.mark(if cached.failures == 0 { Health::Ok } else { Health::Warn });
         }
     }
 
@@ -58,9 +67,11 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
         Some(until) if until > now_ms => {
             let left = human_duration(Some((until - now_ms) as f64));
             let _ = writeln!(out, "  backoff  active, {left} left — fetching anyway to diagnose");
+            out.mark(Health::Bad);
         }
         _ => {
             let _ = writeln!(out, "  backoff  none");
+            out.mark(Health::Ok);
         }
     }
 
@@ -69,12 +80,15 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     match &report.outcome {
         Outcome::Locked { holder_age_secs } => {
             let _ = writeln!(out, "  lock     HELD — holder started {holder_age_secs}s ago, not waiting");
+            out.mark(Health::Warn);
         }
         Outcome::LockUnavailable => {
             let _ = writeln!(out, "  lock     could not be created or read — no fetch was attempted");
+            out.mark(Health::Bad);
         }
         _ => {
             let _ = writeln!(out, "  lock     free");
+            out.mark(Health::Ok);
             write_credentials(&mut out, &report);
             write_fetch(&mut out, &report);
             write_extract(&mut out, &report);
@@ -97,17 +111,19 @@ pub fn spend_report(config: &Config, now_ms: i64) -> String {
     out
 }
 
-fn write_credentials(out: &mut String, report: &refresh::Report) {
+fn write_credentials(out: &mut Marked, report: &refresh::Report) {
     let Some(source) = report.source else {
         let _ = writeln!(out, "  creds    NONE — checked {} and {}", creds_file(), keychain());
+        out.mark(Health::Bad);
         return;
     };
 
     let _ = writeln!(out, "  creds    {} ✓", source.describe());
+    out.mark(Health::Ok);
     let _ = writeln!(out, "           token ✓ (not shown)  plan={}", field(report.plan.as_deref().unwrap_or("<none>")));
 }
 
-fn write_fetch(out: &mut String, report: &refresh::Report) {
+fn write_fetch(out: &mut Marked, report: &refresh::Report) {
     let _ = writeln!(out, "  fetch    GET {}", field(&report.url));
 
     // **Which trust store a certificate failure is about.**
@@ -144,7 +160,7 @@ fn write_fetch(out: &mut String, report: &refresh::Report) {
 /// Which rung of the extraction ladder matched, shown as the ladder itself —
 /// a response carrying neither shape is the case users cannot otherwise tell
 /// apart from a broken token.
-fn write_extract(out: &mut String, report: &refresh::Report) {
+fn write_extract(out: &mut Marked, report: &refresh::Report) {
     let Some(body) = report.body.as_ref() else {
         return;
     };
@@ -175,7 +191,7 @@ fn write_extract(out: &mut String, report: &refresh::Report) {
 /// All four gates, always all four — the point is to show which one stopped
 /// it, so a gate that never ran is marked rather than omitted.
 fn write_gates(
-    out: &mut String,
+    out: &mut Marked,
     cached: Option<&cache::SpendCache>,
     config: &SpendConfig,
     verdict: &Verdict,
@@ -324,10 +340,11 @@ mod tests {
 
     #[test]
     fn every_gate_after_the_stopping_one_is_marked_unreached() {
-        let mut out = String::new();
+        let mut out = Marked::new();
         let config = SpendConfig { refresh_minutes: 15.0, show: "auto".into() };
         write_gates(&mut out, None, &config, &Verdict::Hidden { gate: Gate::NotInLayout });
 
+        let out = out.text();
         assert!(out.contains("gate 1"), "got:\n{out}");
         assert!(out.lines().filter(|l| l.contains("not reached")).count() == 3, "gates 2-4 never ran:\n{out}");
         assert_eq!(out.matches("HIDDEN").count(), 1, "exactly one gate is named as the cause:\n{out}");
@@ -335,10 +352,11 @@ mod tests {
 
     #[test]
     fn a_rendering_verdict_marks_all_four_gates_passed() {
-        let mut out = String::new();
+        let mut out = Marked::new();
         let config = SpendConfig { refresh_minutes: 15.0, show: "always".into() };
         write_gates(&mut out, None, &config, &Verdict::WillRender { text: "x".into() });
 
+        let out = out.text();
         assert!(!out.contains("HIDDEN"), "got:\n{out}");
         assert!(!out.contains("not reached"), "got:\n{out}");
         assert_eq!(out.matches('✓').count(), 4);
@@ -360,8 +378,9 @@ mod tests {
             previous: None,
         };
 
-        let mut out = String::new();
+        let mut out = Marked::new();
         write_extract(&mut out, &report);
+        let out = out.text();
         assert!(out.contains("spend.limit.amount_minor    ✗"), "got:\n{out}");
         assert!(out.contains("extra_usage.monthly_limit   ✓"), "got:\n{out}");
         assert!(out.contains("used=7593 limit=15000"), "got:\n{out}");
@@ -380,8 +399,9 @@ mod tests {
             previous: None,
         };
 
-        let mut out = String::new();
+        let mut out = Marked::new();
         write_credentials(&mut out, &report);
+        let out = out.text();
         assert!(out.contains("token ✓ (not shown)"), "got:\n{out}");
         assert!(out.contains("plan=max"), "got:\n{out}");
     }

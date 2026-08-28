@@ -2,6 +2,7 @@
 
 pub mod fmt;
 pub mod json;
+pub mod paint;
 pub mod paths;
 pub mod proc;
 pub mod text;
@@ -24,6 +25,18 @@ pub mod time;
 /// two. The chokepoint rule exists because the per-write alternative was tried and missed
 /// writers three times.
 ///
+/// `health` is what colours the line, and it is a **parameter rather than
+/// something inferred from the text** because inference here means grepping our
+/// own prose for the word "error" — which breaks the first time a path contains
+/// it. Every caller states what it is reporting; `Health::Note` is the honest
+/// answer for narration, which is most of them.
+///
+/// **The colour goes on after the filter, never before.** `sanitize` strips
+/// every escape, so painting first would simply have the colour stripped; and
+/// because it strips them all, anything ESC in the result provably came from
+/// [`paint`] rather than from the branch name or config value being quoted.
+/// See that module for why this is not a hole in invariant 4.
+///
 /// **One line out per call, deliberately.** This uses the *row* filter, which
 /// strips newlines, not the report one that keeps them — so a multi-line panic
 /// payload is collapsed onto a single line rather than keeping its shape. That
@@ -31,8 +44,8 @@ pub mod time;
 /// whatever it panicked on, so letting it carry a newline would let a branch or
 /// a config value forge a second `claude-status:` line on stderr. A stack shape
 /// is worth less than a diagnostic a reader can trust the boundaries of.
-pub fn diag(line: &str) {
-    eprintln!("{}", text::sanitize(line));
+pub fn diag(health: paint::Health, line: &str) {
+    eprintln!("{}", paint::paint(&text::sanitize(line), health, paint::stderr()));
 }
 
 /// [`diag`] for text that is deliberately many lines — today, `HELP` after an
@@ -48,6 +61,11 @@ pub fn diag(line: &str) {
 /// forge a second `claude-status:` line on stderr. So the argv tokens that
 /// *provoke* this help go through [`diag`] one line at a time; only the
 /// constant that follows them comes through here.
+/// It takes no `health`. The only thing that comes through here is `HELP`, and
+/// an index of flags is not reporting a state — there is nothing in it that is
+/// green or red. Colouring it would be decoration, which is the opposite of
+/// what the palette is for: a reader should be able to find the red without
+/// reading the words, and that only works while red is rare.
 pub fn diag_report(text: &str) {
     eprint!("{}", text::sanitize_report(text));
 }
