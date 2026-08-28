@@ -60,13 +60,13 @@ pub const REPO_LAYER_KEY: &str = "projectName";
 /// Not a setting: a pointer that buys the file editor completions. The shipped
 /// defaults carry one, so a hand-written repo config carrying one is expected
 /// rather than a mistake. It is neither merged nor reported as ignored —
-/// reporting it would put a line in `--debug` for every correctly written file.
+/// reporting it would put a line in `--doctor` for every correctly written file.
 const SCHEMA_KEY: &str = "$schema";
 
 /// What became of one layer.
 ///
 /// Three states rather than a `loaded` boolean, because the boolean answered
-/// two questions at once and `--debug` needs them apart. Before
+/// two questions at once and `--doctor` needs them apart. Before
 /// `config-relocation`, "no user config" meant a half-installed machine and
 /// `not found` was the right word for it. Now the shipped defaults are embedded
 /// and **no file has to exist anywhere** — so absence is the supported state,
@@ -83,13 +83,13 @@ pub enum LayerState {
     /// A file is there and did not contribute — unreadable, not JSON, or not a
     /// JSON object. Never silent, because nothing else in the binary is allowed
     /// to complain about it: invariant 3 means a broken layer costs its
-    /// own settings and never the bar, which leaves `--debug` as the only place
+    /// own settings and never the bar, which leaves `--doctor` as the only place
     /// a user can find out.
     Unusable,
 }
 
 impl LayerState {
-    /// The word `--debug` prints. `using defaults` rather than `not found`:
+    /// The word `--doctor` prints. `using defaults` rather than `not found`:
     /// what the user wants to know is what the bar is drawing from, and with no
     /// file that is the embedded layer, which is a complete answer rather than
     /// a missing one.
@@ -107,7 +107,7 @@ impl LayerState {
     }
 }
 
-/// Where one layer came from and what became of it, for `--debug`.
+/// Where one layer came from and what became of it, for `--doctor`.
 pub struct LayerSource {
     /// One of [`LABEL_EMBEDDED`], [`LABEL_USER`] or [`LABEL_REPO`]. A `&str`
     /// rather than an enum because it is only ever displayed — but the three
@@ -124,7 +124,7 @@ pub struct LayerSource {
     /// worst of the three possible answers: erroring would break the
     /// never-fail rule (invariant 3), merging is what the narrowing
     /// forbids, and dropping it without saying so leaves the user editing a
-    /// file that does nothing. So `--debug` names them.
+    /// file that does nothing. So `--doctor` names them.
     pub ignored: Vec<String>,
     /// The layer's **own** tree, as the file wrote it, kept so
     /// [`validate`](crate::config::validate) can attribute a finding to the
@@ -232,7 +232,7 @@ pub fn load(home: Option<&Path>, repo_root: Option<&Path>) -> Layers {
     Layers { config: Config::new(merged), sources }
 }
 
-/// One layer file, as the three answers `--debug` has words for:
+/// One layer file, as the three answers `--doctor` has words for:
 /// `Ok(Some(object))`, `Ok(None)` for "there is no file here", and `Err(())`
 /// for "there is one and it cannot be used".
 ///
@@ -264,7 +264,7 @@ fn read_layer(path: Option<&Path>) -> Result<Option<Value>, ()> {
 /// Ignoring rather than erroring, because the never-fail rule still holds
 /// (invariant 3): a repo config carrying a stale `gauge` block must cost
 /// that block and never the bar. The dropped keys are returned rather than
-/// discarded so `--debug` can name them.
+/// discarded so `--doctor` can name them.
 fn narrow(entries: Map<String, Value>) -> (Map<String, Value>, Vec<String>) {
     let mut kept = Map::new();
     let mut ignored = Vec::new();
@@ -445,7 +445,7 @@ mod tests {
         }
     }
 
-    /// **The distinction `--debug` is built on.** `loaded == false` used to
+    /// **The distinction `--doctor` is built on.** `loaded == false` used to
     /// cover four different situations at once — no `$HOME`, no file, an
     /// unreadable file, and a file that is not JSON — so a *broken* config
     /// rendered in the report exactly like a *missing* one. After
@@ -575,7 +575,7 @@ mod tests {
     }
 
     /// `$schema` is the one key a hand-written repo config is *expected* to
-    /// carry, so reporting it as ignored would put a line in `--debug` for
+    /// carry, so reporting it as ignored would put a line in `--doctor` for
     /// every correctly written file.
     #[test]
     fn a_repo_layers_schema_pointer_is_neither_merged_nor_reported() {

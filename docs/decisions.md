@@ -162,7 +162,7 @@ other way and the resolution says so.
 **Added 2026-08-21** (`macos-only`), after review found the powerline separators
 reaching the row unfiltered. Every dynamic value is stripped of control
 characters before it is written, on **both** rendering surfaces and in
-`--debug`. See
+`--doctor`. See
 [§6, Escapes and untrusted input](#6-escapes-and-untrusted-input).
 
 ### 5 — an unresolvable `$HOME` means absent, never relative
@@ -184,7 +184,7 @@ never hits because the next session starts somewhere else.
 
 Concretely the spend cache path, the usage mirror directory and the credentials
 *file* are each absent without a home. Invariant 3 still outranks this: the
-render succeeds, the segment omits like any other, and `--debug` names the
+render succeeds, the segment omits like any other, and `--doctor` names the
 missing `$HOME` rather than reporting an empty result. A path that never asked
 for the home directory is unaffected — an absolute `$CLAUDE_STATUS_SPEND_CACHE`
 works with no `$HOME` at all.
@@ -478,8 +478,8 @@ values while looking like it worked**.
 
 **Decided 2026-08-23** (`config-relocation`). Any other key is **ignored** — not
 merged, and not an error, because the never-fail rule still holds — and
-`--debug` names the keys it dropped, which is the only place a user can find out
-why the file they wrote is doing nothing.
+`--doctor` names the keys it dropped, which is the only place a user can find
+out why the file they wrote is doing nothing.
 
 This is a **reduction** of the three-layer merge, not a clarification of it: the
 layer used to be able to override anything. The layer existed to name the
@@ -731,7 +731,7 @@ sharpest target.
 **This narrows an input; it removes none.** `projectName` is still drawn, still
 written by whoever wrote the repo, and every other source above never passed
 through a config layer at all. The repo layer also gained a *new* surface in the
-same cycle: `--debug` reports the keys it ignored **by name**, and a JSON key
+same cycle: `--doctor` reports the keys it ignored **by name**, and a JSON key
 may contain a newline, so the report's row filter covers key names as well as
 values.
 
@@ -753,7 +753,7 @@ There are **five** such points, one per surface, and a sixth surface would need
 its own: the main bar's `segments::build`; the subagent sweep ending `task_row`
 (the panel builds its `Segment`s directly and **inherits none of the bar's
 filtering**); `Powerline::from_config` (config-supplied and written **outside**
-any segment's SGR bracket — the widest of the five); one sweep over `--debug`'s
+any segment's SGR bracket — the widest of the five); one sweep over `--doctor`'s
 assembled report; and `_shared::diag` for all of stderr.
 
 **The stderr surface was the last to be found, and for the usual reason: it is
@@ -763,13 +763,13 @@ exists to reject — then narrowed to `narrate`, which turned out to be **one of
 six** writers. `_shared::diag` is now the only `eprintln!` in the crate, **which
 makes the rule checkable with a grep rather than by reading every call site.**
 
-`--debug` earned a chokepoint rather than a call per write for the same reason
+`--doctor` earned a chokepoint rather than a call per write for the same reason
 the cycle that added it found: filtering the paths first **missed** the layout
 entries and the spend gate table, both of which reach the terminal by a
 different route. Anything added to the report later is covered without anyone
 having to remember.
 
-### Two consequences of the `--debug` sweep, both load-bearing
+### Two consequences of the `--doctor` sweep, both load-bearing
 
 - **Newlines survive it.** The report is deliberately many lines, so it uses a
   variant of the filter that keeps `\n` and strips everything else.
@@ -791,7 +791,7 @@ boundaries a reader can trust.
 ### A dynamic value may never contribute a newline
 
 **This is a rule, not a consequence of the one above**, and it is why
-`--debug`'s report-wide sweep is not its only defence: that sweep exempts `\n`
+`--doctor`'s report-wide sweep is not its only defence: that sweep exempts `\n`
 so the report can be many lines, and a value carrying one would forge a line, a
 section header, or a whole `CLAUDE WIRING` block **in the diagnostic a user
 reads *because* they are trying to work out what is wrong. No escape is needed
@@ -820,17 +820,73 @@ refuses to publish a built binary whose `--version` differs from the crate
 version, and the `build:statusline` smoke test asserts the same thing before the
 artifact leaves the machine.
 
-### `--debug` is both a mode and a modifier
+### `--doctor` is both a mode and a modifier
 
 **Decided 2026-08-19** (`main-bar`), absorbing an earlier `--info` idea. As a
 mode its report is the output and goes to stdout; as a modifier it narrates to
-stderr and **must not change stdout by a single byte**. `--version --debug`
+stderr and **must not change stdout by a single byte**. `--version --doctor`
 still prints a bare version.
 
 It exists because the spend path is otherwise completely silent.
 
 `--info` had been a flag on the `ai-plugins` installer rather than the script;
 it belongs to whoever owns the binary, which is now this repo.
+
+It was spelled `--debug` when this was decided — see the rename below. The
+duality it records is unchanged; only the word is.
+
+### `--debug` was renamed to `--doctor`, with no alias
+
+**Decided 2026-08-28** (`doctor-rename`). Both of the flag's jobs moved
+together: the report surface *and* the stderr-narration modifier. Splitting them
+— `--doctor` for the report, `--debug` kept for narration — was considered and
+rejected: the entry above records the duality as the point of the flag, and two
+names for one behaviour is the drift this repo keeps deleting.
+
+**No alias**, on the same terms as the refresh rename above but for a different
+reason. That one had never shipped; this one has. The alias was rejected anyway
+because a silent alias makes the old name permanent, and the mitigation is
+better than compatibility: the old spelling now falls into the unrecognised-
+argument arm, which **names it on stderr and prints the help after it**, and
+that help carries a `RENAMED:` block saying what replaced it. A user who kept
+`--debug` in `settings.json` is told, once per render, in words.
+
+The version bump is a **patch**, which understates it — this removes a flag.
+Recorded as the maintainer's call rather than argued for.
+
+### An unrecognised argument is named on stderr — reversing the silence
+
+**Decided 2026-08-28** (`doctor-rename`), reversing half of
+[`--configure` is the one mode that rejects an unrecognised argument](#--configure-is-the-one-mode-that-rejects-an-unrecognised-argument).
+
+**What it was:** every surface but `--configure` ignored an argument it did not
+recognise, *silently*. The reasoning was invariant 3 — Claude Code invokes the
+render surfaces, and a stray token must never cost a user their bar — and the
+silence was taken as the price of that.
+
+**What it is now:** every mode names each unrecognised argument on stderr and
+prints `HELP` after it. `--configure` still refuses with a non-zero exit; every
+other surface still renders exactly what it rendered before, byte for byte, and
+still exits 0.
+
+**Why it reversed.** The silence was never actually load-bearing — invariant 3
+is about stdout and the exit code, and stderr costs neither. What made the price
+visible was the rename directly above: `--debug` became precisely an
+unrecognised argument, so under the old rule a user who kept it got a bar with
+narration quietly switched off, and a user who typed `claude-status --debug` got
+the help text with **nothing anywhere saying why**. A rule whose first real
+encounter with a live case produces that is the wrong rule.
+
+`Mode::Help` is carved out of the `HELP`-on-stderr half alone: it is already
+writing the same fifty lines to stdout, both streams land in one terminal, and
+the motivating case — someone typing `claude-status --debug` at a prompt — is
+exactly that mode. The argument is still named.
+
+The multi-line write needed a second stderr entry point, `_shared::diag_report`,
+because `diag` uses the *row* filter that strips newlines and would have
+collapsed the help onto one line. It takes **static text only**; the argv tokens
+that provoke it go through `diag` one line at a time, `{:?}`-escaped first,
+because a token is the most directly attacker-nameable input this binary has.
 
 ### The refresh flag was renamed, with no alias
 
@@ -894,10 +950,10 @@ deletion**, and another project's script of the same name is not ours to remove.
 
 **The cost, taken deliberately:** a hook wired as
 `/Users/me/bin/statusline --caps-hook` — a *renamed* copy of this binary — is
-now foreign, so `--debug` reports it unset and `--configure` adds ours beside
+now foreign, so `--doctor` reports it unset and `--configure` adds ours beside
 it, firing the actuator twice. No shipped install can produce that; it takes a
 renamed binary or a hand-written line. **What it buys is that the report and the
-writer share one definition**, which is what stops `--debug` calling a hook
+writer share one definition**, which is what stops `--doctor` calling a hook
 wired while `--configure` is about to duplicate it.
 
 ### `hooks.PostToolUse` keeps exactly one entry of ours
@@ -911,12 +967,21 @@ normalising duplicates into copies of each other is not deduplication.**
 
 **Decided 2026-08-23** (`cli-surface`). **The asymmetry is the decision.**
 
-Every other surface ignores what it does not know, and must: Claude Code invokes
-the renderers, and invariant 3 says a stray token may never cost a user their
-bar. But that same silence on the *writing* flag turns `--configure --dry-runn`
-— one mistyped character — into a **real, unundoable overwrite of a file this
-tool does not own, performed by a user who believed they had asked for a
-preview.**
+Every other surface carries on past what it does not know, and must: Claude Code
+invokes the renderers, and invariant 3 says a stray token may never cost a user
+their bar. But that same tolerance on the *writing* flag turns
+`--configure
+--dry-runn` — one mistyped character — into a **real, unundoable
+overwrite of a file this tool does not own, performed by a user who believed
+they had asked for a preview.**
+
+**Amended 2026-08-28** (`doctor-rename`). As decided, "carries on past" also
+meant *silently*; it no longer does. Every mode now names the argument on stderr
+— see
+[An unrecognised argument is named on stderr](#an-unrecognised-argument-is-named-on-stderr--reversing-the-silence).
+The asymmetry this entry is about survives intact, because it was never about
+who *speaks*: `--configure` is still the only mode that **refuses**, and the
+only one that exits non-zero.
 
 ### Dotfiles: symlinks are followed, hardlinks cannot be
 
@@ -969,7 +1034,7 @@ config layer, and advertised itself as the only command that wrote nothing under
 hand. `distribution/01` deleted that installer, so the two meanings no longer
 coexist.
 
-### A config layer has three states in `--debug`, not two
+### A config layer has three states in `--doctor`, not two
 
 **Decided** with the report. `loaded`, `using defaults`, and `UNREADABLE`.
 
@@ -1001,7 +1066,7 @@ Three kinds, and **the middle one is never a warning**:
   **The one no schema can give you**, and the one a user staring at a
   wrong-looking bar actually needs.
 
-`--debug` is not a hot path — it already does git discovery and reads the spend
+`--doctor` is not a hot path — it already does git discovery and reads the spend
 cache — so the walk's cost is not a consideration.
 
 The embedded layer is not validated: it is this binary's own, and
@@ -1117,14 +1182,14 @@ cached `data`; `data.enabled == false` or no `limitMinor`; and `show == "auto"`
 with a plan that is not `team` or `enterprise`.
 
 **Gate 4 catches most people.** On a Max account the figure is fetched and
-cached perfectly and then hidden here — and **before `--debug` existed, that was
-indistinguishable from a broken token.**
+cached perfectly and then hidden here — and **before `--doctor` existed, that
+was indistinguishable from a broken token.**
 
 One further subtlety: under `show: "auto"` with an irrelevant plan the refresh
 interval **stretches to 24 hours** rather than `refreshMinutes`, so a Pro/Max
 machine re-checks its plan daily instead of every quarter-hour.
 
-### `--debug` as a mode performs a live, synchronous, foreground fetch
+### `--doctor` as a mode performs a live, synchronous, foreground fetch
 
 **Decided 2026-08-20** (`spend`). It does not merely report the cache, **and the
 distinction is the whole reason the subsystem is diagnosable at all.**
@@ -1132,7 +1197,7 @@ distinction is the whole reason the subsystem is diagnosable at all.**
 On a fresh machine the cache **does not exist**. The first render reads nothing,
 therefore draws nothing, and only *then* spawns the detached refresh child —
 whose stdio is `/dev/null`. **So run one is guaranteed to show no budget, and
-every diagnostic from that first fetch is discarded.** A passive `--debug`
+every diagnostic from that first fetch is discarded.** A passive `--doctor`
 inspecting the cache at that moment could only say "no cache yet", which is
 precisely the useless answer the user already had.
 
@@ -1141,10 +1206,10 @@ Three consequences, all deliberate:
 - It **respects the lock and the backoff but reports them rather than silently
   obeying** — "a refresh is already running, holder started 14s ago", "in
   backoff, 28m left — fetching anyway to diagnose".
-- It **bypasses the 60-second dedupe**, because a user typing `--debug` twice
+- It **bypasses the 60-second dedupe**, because a user typing `--doctor` twice
   wants two answers.
 - It **writes the result to the cache** like any successful refresh, so a
-  `--debug` that works leaves the next render working too. **This is the
+  `--doctor` that works leaves the next render working too. **This is the
   supported fix for a first install that shows no budget.**
 
 As a *modifier* this does not apply: a render still never fetches, and stdout
@@ -1156,16 +1221,16 @@ stays byte-identical.
 401, 429, no credentials, refused connection, or keychain denial. **Only where
 it was found** is reported.
 
-### `--debug` fetches even when the user's own gates hide the segment
+### `--doctor` fetches even when the user's own gates hide the segment
 
 **Decided 2026-08-21** (`macos-only`), after review pointed out the ordering was
 real in the code and unwritten.
 
 The four gates decide whether the figure is *drawn*; **they do not decide
-whether it is *fetched***. So `--debug` on a config with `spend` absent from
+whether it is *fetched***. So `--doctor` on a config with `spend` absent from
 `lines` still performs the authenticated request, and then reports
 `gate 1 ✗ HIDDEN`. **"You have it switched off" and "your token is rejected" are
-different answers, and a passive `--debug` could not tell them apart.**
+different answers, and a passive `--doctor` could not tell them apart.**
 
 **One thing does stop it, and the order matters:** the cache path is resolved
 **first**, and no fetch happens when it is absent (invariant 5). With nowhere to
@@ -1212,7 +1277,7 @@ what the rest of their machine trusts. A private root set is a claim to know
 better than the operating system, and on a managed laptop that claim is simply
 wrong.
 
-**`--debug` now names the store**, on the line above the failure, for `https`
+**`--doctor` now names the store**, on the line above the failure, for `https`
 endpoints only — `roots OS trust store (macOS keychain)`. Diagnosing the
 original report meant reading `Cargo.toml`, because
 `invalid peer certificate: UnknownIssuer` names no store and so cannot be told
@@ -1526,7 +1591,7 @@ running `--configure` replaces it with no Node anywhere.**
 orphans a previous install left behind — the `statusline` script under
 `~/.claude/scripts/`, the receipt under `~/.config/ai-plugins/receipts/`, and
 `~/.claude/hooks/context-caps.js` — and any machine that ran the npm installer
-keeps an orphaned receipt. **`--debug` still reports a stale
+keeps an orphaned receipt. **`--doctor` still reports a stale
 `node …/context-caps.js` hook and `--configure` still replaces it, so the one
 consequence that changes what renders is handled; the rest is litter.**
 
@@ -1887,7 +1952,7 @@ The keychain half of this hazard is invariant 5's; see
 
 **Decided** at the outset: exercise 200 with a `spend` block, 200 with
 `extra_usage`, 200 with neither, 401, 429, and a connection refusal — **against
-a stub HTTP server, not the real endpoint.** Then one real `--debug` to confirm
+a stub HTTP server, not the real endpoint.** Then one real `--doctor` to confirm
 the credential path works on a live machine.
 
 ---

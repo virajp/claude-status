@@ -109,7 +109,7 @@ fn cache_aged(age_ms: i64) -> String {
     )
 }
 
-/// `--debug` against the same stub, through the same guard as [`render`].
+/// `--doctor` against the same stub, through the same guard as [`render`].
 ///
 /// This existed inline as a second `Command::new(BINARY)` — the fourth
 /// hand-rolled builder across this repo's tests, and the one that bypassed the
@@ -120,7 +120,7 @@ fn debug(home: &TempDir, url: &str) -> Output {
     assert_ne!(url, claude_status::spend::http::DEFAULT_URL, "this would reach the real spend endpoint");
 
     Command::new(BINARY)
-        .arg("--debug")
+        .arg("--doctor")
         .env_clear()
         .env("HOME", home.path())
         .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
@@ -273,16 +273,16 @@ fn the_rendering_process_itself_never_fetches() {
 
 #[test]
 fn a_render_after_a_debug_fetch_draws_the_cache_debug_populated() {
-    // The pay-off of making --debug fetch: it does not merely diagnose the
-    // first-install case, it fixes it. One --debug, and the bar works.
+    // The pay-off of making --doctor fetch: it does not merely diagnose the
+    // first-install case, it fixes it. One --doctor, and the bar works.
     let home = home(WITH_SPEND, None);
     let stub = stub();
 
     let debugged = debug(&home, &stub.url);
-    assert!(stdout(&debugged).contains("200 in"), "--debug fetched: {}", stdout(&debugged));
+    assert!(stdout(&debugged).contains("200 in"), "--doctor fetched: {}", stdout(&debugged));
 
     let out = render(&home, &stub.url);
-    assert!(stdout(&out).contains("$75.93/$150"), "the render drew what --debug left behind: {}", stdout(&out));
+    assert!(stdout(&out).contains("$75.93/$150"), "the render drew what --doctor left behind: {}", stdout(&out));
 }
 
 #[test]

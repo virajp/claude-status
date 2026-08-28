@@ -1,6 +1,6 @@
 //! Reading the OAuth token the usage endpoint needs.
 //!
-//! **The token is never logged, at any verbosity.** `--debug` reports only
+//! **The token is never logged, at any verbosity.** `--doctor` reports only
 //! *where* it was found. `Credentials` therefore has a hand-written `Debug`
 //! that redacts it, so no future `{:?}` can leak it by accident.
 
@@ -23,7 +23,7 @@ pub struct Credentials {
     pub token: String,
     /// The seat's plan, which the cache records beside the figures.
     pub plan: Option<String>,
-    /// Where this came from, for `--debug` to report.
+    /// Where this came from, for `--doctor` to report.
     pub source: Source,
 }
 

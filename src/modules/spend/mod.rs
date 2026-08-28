@@ -21,7 +21,7 @@ use serde_json::Value;
 use crate::config::SegmentEntry;
 use crate::fmt::{money, to_fixed};
 
-/// Which gate hid the segment, for `--debug` to name.
+/// Which gate hid the segment, for `--doctor` to name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gate {
     /// `spend` is not in the resolved layout. Nothing is read or spawned.

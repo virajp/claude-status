@@ -91,7 +91,7 @@ fn rgb_triple() -> Schema {
 ///
 /// Two values mean something and any third renders — see
 /// [`crate::spend::verdict`]. `enum` rather than `const`, so an editor offers
-/// both; the binary does not enforce it and neither does `--debug`.
+/// both; the binary does not enforce it and neither does `--doctor`.
 pub struct ShowMode;
 
 impl JsonSchema for ShowMode {

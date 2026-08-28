@@ -104,7 +104,7 @@ Everything user-facing lives on the site.
 | [Generate](https://claude-status.virajp.dev/generate/)     | building a config file in the browser, from the schema |
 | [Per-repo](https://claude-status.virajp.dev/repo-config/)  | naming one repository in the bar                       |
 | [Segments](https://claude-status.virajp.dev/segments/)     | every segment, what it draws, and when it sits out     |
-| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --debug`, and the questions it answers  |
+| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --doctor`, and the questions it answers |
 
 ## Requirements
 

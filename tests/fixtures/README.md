@@ -73,13 +73,13 @@ warning worth not losing.
 # and without the URL one it hits the real endpoint with your real token.
 CLAUDE_STATUS_SPEND_CACHE=/tmp/spend.json \
   CLAUDE_STATUS_SPEND_URL=http://127.0.0.1:1/never \
-  claude-status --debug
+  claude-status --doctor
 
 # spend, against the real endpoint — one request, and it writes the real cache
-claude-status --debug
+claude-status --doctor
 ```
 
-**`--debug` as a mode fetches**, synchronously and in the foreground, and it
+**`--doctor` as a mode fetches**, synchronously and in the foreground, and it
 fetches even when your own config hides the spend segment. That is deliberate —
 a passive report could not tell "you have it switched off" from "your token is
 rejected" — but it means the second command above spends a real request against

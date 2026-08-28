@@ -60,11 +60,11 @@ pub fn sanitize(text: &str) -> String {
 
 /// `sanitize`, but a newline survives.
 ///
-/// For `--debug`, which is a **terminal write like any other** and so obeys the
+/// For `--doctor`, which is a **terminal write like any other** and so obeys the
 /// same rule — but is deliberately many lines, so the row version would collapse
 /// the whole report onto one.
 ///
-/// It exists because `--debug` is the fourth of the [five filter chokepoints],
+/// It exists because `--doctor` is the fourth of the [five filter chokepoints],
 /// and it earned its own entry point rather than a scatter of per-write calls:
 /// the report prints the config `lines` entries, the spend gate table, the
 /// `settings.json` command, the endpoint URL and the plan tag, and filtering

@@ -75,7 +75,7 @@ disagree within a month, and the disagreement gets found by a user.
 | [Generate](https://claude-status.virajp.dev/generate/)     | building a config file in the browser, from the schema |
 | [Per-repo](https://claude-status.virajp.dev/repo-config/)  | naming one repository in the bar                       |
 | [Segments](https://claude-status.virajp.dev/segments/)     | every segment, what it draws, and when it sits out     |
-| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --debug`, and the questions it answers  |
+| [Diagnosing](https://claude-status.virajp.dev/diagnosing/) | `claude-status --doctor`, and the questions it answers |
 
 Implementing against it? Behaviour is pinned by the test suite, and
 [docs/decisions.md](docs/decisions.md) records why each decision was taken —

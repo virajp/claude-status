@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "title": "claude-status config",
-  "description": "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --debug. Nothing in the binary ever writes either file.",
+  "description": "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --doctor. Nothing in the binary ever writes either file.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

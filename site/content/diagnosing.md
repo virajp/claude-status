@@ -5,7 +5,7 @@ weight = 6
 +++
 
 ```sh
-claude-status --debug
+claude-status --doctor
 ```
 
 That is the whole troubleshooting story. It reports which config layers loaded
@@ -14,8 +14,14 @@ what git resolved, a live spend fetch with each of the four gates, and a sample
 render.
 
 It is also a **modifier**: add it to any other surface and it narrates to stderr
-while leaving stdout byte-for-byte unchanged. `--statusline --debug` gives you
+while leaving stdout byte-for-byte unchanged. `--statusline --doctor` gives you
 the same bar and an explanation of it.
+
+> **This flag was called `--debug`.** Both of its jobs moved together, and the
+> old spelling is no longer recognised as either one. Run `--debug` now and the
+> binary names it as an unrecognised argument on stderr and prints the help
+> after it — the bar, and the exit code, are unchanged. Change it wherever you
+> have it written down, `~/.claude/settings.json` included.
 
 Your access token never appears on either stream.
 
@@ -112,7 +118,7 @@ the project name in it are real, because those come from where you are standing.
 
 ## Reporting something
 
-If `--debug` does not explain it,
+If `--doctor` does not explain it,
 [open an issue](https://github.com/virajp/claude-status/issues) and paste its
 output. It is designed to be pasteable — no token appears on either stream, and
 `SAMPLE RENDER` carries sample figures rather than your session's. Do glance

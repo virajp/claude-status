@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-/// Whether subprocess failures are narrated. Off unless `--debug` turns it on.
+/// Whether subprocess failures are narrated. Off unless `--doctor` turns it on.
 ///
 /// A process-global rather than a parameter because the git pipelines run on
 /// their own threads, two calls deep, and threading a narrator through them
@@ -27,11 +27,11 @@ pub fn set_narrate(on: bool) {
     NARRATE.store(on, Ordering::Relaxed);
 }
 
-/// The `--debug` narration, and one caller of the **fifth terminal surface**
+/// The `--doctor` narration, and one caller of the **fifth terminal surface**
 /// — stderr.
 ///
 /// stderr is a terminal too. This carries the cwd, the program name and its
-/// argv — all attacker-nameable, all under the same `--debug` flag as the
+/// argv — all attacker-nameable, all under the same `--doctor` flag as the
 /// report — so it is filtered here, at the one point every narration passes
 /// through, rather than by each caller remembering `{:?}` over `{}`. Two of
 /// them had already forgotten.
@@ -238,7 +238,7 @@ mod tests {
     fn a_program_that_cannot_be_spawned_is_none_not_a_panic() {
         // The two failures this collapses — a spawn error and a command that
         // ran and said nothing — are still both `None` to the caller. What
-        // changed is that the first one is now narrated under `--debug`
+        // changed is that the first one is now narrated under `--doctor`
         // instead of vanishing, which is what made the git-budget test's
         // silence diagnosable.
         let deadline = Deadline::in_ms(250);

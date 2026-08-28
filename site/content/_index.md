@@ -72,7 +72,7 @@ Code to the binary. [Install](@/install.md) covers both routes in full.
 | [Configure](@/configure.md)   | the three config layers, and what you can change             |
 | [Per-repo](@/repo-config.md)  | naming one repository in the bar — the only per-repo setting |
 | [Segments](@/segments.md)     | every segment, what it draws, and when it sits out           |
-| [Diagnosing](@/diagnosing.md) | `--debug`, and the questions it answers                      |
+| [Diagnosing](@/diagnosing.md) | `--doctor`, and the questions it answers                     |
 
 Wondering *why* something behaves the way it does? The
 [decision record](https://github.com/virajp/claude-status/blob/main/docs/decisions.md)

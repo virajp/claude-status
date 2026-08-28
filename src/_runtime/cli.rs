@@ -26,19 +26,26 @@ USAGE:
     claude-status --configure    wire Claude Code to this binary
     claude-status --refresh      refresh the spend cache and exit
     claude-status --caps-hook    vwf PostToolUse cap actuator; silent unless breached
-    claude-status --debug        report configuration, wiring and a sample render
+    claude-status --doctor       report configuration, wiring and a sample render
     claude-status --version      print the version and exit
     claude-status --help         print this help
 
 MODIFIERS:
-    --debug     also usable on any of the above. It narrates to stderr and
+    --doctor    also usable on any of the above. It narrates to stderr and
                 never changes a byte of stdout.
     --dry-run   with --configure: print every change and write nothing.
 
-    Every surface but --configure ignores an argument it does not recognise, so
-    a stray token can never cost you a status bar. --configure refuses instead:
-    it writes, it cannot be undone, and a typo in --dry-run must not turn a
-    preview into a real overwrite.
+    RENAMED: --doctor was called --debug. The old spelling is no longer
+    recognised anywhere — as a surface flag or as a modifier — so
+    `--statusline --debug` now names --debug as unrecognised and draws the bar
+    without narrating. Change it wherever you have it written down,
+    ~/.claude/settings.json included.
+
+    An unrecognised argument is NAMED ON STDERR, followed by this help, and
+    then every surface but --configure carries on: a stray token can never
+    cost you a status bar, and it can never change a byte of stdout either.
+    --configure refuses instead: it writes, it cannot be undone, and a typo in
+    --dry-run must not turn a preview into a real overwrite.
 
 WHAT --configure WRITES:
     Three keys in ~/.claude/settings.json, each invoking `claude-status` by
@@ -59,7 +66,7 @@ WHAT --configure WRITES:
     holding a "$schema" pointer and nothing else. An existing one is never
     touched.
 
-    Run --debug to see what is currently wired.
+    Run --doctor to see what is currently wired.
 
 CONFIGURATION:
     ~/.config/claude-status/config.json      your settings — only the keys that
@@ -73,7 +80,7 @@ CONFIGURATION:
     `project` segment draws for that repository. You rarely need it: with no
     name set anywhere the segment already draws the git root's directory name,
     and this key only calls it something else. Every other key in it is
-    ignored, and --debug names the ones it dropped. Write it by hand:
+    ignored, and --doctor names the ones it dropped. Write it by hand:
 
       {
         "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
@@ -104,8 +111,8 @@ pub enum Mode {
     /// writes under `$HOME` outside the spend cache, and the only one that can
     /// exit non-zero.
     Configure,
-    /// `--debug` on its own: the diagnostic report is the output.
-    Debug,
+    /// `--doctor` on its own: the diagnostic report is the output.
+    Doctor,
     /// No surface flag and stdin is piped — a stale `settings.json`.
     MissingFlag,
 }
@@ -118,17 +125,20 @@ pub enum Mode {
 #[derive(Debug, Clone)]
 pub struct Cli {
     pub mode: Mode,
-    /// `--debug` was passed. On a render mode this is a modifier, not the mode.
-    pub debug: bool,
+    /// `--doctor` was passed. On a render mode this is a modifier, not the mode.
+    pub doctor: bool,
     /// `--dry-run` was passed. Only [`Mode::Configure`] reads it — it is the
     /// one mode with anything to decline to do.
     pub dry_run: bool,
     /// Arguments [`parse`] did not recognise, in the order they were given.
     ///
-    /// **Only [`Mode::Configure`] treats these as an error.** Every other mode
-    /// ignores them, and must: Claude Code invokes the render surfaces, and a
+    /// **Every mode names these on stderr; only [`Mode::Configure`] treats them
+    /// as an error.** No other mode may: Claude Code invokes the render
+    /// surfaces, and a
     /// stray argument there costing the user their status bar would break the invariants'
-    /// invariant 3 over a typo. `--configure` is the one mode that *writes*,
+    /// invariant 3 over a typo. Naming is not costing — see
+    /// `app::report_unknown`, which writes to stderr alone and leaves both
+    /// stdout and the exit code exactly as they were. `--configure` is the one mode that *writes*,
     /// with no receipt and no undo, so the same silence there means
     /// `--configure --dry-runn` overwrites a `settings.json` the user believed
     /// they were only previewing. The asymmetry is the point.
@@ -146,7 +156,7 @@ pub struct Cli {
 /// `build:statusline` smoke test asserts the same thing locally. It is the one
 /// output of this binary a script may parse, so a decoration is a broken build.
 pub fn parse<I: IntoIterator<Item = OsString>>(args: I, stdin_is_tty: bool) -> Cli {
-    let mut debug = false;
+    let mut doctor = false;
     let mut dry_run = false;
     let mut surface = None;
     let mut help = false;
@@ -157,18 +167,22 @@ pub fn parse<I: IntoIterator<Item = OsString>>(args: I, stdin_is_tty: bool) -> C
         match arg.to_string_lossy().as_ref() {
             "--version" | "-V" => version = true,
             "--help" | "-h" => help = true,
-            "--debug" => debug = true,
+            "--doctor" => doctor = true,
             "--dry-run" => dry_run = true,
             "--statusline" => surface = surface.or(Some(Mode::Statusline)),
             "--subagent" => surface = surface.or(Some(Mode::Subagent)),
             REFRESH_FLAG => surface = surface.or(Some(Mode::Refresh)),
             "--caps-hook" => surface = surface.or(Some(Mode::CapsHook)),
             "--configure" => surface = surface.or(Some(Mode::Configure)),
-            // Anything unrecognised is ignored rather than fatal; with no
-            // surface flag the no-flag case below still explains itself.
+            // Anything unrecognised is non-fatal here rather than silent; with
+            // no surface flag the no-flag case below still explains itself.
             //
-            // **Collected anyway, for `--configure` alone.** Ignoring a typo is
-            // right for a render — Claude Code invokes those, a stray argument
+            // **Collected for two callers now.** `app::report_unknown` names
+            // every one of them on stderr, whatever the mode — the rename made
+            // that necessary, since `--debug` is now exactly this arm and a
+            // user who kept it deserves to be told rather than left with
+            // narration quietly off. Not costing a bar is right for a render —
+            // Claude Code invokes those, a stray argument
             // must never cost a bar, and the worst case is a bar drawn without
             // a modifier. It is the opposite of right for the one flag that
             // *writes*: `--configure --dry-runn` would silently perform a real,
@@ -184,8 +198,8 @@ pub fn parse<I: IntoIterator<Item = OsString>>(args: I, stdin_is_tty: bool) -> C
         Mode::Help
     } else if let Some(surface) = surface {
         surface
-    } else if debug {
-        Mode::Debug
+    } else if doctor {
+        Mode::Doctor
     } else if stdin_is_tty {
         // Someone typed the command. Show them how to use it.
         Mode::Help
@@ -194,7 +208,7 @@ pub fn parse<I: IntoIterator<Item = OsString>>(args: I, stdin_is_tty: bool) -> C
         Mode::MissingFlag
     };
 
-    Cli { mode, debug, dry_run, unknown }
+    Cli { mode, doctor, dry_run, unknown }
 }
 
 #[cfg(test)]
@@ -207,7 +221,7 @@ mod tests {
 
     #[test]
     fn version_wins_over_everything() {
-        for args in [&["--version"][..], &["--version", "--debug"], &["--statusline", "--version"], &["--version", "--help"]]
+        for args in [&["--version"][..], &["--version", "--doctor"], &["--statusline", "--version"], &["--version", "--help"]]
         {
             assert_eq!(parse_args(args, false).mode, Mode::Version, "{args:?}");
         }
@@ -243,14 +257,46 @@ mod tests {
     }
 
     #[test]
-    fn debug_is_a_modifier_on_a_surface_flag_and_a_mode_alone() {
-        let modifier = parse_args(&["--statusline", "--debug"], false);
+    fn doctor_is_a_modifier_on_a_surface_flag_and_a_mode_alone() {
+        let modifier = parse_args(&["--statusline", "--doctor"], false);
         assert_eq!(modifier.mode, Mode::Statusline);
-        assert!(modifier.debug);
+        assert!(modifier.doctor);
 
-        let mode = parse_args(&["--debug"], false);
-        assert_eq!(mode.mode, Mode::Debug);
-        assert!(mode.debug);
+        let mode = parse_args(&["--doctor"], false);
+        assert_eq!(mode.mode, Mode::Doctor);
+        assert!(mode.doctor);
+    }
+
+    /// The rename from the parser's side: `--debug` is not a second spelling of
+    /// `--doctor`, it is an argument this binary does not know.
+    ///
+    /// Both of its old jobs are checked, because they failed differently. As a
+    /// **mode** it selected the report; as a **modifier** it turned narration
+    /// on. A rename that missed the second would leave `--statusline --debug`
+    /// drawing a bar with the diagnostics silently off — which looks exactly
+    /// like a working install.
+    #[test]
+    fn the_old_debug_spelling_is_no_longer_recognised() {
+        let alone = parse_args(&["--debug"], false);
+        assert!(!alone.doctor, "--debug must not still select the report");
+        assert_eq!(alone.mode, Mode::MissingFlag, "it selects no mode of its own");
+        assert_eq!(alone.unknown, ["--debug"], "and it is collected, so `app::report_unknown` can name it");
+
+        let modifier = parse_args(&["--statusline", "--debug"], false);
+        assert_eq!(modifier.mode, Mode::Statusline, "invariant 3: a stray token still may not cost a bar");
+        assert!(!modifier.doctor, "--debug must not still turn narration on");
+        assert_eq!(modifier.unknown, ["--debug"]);
+    }
+
+    /// `--help` is the only documentation that ships **inside** the binary, so
+    /// it is the only place a user whose `settings.json` still says `--debug`
+    /// can find out what happened to it. The old name has to appear here, and
+    /// this is the one test that wants it to.
+    #[test]
+    fn help_records_that_doctor_was_previously_called_debug() {
+        assert!(HELP.contains("RENAMED:"), "the rename has no heading a reader can find");
+        assert!(HELP.contains("--debug"), "the old name is not written down anywhere in the binary");
+        assert!(HELP.contains("no longer\n    recognised"), "and that it stopped working, not merely moved");
     }
 
     #[test]
@@ -297,14 +343,14 @@ mod tests {
         // their own file against this without running anything.
         assert!(HELP.contains("~/.claude/settings.json"));
         assert!(HELP.contains("~/.config/claude-status/config.json"));
-        for flag in ["--statusline", "--subagent", "--caps-hook", "--refresh", "--configure", "--dry-run"] {
+        for flag in ["--statusline", "--subagent", "--caps-hook", "--refresh", "--configure", "--dry-run", "--doctor"] {
             assert!(HELP.contains(flag), "{flag} is undocumented");
         }
         assert!(HELP.contains("refreshInterval"), "the bar's refresh cadence is part of the shape");
 
-        // Two comments in `app.rs` rest on this sentence; `--debug` is where a
+        // Two comments in `app.rs` rest on this sentence; `--doctor` is where a
         // user is sent to see what is actually wired.
-        assert!(HELP.contains("Run --debug to see what is currently wired."));
+        assert!(HELP.contains("Run --doctor to see what is currently wired."));
     }
 
     /// The example in `--help` has to be an example of the real thing.
@@ -339,7 +385,7 @@ mod tests {
         assert_eq!(cli.unknown, ["--dry-runn", "-n"]);
 
         // Every recognised token, in every combination, leaves it empty.
-        for args in [&["--statusline", "--debug"][..], &["--configure", "--dry-run"], &["--version"], &["-h"]] {
+        for args in [&["--statusline", "--doctor"][..], &["--configure", "--dry-run"], &["--version"], &["-h"]] {
             assert!(parse_args(args, false).unknown.is_empty(), "{args:?}");
         }
     }

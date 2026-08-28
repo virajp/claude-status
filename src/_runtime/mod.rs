@@ -6,4 +6,4 @@
 pub mod app;
 pub mod cli;
 pub mod configure;
-pub mod debug;
+pub mod doctor;

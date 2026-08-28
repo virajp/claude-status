@@ -47,10 +47,10 @@ pub fn url() -> String {
     }
 }
 
-/// Where `agent()` gets its trust roots, in the words `--debug` reports.
+/// Where `agent()` gets its trust roots, in the words `--doctor` reports.
 ///
 /// **It lives here, beside the `TlsConfig` it describes, so the two are edited
-/// in one place.** A `--debug` line claiming the OS store while the agent had
+/// in one place.** A `--doctor` line claiming the OS store while the agent had
 /// quietly gone back to baked roots would be worse than printing nothing: the
 /// whole reason this line exists is that the failure it diagnoses —
 /// `invalid peer certificate: UnknownIssuer` behind a corporate proxy — is

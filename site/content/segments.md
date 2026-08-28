@@ -81,7 +81,7 @@ Four gates hide it, checked in this order:
    `team` and `enterprise` seats, so every other plan — and any cache with no
    plan recorded at all — is hidden here. Much the most common answer.
 
-[`--debug`](@/diagnosing.md) reports all four and tells you which one applied.
+[`--doctor`](@/diagnosing.md) reports all four and tells you which one applied.
 More on the segment in [Configure](@/configure.md).
 
 ## Getting an id wrong

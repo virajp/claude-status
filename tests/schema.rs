@@ -64,7 +64,7 @@ const DESCRIPTION_COUNT: usize = 49;
 /// additions: every one of the 39 existing strings is byte-identical, which is
 /// what makes the count and the digest moving together the expected result
 /// rather than a swap hiding inside a rewrite.
-const DESCRIPTION_DIGEST: u64 = 0x1c21_9713_1913_d7d3;
+const DESCRIPTION_DIGEST: u64 = 0x46bc_672d_a9c7_f85d;
 
 /// The only four `default` values the published schema has ever carried.
 ///
@@ -387,7 +387,7 @@ fn every_top_level_property_is_described() {
 fn the_root_is_a_plain_object_schema() {
     let schema = schema();
     assert_eq!(schema["type"].as_str(), Some("object"));
-    assert_eq!(schema["additionalProperties"], Value::Bool(false), "the root is closed, which is what --debug reports on");
+    assert_eq!(schema["additionalProperties"], Value::Bool(false), "the root is closed, which is what --doctor reports on");
     assert!(schema.get("$ref").is_none(), "a $ref root breaks tests/defaults_integrity.rs");
     assert!(schema.get("allOf").is_none(), "an allOf root breaks tests/defaults_integrity.rs");
     assert!(schema["properties"].is_object());

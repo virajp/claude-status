@@ -142,7 +142,7 @@ a `$schema` pointer and nothing else. An existing one is never touched.
 
 > **A status line belonging to something else IS replaced.** `--configure`
 > prints what it replaced, and there is no undo — set yours again to get it
-> back. Run `claude-status --debug` first if you want to see what is currently
+> back. Run `claude-status --doctor` first if you want to see what is currently
 > wired.
 
 Want to see the changes without making them?
@@ -153,8 +153,8 @@ claude-status --configure --dry-run
 
 `--dry-run` prints every change and writes nothing. Note that `--configure` is
 the one surface that **refuses** an argument it does not recognise: every other
-flag ignores a stray token, but here a typo in `--dry-run` must not turn a
-preview into a real write.
+surface names the stray token and carries on, but here a typo in `--dry-run`
+must not turn a preview into a real write.
 
 ## The surfaces
 
@@ -177,16 +177,24 @@ Wired by `--configure`, and you will not type them yourself.
 | ------------- | ------------------------------------------------ |
 | `--configure` | wire Claude Code to this binary                  |
 | `--refresh`   | refresh the spend cache and exit                 |
-| `--debug`     | report configuration, wiring and a sample render |
+| `--doctor`    | report configuration, wiring and a sample render |
 | `--version`   | print the version and exit                       |
 | `--help`      | the full list, with detail                       |
 
-Two modifiers pair with them: `--debug` works on any surface and narrates to
+Two modifiers pair with them: `--doctor` works on any surface and narrates to
 stderr without changing a byte of stdout, and `--dry-run` pairs with
 `--configure`.
 
-**Every surface but `--configure` ignores an argument it does not recognise**,
-so a stray token can never cost you a status bar.
+> **`--doctor` was called `--debug`.** The old spelling is gone in both of its
+> jobs — as the surface *and* as the modifier — so `--statusline --debug` now
+> draws the bar with narration off rather than on. If you have `--debug` written
+> into `~/.claude/settings.json` or a script, change it.
+
+**An argument this binary does not recognise is named on stderr, with the full
+help after it — and then every surface but `--configure` carries on.** A stray
+token can never cost you a status bar and can never change a byte of stdout.
+`--configure` refuses instead: it writes, there is no undo, and a typo in
+`--dry-run` must not turn a preview into a real overwrite.
 
 ## Nothing has to exist
 

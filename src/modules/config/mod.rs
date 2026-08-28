@@ -81,7 +81,7 @@ const DEFAULT_DESC_BUDGET_FRACTION: f64 = 0.45;
 // attribute under `serde` would make one mistyped key discard the whole config
 // (see [`Config::new`]), which is the outcome the third invariant forbids.
 #[cfg_attr(feature = "schema", schemars(rename = "claude-status config", deny_unknown_fields))]
-#[cfg_attr(feature = "schema", schemars(description = "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --debug. Nothing in the binary ever writes either file."))]
+#[cfg_attr(feature = "schema", schemars(description = "Configuration for the claude-status binary. Three layers, deep-merged low to high: the defaults embedded in the binary, ~/.config/claude-status/config.json, and <repo-root>/.config/claude-status.json. Objects merge key by key; arrays and scalars replace wholesale. The repo layer may set projectName and nothing else; any other key in it is ignored, and named by --doctor. Nothing in the binary ever writes either file."))]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
     /// Thresholds the `--caps-hook` actuator measures usage against. Typed by
@@ -650,7 +650,7 @@ fn gauge_width<'de, D: Deserializer<'de>>(d: D) -> Result<usize, D::Error> {
 /// The width a raw `gauge.width` resolves to — the rule itself, named so that
 /// [`validate`] can report the coercion without restating it.
 ///
-/// Extracted rather than duplicated: `--debug` has to say `gauge.width 0 → 10`,
+/// Extracted rather than duplicated: `--doctor` has to say `gauge.width 0 → 10`,
 /// and a second copy of "zero means ten, capped at a thousand" is a copy that
 /// can disagree with the one that runs. There is one rule and both callers ask
 /// it the same question.

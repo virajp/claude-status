@@ -120,7 +120,7 @@ wherever that environment is defined:
 export CLAUDE_STATUS_USAGE_DIR="$HOME/.cache/claude-status/usage"
 ```
 
-`claude-status --debug` will not tell you the variable is missing either — the
+`claude-status --doctor` will not tell you the variable is missing either — the
 caps thresholds it prints are the ones the hook *would* use. If you want to know
 the hook is live, set the variable, run a session, and check that files appear
 in that directory.
@@ -170,7 +170,7 @@ then renders whatever the cache already holds.
 
 Four gates can hide it, in order: it is not in your `lines`; there is no usable
 cached figure yet; the account has no budget block; or the seat is one that
-`auto` hides. [`--debug`](@/diagnosing.md) tells you which one applied.
+`auto` hides. [`--doctor`](@/diagnosing.md) tells you which one applied.
 
 **A render never fetches.** The figure comes from a cache at
 `~/.cache/claude-status/spend.json`, refreshed in the background by a child

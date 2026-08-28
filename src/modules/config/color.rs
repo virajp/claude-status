@@ -12,7 +12,7 @@ pub type Rgb = [u8; 3];
 
 /// A named colour table. `BTreeMap` rather than `serde_json::Map` because the
 /// palette is looked up by key and never walked in order, so ordering it by
-/// name is what makes `--debug` diffable.
+/// name is what makes `--doctor` diffable.
 ///
 /// The entries stay [`Value`]: an unresolvable one falls back to white rather
 /// than costing the config.

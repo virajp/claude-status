@@ -15,7 +15,7 @@
 //! pre-seeded fresh cache, and a seeded `.claude/.credentials.json` so the
 //! keychain fallback is never reached.
 //!
-//! The fourth was added when `--refresh` and `--debug` stopped being
+//! The fourth was added when `--refresh` and `--doctor` stopped being
 //! inert: the first three were written while nothing in this binary could
 //! fetch, and a fake home alone was never enough once something could.
 //!
@@ -412,7 +412,7 @@ fn a_repo_config_can_no_longer_override_a_user_cap() {
     assert!(after.contains("cap 50%"), "the repo raised a cap it may no longer touch: {after}");
 }
 
-/// Criterion 5, whole: the name applies, the other key does not, and `--debug`
+/// Criterion 5, whole: the name applies, the other key does not, and `--doctor`
 /// names the one it dropped.
 #[test]
 fn a_repo_config_sets_the_project_name_and_nothing_else() {
@@ -433,26 +433,26 @@ fn a_repo_config_sets_the_project_name_and_nothing_else() {
     let cells = bar.chars().filter(|c| *c == '\u{25b0}' || *c == '\u{25b1}').count();
     assert_eq!(cells, 10, "the repo widened the gauge it may not touch: {}", bar.escape_debug());
 
-    // And the user is told, because `--debug` is the only place they can find
+    // And the user is told, because `--doctor` is the only place they can find
     // out why the file they wrote is doing nothing.
-    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    let report = stdout(&run_in(&["--doctor"], "", Some(home.path()), Some(repo.path()), &[]));
     let line = report
         .lines()
         .find(|l| l.trim_start().starts_with("ignored"))
-        .unwrap_or_else(|| panic!("--debug never named the ignored key:\n{report}"));
+        .unwrap_or_else(|| panic!("--doctor never named the ignored key:\n{report}"));
     assert!(line.contains("gauge"), "{line:?}");
     assert!(line.contains("projectName"), "it says what the file IS allowed to set: {line:?}");
     assert!(!line.contains("$schema"), "a `$schema` pointer is not an ignored setting: {line:?}");
 }
 
 /// A repo config carrying only what it may set says nothing extra — otherwise
-/// every correctly written file would put a line in `--debug`.
+/// every correctly written file would put a line in `--doctor`.
 #[test]
 fn a_well_formed_repo_config_is_reported_as_ignoring_nothing() {
     let home = Home::new(&safe_config());
     let repo = fake_repo(r#"{ "$schema": "https://example.invalid/s.json", "projectName": "tidy" }"#);
 
-    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    let report = stdout(&run_in(&["--doctor"], "", Some(home.path()), Some(repo.path()), &[]));
     assert!(report.contains("repo     loaded"), "the repo layer never loaded:\n{report}");
     assert!(!report.contains("ignored"), "a tidy repo config was reported as dropping something:\n{report}");
 }
@@ -556,7 +556,7 @@ fn the_usage_dir_variable_migrates_without_breaking_the_old_name() {
 #[test]
 fn version_is_exactly_the_version_with_or_without_debug() {
     let home = Home::new(&safe_config());
-    for args in [&["--version"][..], &["--version", "--debug"]] {
+    for args in [&["--version"][..], &["--version", "--doctor"]] {
         let out = run(&home, args, "", &[]);
         assert_eq!(stdout(&out), format!("{}\n", env!("CARGO_PKG_VERSION")), "{args:?}");
         assert_eq!(stderr(&out), "", "{args:?} must not narrate");
@@ -743,7 +743,7 @@ fn configure_dry_run_prints_and_writes_nothing() {
     assert_eq!(snapshot(home.path()), before, "a dry run wrote to disk");
 }
 
-/// **`--debug` is a modifier on `--configure` too**, and a modifier must not
+/// **`--doctor` is a modifier on `--configure` too**, and a modifier must not
 /// change stdout by a single byte.
 ///
 /// `--configure` is the first mode that could break that claim: it is the only
@@ -751,7 +751,7 @@ fn configure_dry_run_prints_and_writes_nothing() {
 /// throwaway homes seeded identically, because running `--configure` twice
 /// against one home is not a control — the first run changes the state the
 /// second one reports, so the outputs would differ for a reason that has
-/// nothing to do with `--debug`. Both paths are checked: the ordinary one and a
+/// nothing to do with `--doctor`. Both paths are checked: the ordinary one and a
 /// refusal.
 #[test]
 fn debug_is_a_modifier_on_configure_and_never_changes_its_stdout() {
@@ -765,17 +765,17 @@ fn debug_is_a_modifier_on_configure_and_never_changes_its_stdout() {
         let debug_home = configure_home(settings);
 
         let plain = run_in(&["--configure"], "", Some(plain_home.path()), None, &[]);
-        let debug = run_in(&["--configure", "--debug"], "", Some(debug_home.path()), None, &[]);
+        let debug = run_in(&["--configure", "--doctor"], "", Some(debug_home.path()), None, &[]);
 
         // Byte-identical, not merely equivalent — the paths in the report are
         // tilde-rendered, so two different homes produce the same bytes and any
-        // difference is `--debug`'s doing.
-        assert_eq!(plain.stdout, debug.stdout, "--debug changed stdout for {settings:?}");
-        assert_eq!(plain.status.code(), debug.status.code(), "--debug changed the exit code for {settings:?}");
+        // difference is `--doctor`'s doing.
+        assert_eq!(plain.stdout, debug.stdout, "--doctor changed stdout for {settings:?}");
+        assert_eq!(plain.status.code(), debug.status.code(), "--doctor changed the exit code for {settings:?}");
         // And the file each one produced is the same too: a modifier that
         // changed what was *written* while leaving stdout alone would satisfy
         // the assertion above and still be a bug.
-        assert_eq!(snapshot(plain_home.path()), snapshot(debug_home.path()), "--debug changed what was written");
+        assert_eq!(snapshot(plain_home.path()), snapshot(debug_home.path()), "--doctor changed what was written");
     }
 }
 
@@ -1290,15 +1290,15 @@ fn with_no_home_configure_refuses_rather_than_writing_somewhere_relative() {
     assert_eq!(after, vec![marker.file_name().unwrap()], "something was written: {after:?}");
 }
 
-/// The wiring `--configure` writes is the wiring `--debug` reads back — the two
+/// The wiring `--configure` writes is the wiring `--doctor` reads back — the two
 /// halves of the same contract, and the only place either is checked against
 /// the other.
 #[test]
-fn what_configure_writes_is_what_debug_reports_as_wired() {
+fn what_configure_writes_is_what_doctor_reports_as_wired() {
     let home = configure_home(None);
     assert!(run_in(&["--configure"], "", Some(home.path()), None, &[]).status.success());
 
-    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), None, &[]));
+    let report = stdout(&run_in(&["--doctor"], "", Some(home.path()), None, &[]));
     let wiring = report.split("CLAUDE WIRING").nth(1).expect("the section is present");
     let wiring = wiring.split("\nEFFECTIVE LAYOUT").next().expect("split always yields one");
     assert!(wiring.contains("claude-status --statusline"), "{wiring}");
@@ -1311,7 +1311,7 @@ fn what_configure_writes_is_what_debug_reports_as_wired() {
 fn debug_is_a_modifier_that_never_changes_stdout() {
     let home = Home::new(&safe_config());
     let plain = run(&home, &["--statusline"], FIXTURE, &[]);
-    let debug = run(&home, &["--statusline", "--debug"], FIXTURE, &[]);
+    let debug = run(&home, &["--statusline", "--doctor"], FIXTURE, &[]);
 
     assert_eq!(plain.stdout, debug.stdout, "stdout must be byte-identical");
     assert!(!stderr(&debug).is_empty(), "the narration went to stderr");
@@ -1362,7 +1362,7 @@ fn help_lists_every_surface_and_documents_the_repo_layer() {
 #[test]
 fn debug_alone_reports_layers_wiring_layout_and_git() {
     let home = Home::new(&safe_config());
-    let out = run(&home, &["--debug"], "", &[]);
+    let out = run(&home, &["--doctor"], "", &[]);
     let text = stdout(&out);
 
     for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SAMPLE RENDER"] {
@@ -1396,7 +1396,7 @@ fn debug_alone_reports_layers_wiring_layout_and_git() {
 fn debug_calls_a_config_free_machine_normal_and_a_broken_config_not() {
     let bare = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
-    let clean = stdout(&run_in(&["--debug"], "", Some(bare.path()), Some(cwd.path()), &[]));
+    let clean = stdout(&run_in(&["--doctor"], "", Some(bare.path()), Some(cwd.path()), &[]));
     let layers = clean.split("\nCLAUDE WIRING").next().expect("split always yields one");
 
     assert!(layers.contains("user     using defaults"), "an absent user config reads as broken:\n{layers}");
@@ -1413,7 +1413,7 @@ fn debug_calls_a_config_free_machine_normal_and_a_broken_config_not() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "{ this is not json").unwrap();
 
-    let report = stdout(&run_in(&["--debug"], "", Some(broken.path()), Some(cwd.path()), &[]));
+    let report = stdout(&run_in(&["--doctor"], "", Some(broken.path()), Some(cwd.path()), &[]));
     let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
     assert!(layers.contains("user     UNREADABLE"), "a config that will not parse reads as fine:\n{layers}");
     assert!(!layers.contains("user     using defaults"), "{layers}");
@@ -1663,6 +1663,75 @@ fn a_scalar_where_a_block_belongs_costs_that_block_and_nothing_else() {
     );
 }
 
+/// An unrecognised argument is **named on stderr with the help after it**, and
+/// costs the surface nothing.
+///
+/// The two halves are one test on purpose. Naming the token is only safe
+/// because it lands on the other stream — invariant 3 says a stray argument may
+/// not cost a user their bar, so a version of this that wrote to stdout, or
+/// that exited non-zero, would be a regression dressed as a feature. Comparing
+/// against a clean run rather than asserting "stdout is non-empty" is what
+/// makes that check real: the bar has to be **byte-identical**, not merely
+/// present.
+#[test]
+fn an_unrecognised_argument_is_named_on_stderr_and_leaves_stdout_byte_identical() {
+    let home = Home::new(&safe_config());
+
+    let clean = run(&home, &["--statusline"], FIXTURE, &[]);
+    let strayed = run(&home, &["--statusline", "--nonsense"], FIXTURE, &[]);
+
+    assert_eq!(stdout(&strayed), stdout(&clean), "a stray token changed the bar");
+    assert!(strayed.status.success(), "and it must not change the exit code either");
+    assert_eq!(stderr(&clean), "", "the control run says nothing, so the stderr below is the stray token's");
+
+    let err = stderr(&strayed);
+    assert!(err.contains(r#"unrecognised argument "--nonsense""#), "the token is not named: {}", err.escape_debug());
+    for section in ["USAGE:", "MODIFIERS:", "CONFIGURATION:"] {
+        assert!(err.contains(section), "the {section} section of the help did not follow it");
+    }
+}
+
+/// The rename, end to end: `--debug` is not a synonym for `--doctor`, and the
+/// binary says so rather than ignoring it.
+///
+/// **The `--doctor` control is the load-bearing half.** Asserting only that
+/// `--debug` narrates nothing would pass just as well on a binary whose
+/// narration had broken outright, which is the opposite of what this pins.
+#[test]
+fn the_old_debug_flag_is_named_as_unrecognised_and_narrates_nothing() {
+    let home = Home::new(&safe_config());
+
+    let old = run(&home, &["--statusline", "--debug"], FIXTURE, &[]);
+    let plain = run(&home, &["--statusline"], FIXTURE, &[]);
+    assert_eq!(stdout(&old), stdout(&plain), "the bar is untouched by the dead flag");
+
+    let err = stderr(&old);
+    assert!(err.contains(r#"unrecognised argument "--debug""#), "the old name is not named: {}", err.escape_debug());
+    assert!(!err.contains("repo root:"), "--debug still turned narration on: {}", err.escape_debug());
+    // And the help it printed carries the rename, so the user is not merely
+    // told the flag is wrong — they are told what replaced it.
+    assert!(err.contains("RENAMED:") && err.contains("--doctor"), "the help on stderr does not explain the rename");
+
+    let new = run(&home, &["--statusline", "--doctor"], FIXTURE, &[]);
+    assert!(stderr(&new).contains("repo root:"), "the control failed: --doctor stopped narrating");
+    assert!(!stderr(&new).contains("unrecognised"), "and it is a recognised flag");
+}
+
+/// `--help` already puts the help on stdout, so the unknown-argument path must
+/// not put a second copy on stderr — both streams land in the same terminal,
+/// and the motivating case (someone typing `claude-status --debug` at a prompt)
+/// is exactly this mode.
+#[test]
+fn the_help_mode_names_the_stray_token_without_printing_the_help_twice() {
+    let home = Home::new(&safe_config());
+    let out = run(&home, &["--help", "--nonsense"], "", &[]);
+
+    assert!(stdout(&out).contains("USAGE:"), "the help belongs on stdout when --help asked for it");
+    let err = stderr(&out);
+    assert!(err.contains(r#"unrecognised argument "--nonsense""#), "the token is still named: {}", err.escape_debug());
+    assert!(!err.contains("USAGE:"), "the help was repeated on the second stream: {}", err.escape_debug());
+}
+
 /// A linked worktree's dirty state is read **in the worktree**, not in the
 /// checkout its `.git` file points at.
 ///
@@ -1821,7 +1890,7 @@ fn a_hanging_git_costs_one_shared_budget_not_one_per_subprocess() {
 #[test]
 fn stdout_never_carries_a_diagnostic_whatever_the_input() {
     let home = Home::new(r#"{ "lines": [["bogus1", "bogus2", "model"]] }"#);
-    let out = run(&home, &["--statusline", "--debug"], "{\"garbage\":", &[]);
+    let out = run(&home, &["--statusline", "--doctor"], "{\"garbage\":", &[]);
 
     let bar = stdout(&out);
     for noise in ["claude-status:", "unknown segment", "config layer", "error"] {
@@ -2104,7 +2173,7 @@ fn no_mode_writes_outside_the_cache_directory() {
         (&["--statusline"][..], FIXTURE, Child::Expected),
         (&["--subagent"][..], SUBAGENT_FIXTURE, Child::NotExpected),
         (&["--refresh"][..], "", Child::NotExpected),
-        (&["--debug"][..], "", Child::NotExpected),
+        (&["--doctor"][..], "", Child::NotExpected),
         (&["--caps-hook"][..], r#"{"session_id":"s1"}"#, Child::NotExpected),
         (&["--help"][..], "", Child::NotExpected),
         (&["--version"][..], "", Child::NotExpected),
@@ -2227,10 +2296,10 @@ fn with_no_home_nothing_is_written_relative_to_the_cwd() {
 
 #[test]
 fn with_no_home_debug_names_the_missing_variable() {
-    // `--debug` exists to say what is wrong; an empty SPEND section would be
+    // `--doctor` exists to say what is wrong; an empty SPEND section would be
     // the useless answer the user already had.
     let dir = TempDir::new().unwrap();
-    let out = run_without_home(&["--debug"], "", dir.path(), &[]);
+    let out = run_without_home(&["--doctor"], "", dir.path(), &[]);
 
     // Scoped to the SPEND section. A bare `contains("$HOME")` over the whole
     // report is satisfied by the `user  using defaults  <no $HOME>` row in CONFIG
@@ -2277,8 +2346,8 @@ fn with_no_home_the_caps_hook_stays_silent() {
 }
 
 #[test]
-fn debug_reports_a_hostile_config_without_obeying_it() {
-    // `--debug` is the fourth of the five filter surfaces. Two of the values
+fn doctor_reports_a_hostile_config_without_obeying_it() {
+    // `--doctor` is the fourth of the five filter surfaces. Two of the values
     // below land in two *different* sections of the report (EFFECTIVE LAYOUT
     // and the spend gate table), which is exactly why the filter is one sweep
     // over the assembled report rather than a call at each write: both were
@@ -2327,7 +2396,7 @@ fn debug_reports_a_hostile_config_without_obeying_it() {
     // covered by the report-wide sweep.
     let repo = fake_repo(&serde_json::json!({ "projectName": format!("{esc}[2Jowned") }).to_string());
 
-    let out = run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]);
+    let out = run_in(&["--doctor"], "", Some(home.path()), Some(repo.path()), &[]);
 
     let report = stdout(&out);
     // SAMPLE RENDER is renderer output and legitimately carries SGR codes, so
@@ -2361,7 +2430,7 @@ fn debug_reports_a_hostile_config_without_obeying_it() {
 }
 
 #[test]
-fn a_config_cannot_forge_lines_in_the_debug_report() {
+fn a_config_cannot_forge_lines_in_the_doctor_report() {
     // The **newline** attack, which needs no escape at all and which the
     // report-wide sweep cannot stop: that sweep exempts `\n` because the report
     // is many lines, so a dynamic value carrying one forges a line — or a whole
@@ -2382,7 +2451,7 @@ fn a_config_cannot_forge_lines_in_the_debug_report() {
         .to_string(),
     );
 
-    let out = run_in(&["--debug"], "", Some(home.path()), None, &[]);
+    let out = run_in(&["--doctor"], "", Some(home.path()), None, &[]);
     let report = stdout(&out);
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
 
@@ -2413,7 +2482,7 @@ fn a_config_cannot_forge_lines_in_the_debug_report() {
 /// names* — a smaller surface, but a new one, and the report's row filter is
 /// what has to cover it.
 #[test]
-fn a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report() {
+fn a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_doctor_report() {
     let home = Home::new(&safe_config());
     let repo = fake_repo(
         &serde_json::json!({
@@ -2424,7 +2493,7 @@ fn a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report() {
         .to_string(),
     );
 
-    let report = stdout(&run_in(&["--debug"], "", Some(home.path()), Some(repo.path()), &[]));
+    let report = stdout(&run_in(&["--doctor"], "", Some(home.path()), Some(repo.path()), &[]));
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
 
     let forged = diagnostics.lines().find(|l| l.contains("FORGED")).expect("the key is still reported");
@@ -2457,12 +2526,12 @@ fn a_typo_is_reported_under_its_layer_and_changes_nothing_about_the_bar() {
         "a key the binary does not know changed the bar",
     );
 
-    let report = stdout(&run(&typo, &["--debug"], "", &[]));
+    let report = stdout(&run(&typo, &["--doctor"], "", &[]));
     let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
     let line = layers
         .lines()
         .find(|l| l.contains("powerlin`"))
-        .unwrap_or_else(|| panic!("--debug never named the typo:\n{layers}"));
+        .unwrap_or_else(|| panic!("--doctor never named the typo:\n{layers}"));
     assert!(line.contains('\u{26a0}'), "a typo in a closed block is a warning: {line:?}");
     assert!(line.contains("did you mean `powerline`?"), "and it says what was probably meant: {line:?}");
 
@@ -2476,15 +2545,15 @@ fn a_typo_is_reported_under_its_layer_and_changes_nothing_about_the_bar() {
 
 /// **Criterion 5.**
 #[test]
-fn debug_reports_what_a_zero_gauge_width_became() {
+fn doctor_reports_what_a_zero_gauge_width_became() {
     let home = Home::new(r#"{ "spend": { "refreshMinutes": 0, "show": "never" }, "gauge": { "width": 0 } }"#);
 
-    let report = stdout(&run(&home, &["--debug"], "", &[]));
+    let report = stdout(&run(&home, &["--doctor"], "", &[]));
     let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
     let line = layers
         .lines()
         .find(|l| l.contains("gauge.width"))
-        .unwrap_or_else(|| panic!("--debug never reported the coercion:\n{layers}"));
+        .unwrap_or_else(|| panic!("--doctor never reported the coercion:\n{layers}"));
     assert!(line.contains("0 \u{2192} 10"), "it says what the value became: {line:?}");
     assert!(!line.contains('\u{26a0}'), "a coercion is a note, not a warning: {line:?}");
 
@@ -2505,15 +2574,15 @@ fn an_unused_palette_entry_is_a_note_under_its_layer_and_never_an_error() {
     let home =
         Home::new(r#"{ "spend": { "refreshMinutes": 0, "show": "never" }, "palette": { "nobodys": [1, 2, 3] } }"#);
 
-    let out = run(&home, &["--debug"], "", &[]);
-    assert!(out.status.success(), "a palette key made --debug fail: {:?}", out.status.code());
+    let out = run(&home, &["--doctor"], "", &[]);
+    assert!(out.status.success(), "a palette key made --doctor fail: {:?}", out.status.code());
     let report = stdout(&out);
     let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
 
     let line = layers
         .lines()
         .find(|l| l.contains("palette.nobodys"))
-        .unwrap_or_else(|| panic!("--debug never mentioned the unused palette key:\n{layers}"));
+        .unwrap_or_else(|| panic!("--doctor never mentioned the unused palette key:\n{layers}"));
     assert!(line.contains('\u{b7}'), "an open-map key is a note: {line:?}");
     assert!(!line.contains('\u{26a0}'), "an open-map key must never warn — it is legal: {line:?}");
     assert!(line.contains("is not a key this binary reads"), "{line:?}");
@@ -2523,7 +2592,7 @@ fn an_unused_palette_entry_is_a_note_under_its_layer_and_never_an_error() {
         r#"{ "spend": { "refreshMinutes": 0, "show": "never" },
              "palette": { "mine": [1, 2, 3] }, "defaultFg": "mine" }"#,
     );
-    let report = stdout(&run(&used, &["--debug"], "", &[]));
+    let report = stdout(&run(&used, &["--doctor"], "", &[]));
     assert!(!report.contains("palette.mine"), "a colour something uses was reported as unused:\n{report}");
 }
 
@@ -2549,8 +2618,8 @@ fn findings_change_neither_the_render_nor_the_exit_code() {
         assert_eq!(stdout(&dirty), stdout(&tidy), "{args:?} rendered differently");
     }
 
-    let report = run(&messy, &["--debug"], "", &[]);
-    assert!(report.status.success(), "--debug exited {:?} over advisory findings", report.status.code());
+    let report = run(&messy, &["--doctor"], "", &[]);
+    assert!(report.status.success(), "--doctor exited {:?} over advisory findings", report.status.code());
 
     // Every finding is present — a validator that stopped at the first would
     // send the user round the loop once per typo.
@@ -2563,12 +2632,12 @@ fn findings_change_neither_the_render_nor_the_exit_code() {
 
 /// A finding's key names cannot forge a row or a section header.
 ///
-/// The sibling of `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report`,
+/// The sibling of `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_doctor_report`,
 /// for the second thing that now prints user-controlled text into this section.
-/// A JSON key may contain a newline, and `--debug` is read precisely by someone
+/// A JSON key may contain a newline, and `--doctor` is read precisely by someone
 /// trying to work out what is wrong.
 #[test]
-fn a_findings_key_name_cannot_forge_lines_in_the_debug_report() {
+fn a_findings_key_name_cannot_forge_lines_in_the_doctor_report() {
     let home = Home::new(
         &serde_json::json!({
             "spend": { "refreshMinutes": 0, "show": "never" },
@@ -2578,7 +2647,7 @@ fn a_findings_key_name_cannot_forge_lines_in_the_debug_report() {
         .to_string(),
     );
 
-    let report = stdout(&run(&home, &["--debug"], "", &[]));
+    let report = stdout(&run(&home, &["--doctor"], "", &[]));
     let diagnostics = report.split("SAMPLE RENDER").next().unwrap();
 
     let starts_with = |needle: &str| diagnostics.lines().filter(|l| l.trim_start().starts_with(needle)).count();
@@ -2602,7 +2671,7 @@ fn a_config_the_binary_understands_adds_no_findings_to_the_report() {
             .to_string(),
     ] {
         let home = Home::new(&config);
-        let report = stdout(&run(&home, &["--debug"], "", &[]));
+        let report = stdout(&run(&home, &["--doctor"], "", &[]));
         let layers = report.split("\nCLAUDE WIRING").next().expect("split always yields one");
         assert!(!layers.contains('\u{26a0}'), "a clean config produced a warning:\n{layers}");
         assert!(!layers.contains('\u{b7}'), "a clean config produced a note:\n{layers}");

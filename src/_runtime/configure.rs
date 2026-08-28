@@ -144,7 +144,7 @@ pub(crate) fn run(dry_run: bool, unknown: &[String]) -> Outcome {
     // worked" reported as success is what makes a script wrong later.
     let code = i32::from(!(wrote && seeded));
 
-    // The same rule that governs `--debug`: everything above is drawn from a
+    // The same rule that governs `--doctor`: everything above is drawn from a
     // file this tool does not own — key names, and the `settings.json` path
     // itself — so the assembled report is swept once rather than at each write.
     // The report-keeping variant, because it is deliberately many lines.

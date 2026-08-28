@@ -7,10 +7,10 @@ body:
     attributes:
       value: |
         Thanks for reporting. The fields below are the ones that actually triage
-        a `claude-status` bug — a version and a `--debug` report usually settle
+        a `claude-status` bug — a version and a `--doctor` report usually settle
         it on the first pass.
 
-        `--debug` prints paths and repository names. Redact anything you would
+        `--doctor` prints paths and repository names. Redact anything you would
         rather not publish; it does not change what the report is worth.
 
   - type: input
@@ -45,7 +45,7 @@ body:
         - "--caps-hook"
         - "--configure"
         - "--refresh"
-        - "--debug"
+        - "--doctor"
         - Not sure
     validations:
       required: true
@@ -68,7 +68,7 @@ body:
   - type: textarea
     id: debug
     attributes:
-      label: "`claude-status --debug`"
+      label: "`claude-status --doctor`"
       description: >-
         The relevant part of the report. If you are unsure which part is
         relevant, paste all of it.

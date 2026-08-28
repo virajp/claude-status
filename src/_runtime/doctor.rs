@@ -1,15 +1,15 @@
-//! The spend half of `--debug`, and the reason the subsystem is diagnosable.
+//! The spend half of `--doctor`, and the reason the subsystem is diagnosable.
 //!
 //! **This performs a live, synchronous, foreground fetch.** It does not merely
 //! report the cache, and that is deliberate: on a fresh machine the cache does
 //! not exist, so the first render draws nothing and only *then* spawns the
-//! detached child — whose stdio is `/dev/null`. A passive `--debug` inspecting
+//! detached child — whose stdio is `/dev/null`. A passive `--doctor` inspecting
 //! the cache at that moment could only say "no cache yet", which is precisely
 //! the useless answer the user already had.
 //!
 //! It respects the lock and the backoff but **reports them rather than
 //! silently obeying**, and it bypasses the 60-second dedupe, because a user
-//! typing `--debug` twice wants two answers.
+//! typing `--doctor` twice wants two answers.
 //!
 //! **The token is never printed, at any verbosity.** Only where it was found.
 
@@ -32,7 +32,7 @@ fn field(value: &str) -> String {
 pub fn spend_report(config: &Config, now_ms: i64) -> String {
     let mut out = String::new();
     let spend_config = &config.spend;
-    // `--debug` exists to name what is wrong, so an unresolvable `$HOME` is
+    // `--doctor` exists to name what is wrong, so an unresolvable `$HOME` is
     // reported here rather than silently producing an empty report.
     let Some(path) = cache::path() else {
         let _ = writeln!(out, "  cache    UNAVAILABLE — $HOME is unset, so there is nowhere to cache");

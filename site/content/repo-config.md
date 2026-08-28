@@ -64,7 +64,7 @@ Not merged, not partially honoured — dropped. A repository you cloned cannot
 change how your bar looks, cannot raise your caps, and cannot repaint your
 segments.
 
-And it does not fail silently. `claude-status --debug` names each key it
+And it does not fail silently. `claude-status --doctor` names each key it
 dropped:
 
 ```text
@@ -78,7 +78,7 @@ CONFIG LAYERS (low to high)
 ## No git root, no repo layer
 
 If the directory you are in is not inside a git repository, there is no repo
-root to look under and the layer simply does not exist. `--debug` says so:
+root to look under and the layer simply does not exist. `--doctor` says so:
 
 ```text
 repo     using defaults <no git root>

@@ -31,10 +31,54 @@ const FALLBACK_LINE: &str = "\u{26a1} Claude";
 /// The process entry point. Returns the exit code.
 pub fn run() -> i32 {
     let cli = cli::parse(std::env::args_os(), std::io::stdin().is_terminal());
-    proc::set_narrate(cli.debug);
+    proc::set_narrate(cli.doctor);
+    report_unknown(&cli);
     let Outcome { stdout, code } = dispatch(cli);
     write_stdout(&stdout);
     code
+}
+
+/// Names every argument the parser did not recognise, on **stderr**, and puts
+/// `HELP` after it.
+///
+/// # Why stderr, and why the surface still runs
+///
+/// The parser ignoring what it does not recognise is invariant 3 — Claude Code
+/// invokes the render surfaces, and a stray token there must never cost the
+/// user a bar. Silence was the price of that, and the `--debug` → `--doctor`
+/// rename is what made the price too high: the old spelling parses as an
+/// unknown argument, so without this a user who kept `--debug` in their
+/// `settings.json` got a bar with narration quietly switched off, and a user
+/// who typed `claude-status --debug` got the help text with **nothing saying
+/// why**. Naming it on stderr costs the invariant nothing: stdout is
+/// byte-for-byte what it was, and the exit code is unchanged.
+///
+/// # Why `Mode::Help` is carved out
+///
+/// It is already putting `HELP` on stdout. Both streams land in the same
+/// terminal, so a second copy is the same fifty lines twice — and the
+/// motivating case, someone typing `claude-status --debug` at a prompt, is
+/// exactly that mode.
+///
+/// `--configure` is **not** carved out. It refuses over the same list and says
+/// so with an exit code, which is a different fact from what the flag was; the
+/// two lines say different things and it is the one surface where being told
+/// twice is cheap next to an unundoable overwrite.
+fn report_unknown(cli: &Cli) {
+    if cli.unknown.is_empty() {
+        return;
+    }
+    // `{:?}` on the token, never `{}`. It is argv — the most directly
+    // attacker-nameable input this binary has — and the same rule `proc`'s
+    // narration follows for a program name: `Debug` escapes what `Display`
+    // hands straight to the terminal. `diag` then filters what escaping alone
+    // leaves, one line at a time.
+    for arg in &cli.unknown {
+        crate::_shared::diag(&format!("claude-status: unrecognised argument {arg:?} (run --help)"));
+    }
+    if cli.mode != Mode::Help {
+        crate::_shared::diag_report(HELP);
+    }
 }
 
 /// One invocation's whole answer.
@@ -63,12 +107,12 @@ fn dispatch(cli: Cli) -> Outcome {
         Mode::Version => format!("{VERSION}\n").into(),
         Mode::Help => HELP.to_string().into(),
         Mode::MissingFlag => format!("{MISSING_FLAG}\n").into(),
-        Mode::Statusline => render_statusline(cli.debug).into(),
+        Mode::Statusline => render_statusline(cli.doctor).into(),
         Mode::Subagent => render_subagent().into(),
         Mode::Refresh => refresh_spend().into(),
         Mode::CapsHook => caps_hook().into(),
         Mode::Configure => configure::run(cli.dry_run, &cli.unknown),
-        Mode::Debug => debug_report().into(),
+        Mode::Doctor => doctor_report().into(),
     }
 }
 
@@ -87,9 +131,9 @@ fn refresh_spend() -> String {
 }
 
 /// Renders the main bar, catching a panic into the fallback line.
-fn render_statusline(debug: bool) -> String {
+fn render_statusline(doctor: bool) -> String {
     let narrate = |msg: &str| {
-        if debug {
+        if doctor {
             crate::_shared::diag(&format!("claude-status: {msg}"));
         }
     };
@@ -289,19 +333,19 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
     verdict.text().map(str::to_string)
 }
 
-/// The `--debug` report: what this binary sees.
+/// The `--doctor` report: what this binary sees.
 ///
 /// The `spend` cycle adds the spend section, which
 /// is the part users actually reach for. This is the config, wiring, layout and
 /// git half.
-fn debug_report() -> String {
+fn doctor_report() -> String {
     // The spend section is produced by a closure rather than called inline so
     // a test can assemble the report without performing a live fetch — the
     // whole point of that section is that it reaches the network.
-    debug_report_with(&|config| crate::_runtime::debug::spend_report(config, time::now_ms()))
+    doctor_report_with(&|config| crate::_runtime::doctor::spend_report(config, time::now_ms()))
 }
 
-/// One dynamic value in the `--debug` report.
+/// One dynamic value in the `--doctor` report.
 ///
 /// `render::sanitize` — the **row** filter, which strips newlines too. The
 /// report's own sweep exempts `\n` because the report is many lines, so a value
@@ -336,7 +380,7 @@ fn continuation(state: &str, message: &str) -> String {
     }
 }
 
-fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
+fn doctor_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "claude-status {VERSION}");
 
@@ -358,7 +402,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // A `None` path means two different things: the **embedded** layer has
         // no file by definition, while the user or repo layer has none because
         // there was no home or no git root to build one from. Printing
-        // `<embedded>` for the second is how `--debug` outside a repo once
+        // `<embedded>` for the second is how `--doctor` outside a repo once
         // reported `repo  not found  <embedded>` — a **historical** bug, fixed;
         // `not found` is not a state string this binary emits any more (see
         // [`layers::LayerState::label`]).
@@ -400,7 +444,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
         // projectName only` repeats the suffix. Cosmetic only: `field` strips
         // the control characters, so no key can leave this line, forge a row or
         // forge a section header — which is what
-        // `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_debug_report`
+        // `a_repo_layers_ignored_key_names_cannot_forge_lines_in_the_doctor_report`
         // pins. Quoting each key would remove the ambiguity and cost every
         // ordinary reader clarity for a case nobody hits by accident.
         if !source.ignored.is_empty() {
@@ -462,7 +506,7 @@ fn debug_report_with(spend_section: &dyn Fn(&Config) -> String) -> String {
     let _ = writeln!(out, "\nSPEND");
     out.push_str(&spend_section(&config));
 
-    // **The one place `--debug` output is filtered** (invariant 4: only the
+    // **The one place `--doctor` output is filtered** (invariant 4: only the
     // renderer emits escapes). Everything assembled above is diagnostic text drawn from untrusted
     // sources — the config `lines` entries, the spend gate table and its
     // symbols, the `settings.json` command, the endpoint URL, the plan tag,
@@ -502,7 +546,7 @@ fn describe_entry(entry: &SegmentEntry) -> String {
 /// `settings.json` after an upgrade is visible rather than merely puzzling.
 ///
 /// All three are always reported, `<not set>` included — HELP tells the user to
-/// run `--debug` to see what is wired, and a key omitted from the report is
+/// run `--doctor` to see what is wired, and a key omitted from the report is
 /// indistinguishable from a key the report does not know about.
 fn claude_wiring() -> Vec<String> {
     let Some(home) = home() else {
@@ -550,7 +594,7 @@ fn claude_wiring() -> Vec<String> {
 /// substring checks, and that is not tidiness. This report exists to tell a
 /// user what `--configure` is looking at; the two had already drifted by the
 /// *order* of the match — `--caps-hook claude-status` was ours here and
-/// somebody else's there — so `--debug` would have shown a hook that
+/// somebody else's there — so `--doctor` would have shown a hook that
 /// `--configure` was about to wire a second copy alongside.
 fn caps_hook_command(value: &serde_json::Value) -> Option<&str> {
     value
@@ -565,7 +609,7 @@ fn caps_hook_command(value: &serde_json::Value) -> Option<&str> {
         .and_then(serde_json::Value::as_str)
 }
 
-/// Representative facts for the sample render, so `--debug` shows a full bar
+/// Representative facts for the sample render, so `--doctor` shows a full bar
 /// rather than one made of placeholders.
 fn sample_facts() -> MainFacts {
     let now = time::now_ms();
@@ -622,7 +666,7 @@ mod tests {
 
     /// A `Cli` for a mode that takes no modifiers.
     fn plain(mode: Mode) -> Cli {
-        Cli { mode, debug: false, dry_run: false, unknown: Vec::new() }
+        Cli { mode, doctor: false, dry_run: false, unknown: Vec::new() }
     }
 
     #[test]
@@ -632,8 +676,8 @@ mod tests {
         assert_eq!(out.stdout, expected);
         assert_eq!(out.code, 0);
 
-        let with_debug = dispatch(Cli { mode: Mode::Version, debug: true, dry_run: false, unknown: Vec::new() });
-        assert_eq!(with_debug.stdout, expected, "--debug must not decorate the version");
+        let with_doctor = dispatch(Cli { mode: Mode::Version, doctor: true, dry_run: false, unknown: Vec::new() });
+        assert_eq!(with_doctor.stdout, expected, "--doctor must not decorate the version");
     }
 
     #[test]
@@ -686,7 +730,7 @@ mod tests {
 
     #[test]
     fn the_wiring_report_covers_the_caps_hook_as_well_as_the_two_surfaces() {
-        // HELP tells users to run --debug "to see what is currently wired", and
+        // HELP tells users to run --doctor "to see what is currently wired", and
         // names three keys. A report covering two of them cannot answer that.
         let (_home, rows) = wiring_for(serde_json::json!({
             "statusLine": { "type": "command", "command": "/bin/claude-status --statusline" },
@@ -754,11 +798,11 @@ mod tests {
         assert!(report.contains("context-caps.js"), "a stale hook must be visible: {report}");
     }
 
-    /// `--debug` reports the wiring `--configure` is about to change, so the
+    /// `--doctor` reports the wiring `--configure` is about to change, so the
     /// two have to agree on what "ours" means. They did not: this used to be a
     /// second pair of substring checks, unordered, so `--caps-hook
     /// claude-status` read as ours here and as somebody else's there — and
-    /// `--configure` would have appended a second copy beside a hook `--debug`
+    /// `--configure` would have appended a second copy beside a hook `--doctor`
     /// had just shown the user as already wired.
     #[test]
     fn what_counts_as_our_hook_is_the_same_answer_the_writer_gives() {
@@ -812,12 +856,12 @@ mod tests {
     }
 
     #[test]
-    fn the_debug_report_names_every_section() {
+    fn the_doctor_report_names_every_section() {
         // Reads `$HOME` indirectly, through the config layers.
         let _env = crate::_shared::env_lock();
         // Stubbed rather than live: `spend_report` fetches, and no unit test
         // may reach the spend endpoint.
-        let out = debug_report_with(&|_| "  stubbed\n".to_string());
+        let out = doctor_report_with(&|_| "  stubbed\n".to_string());
         for section in ["CONFIG LAYERS", "CLAUDE WIRING", "EFFECTIVE LAYOUT", "GIT", "SPEND", "SAMPLE RENDER"] {
             assert!(out.contains(section), "missing {section} in:\n{out}");
         }

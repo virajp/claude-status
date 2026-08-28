@@ -23,7 +23,7 @@ pub const DEDUPE_MS: i64 = 60_000;
 /// The ceiling on exponential backoff.
 pub const MAX_BACKOFF_MS: i64 = 6 * 60 * 60 * 1000;
 
-/// What one refresh attempt did, for `--debug` to narrate.
+/// What one refresh attempt did, for `--doctor` to narrate.
 #[derive(Debug, PartialEq)]
 pub enum Outcome {
     Updated,
@@ -40,7 +40,7 @@ pub enum Outcome {
     LockUnavailable,
 }
 
-/// What one refresh attempt saw, stage by stage, for `--debug` to narrate.
+/// What one refresh attempt saw, stage by stage, for `--doctor` to narrate.
 ///
 /// It carries **no token**, and cannot gain one by accident: the only
 /// credential-derived fields are the source and the plan tag.
@@ -54,7 +54,7 @@ pub struct Report {
     pub plan: Option<String>,
     /// The HTTP status, when a response arrived at all.
     pub status: Option<u16>,
-    /// The parsed 200 body, so `--debug` can show which extraction rung hit.
+    /// The parsed 200 body, so `--doctor` can show which extraction rung hit.
     pub body: Option<Value>,
     /// Wall time for the whole attempt — lock and credentials included.
     pub elapsed_ms: u128,
@@ -64,7 +64,7 @@ pub struct Report {
 
 /// Runs a refresh, start to finish, discarding what each stage saw.
 ///
-/// `bypass_dedupe` is what `--debug` passes: a user typing it twice wants two
+/// `bypass_dedupe` is what `--doctor` passes: a user typing it twice wants two
 /// answers, where the background child wants to stay off the endpoint.
 pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: bool) -> Outcome {
     run_reported(cache_path, refresh_minutes, now_ms, bypass_dedupe).outcome
@@ -72,7 +72,7 @@ pub fn run(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: 
 
 /// The same refresh, keeping every stage's observation.
 ///
-/// `--debug` needs this rather than [`run`] because the useful diagnostic is
+/// `--doctor` needs this rather than [`run`] because the useful diagnostic is
 /// *where* the path stopped, and a bare [`Outcome`] cannot say which
 /// extraction rung matched or where the token came from.
 pub fn run_reported(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass_dedupe: bool) -> Report {

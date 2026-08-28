@@ -9,12 +9,16 @@ pub mod time;
 
 /// **The stderr chokepoint** — the fifth of the five filter surfaces.
 ///
-/// Everything this binary writes to stderr goes through here, sanitized. stderr
+/// Every **dynamic** line this binary writes to stderr goes through here,
+/// sanitized. stderr
 /// is a terminal like stdout, and the diagnostics carry exactly the things most
-/// likely to be hostile: a cwd, a branch, a config value, a regex out of a
+/// likely to be hostile: a cwd, a branch, a config value, an argv token, a regex out of a
 /// config file, a segment id, or a panic message quoting any of them.
 ///
-/// `narrate` in [`proc`] is the `--debug`-gated caller; this is the one that
+/// [`diag_report`] is the other half of the chokepoint, for static multi-line
+/// text. Between them they are still the only two writers.
+///
+/// `narrate` in [`proc`] is the `--doctor`-gated caller; this is the one that
 /// always writes. Callers pass the whole line, prefix included — the prefixes
 /// are static, so filtering them costs nothing and leaves one rule instead of
 /// two. The chokepoint rule exists because the per-write alternative was tried and missed
@@ -29,6 +33,23 @@ pub mod time;
 /// is worth less than a diagnostic a reader can trust the boundaries of.
 pub fn diag(line: &str) {
     eprintln!("{}", text::sanitize(line));
+}
+
+/// [`diag`] for text that is deliberately many lines — today, `HELP` after an
+/// unrecognised argument.
+///
+/// The same chokepoint with the *report* filter instead of the row one. The
+/// pair mirrors [`text::sanitize`] and [`text::sanitize_report`] and exists for
+/// the same reason those two do: `HELP` is fifty lines, and the row filter
+/// would collapse it onto one.
+///
+/// **Static text only.** Keeping newlines is exactly what [`diag`]'s row filter
+/// refuses to do, and it refuses for a reason — a value carrying one could
+/// forge a second `claude-status:` line on stderr. So the argv tokens that
+/// *provoke* this help go through [`diag`] one line at a time; only the
+/// constant that follows them comes through here.
+pub fn diag_report(text: &str) {
+    eprint!("{}", text::sanitize_report(text));
 }
 
 /// Serialises the tests that mutate the process environment, and puts back

@@ -1,4 +1,4 @@
-//! What `--debug` could not make sense of, per layer.
+//! What `--doctor` could not make sense of, per layer.
 //!
 //! **Advisory and nothing else.** Nothing here reaches the render path, nothing
 //! it finds changes a byte of stdout, and nothing it finds moves the exit code.
@@ -60,7 +60,7 @@ use crate::config::{Config, DEFAULT_GAUGE_EMPTY, DEFAULT_GAUGE_FILLED, resolved_
 /// The generated schema, compiled in.
 ///
 /// The same bytes `schemas/claude-status.schema.json` holds and an editor
-/// fetches — so "what `--debug` calls a typo" and "what your editor underlines"
+/// fetches — so "what `--doctor` calls a typo" and "what your editor underlines"
 /// are one answer by construction. `tests/schema.rs` holds that file to being
 /// what the types generate, which closes the loop: types → schema → validator.
 const SCHEMA_JSON: &str = include_str!("../../../schemas/claude-status.schema.json");
@@ -78,7 +78,7 @@ pub enum Finding {
 }
 
 impl Finding {
-    /// The line `--debug` prints, without indentation.
+    /// The line `--doctor` prints, without indentation.
     ///
     /// The marker is part of the text rather than a column of its own: `⚠` and
     /// `·` are the whole difference between "you have a bug" and "here is
@@ -170,7 +170,7 @@ fn color_specs(config: &Config) -> Vec<&Value> {
 pub fn findings(layer: &Value, context: &Context) -> Vec<Finding> {
     let Ok(schema) = serde_json::from_str::<Value>(SCHEMA_JSON) else {
         // Unreachable — the file is `include_str!`d and a test parses it — but
-        // a `--debug` that panicked over its own diagnostics would be worse
+        // a `--doctor` that panicked over its own diagnostics would be worse
         // than one that skips them.
         return Vec::new();
     };
@@ -310,7 +310,7 @@ impl Walker<'_> {
     ///
     /// Same-document only, and deliberately: the generated schema has no other
     /// kind, and a validator that could be made to fetch a URL by a config file
-    /// is a validator that reaches the network from `--debug`.
+    /// is a validator that reaches the network from `--doctor`.
     fn resolve(&self, node: &Value) -> Value {
         let Some(reference) = node.get("$ref").and_then(Value::as_str) else {
             return node.clone();
@@ -552,14 +552,14 @@ mod tests {
     }
 
     /// `$schema` is a pointer a correctly written file carries. Reporting it
-    /// would put a warning in `--debug` for every file `--configure` wrote.
+    /// would put a warning in `--doctor` for every file `--configure` wrote.
     #[test]
     fn the_schema_pointer_is_not_an_unknown_key() {
         assert_eq!(lines(json!({ "$schema": "https://example.invalid/s.json" })), Vec::<String>::new());
     }
 
     /// A value of the wrong *shape* is not this module's business — the
-    /// deserializers already degrade it, and `--debug`'s job is to say what
+    /// deserializers already degrade it, and `--doctor`'s job is to say what
     /// they did, not to duplicate the schema an editor already applies.
     #[test]
     fn a_block_that_is_not_an_object_is_not_walked_into() {

@@ -127,7 +127,7 @@ The repo layer is not a form, because it takes one key. Write this at
 
 `$schema` is optional and buys editor completion; `projectName` is the only key
 a repo layer may set, and every other key in that file is ignored and named by
-`--debug`. [Per-repo](@/repo-config.md) has the rest.
+`--doctor`. [Per-repo](@/repo-config.md) has the rest.
 
 `projectName` appears in the generator because it is in the schema, and the
 generator writes your **user** config — so this is the one field to leave alone
@@ -146,7 +146,7 @@ which is when you are most likely to be here.
 To see the real thing, save the file and run:
 
 ```sh
-claude-status --debug
+claude-status --doctor
 ```
 
 which prints the resolved config, every layer that fed it, and the bar itself.

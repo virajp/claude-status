@@ -55,7 +55,7 @@ pub const COMMAND: &str = "claude-status";
 ///
 /// It matters far more than it looks. A machine carrying it that is only
 /// matched on `--caps-hook` ends up with *both* wired, and the actuator fires
-/// twice per tool call. `--debug` already knows both forms
+/// twice per tool call. `--doctor` already knows both forms
 /// (`app.rs::caps_hook_command`); so must the writer.
 ///
 /// **The directory is part of the match, not decoration.** This is the one
@@ -633,7 +633,7 @@ mod tests {
     ///
     /// A hook wired as `/Users/me/bin/statusline --caps-hook` — a *renamed*
     /// copy of this binary, or a hand-written line — was ours under the old
-    /// unordered substring rule and is `Foreign` now. So `--debug` reports
+    /// unordered substring rule and is `Foreign` now. So `--doctor` reports
     /// `<not set>`, `--configure` appends a second group beside it, and the
     /// actuator fires twice per tool call, silently.
     ///
@@ -643,7 +643,7 @@ mod tests {
     /// only wiring path left is `--configure`, which writes the bare name.
     /// Reaching this state now takes a hand edit. What the
     /// narrowing buys is that the report and the writer agree on the same
-    /// definition — the divergence that had `--debug` showing a hook as wired
+    /// definition — the divergence that had `--doctor` showing a hook as wired
     /// while `--configure` was about to duplicate it — and that is worth more
     /// than a case reachable only by renaming the binary.
     ///

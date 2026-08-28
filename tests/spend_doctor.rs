@@ -1,9 +1,9 @@
-//! `--debug` end to end: the built binary as a subprocess, fetching for real
+//! `--doctor` end to end: the built binary as a subprocess, fetching for real
 //! against a stub on loopback.
 //!
 //! # The spend hazard
 //!
-//! **No test here may reach the real endpoint**, and `--debug` *fetches* — that
+//! **No test here may reach the real endpoint**, and `--doctor` *fetches* — that
 //! is the whole point of the step. Two things make it safe, and both are
 //! required: `CLAUDE_STATUS_SPEND_URL` points at a stub or a closed port, and
 //! the fake `$HOME` is seeded with a credentials file. The second matters
@@ -62,7 +62,7 @@ fn config_with(show: &str) -> String {
     format!(r#"{{ "projectName": "debug-fixture", "lines": [["model", "spend"]], "spend": {{ "show": "{show}" }} }}"#)
 }
 
-/// Runs `--debug`, returning both streams separately.
+/// Runs `--doctor`, returning both streams separately.
 fn debug(home: &TempDir, url: &str) -> Output {
     debug_with_path(home, url, &std::env::var("PATH").unwrap_or_default())
 }
@@ -85,7 +85,7 @@ fn debug_with_path(home: &TempDir, url: &str, path: &str) -> Output {
     assert_ne!(url, claude_status::spend::http::DEFAULT_URL, "this would reach the real spend endpoint");
 
     Command::new(BINARY)
-        .arg("--debug")
+        .arg("--doctor")
         .env_clear()
         .env("HOME", home.path())
         .env("CLAUDE_STATUS_SPEND_CACHE", home.path().join(".cache").join("claude-status").join("spend.json"))
@@ -202,7 +202,7 @@ fn plain_http_claims_no_trust_root_source() {
 #[test]
 fn on_an_empty_cache_debug_fetches_and_leaves_one_behind() {
     // The case the whole step exists for: a first install, where a passive
-    // --debug could only have said "no cache yet".
+    // --doctor could only have said "no cache yet".
     let home = home(&config_with("always"), "team");
     let out = debug(&home, &stub(200, "OK", MODERN));
     let (stdout, _) = streams(&out);
@@ -390,7 +390,7 @@ fn an_unwritable_cache_directory_is_reported_as_a_lock_that_could_not_be_created
 
 #[test]
 fn debug_bypasses_the_sixty_second_dedupe() {
-    // A user typing --debug twice wants two answers.
+    // A user typing --doctor twice wants two answers.
     let home = home(&config_with("always"), "team");
     let url = stub(200, "OK", MODERN);
 
