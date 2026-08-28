@@ -435,6 +435,46 @@ fn the_package_version_equals_the_crate_version() {
     );
 }
 
+/// **Keywords are the only way anyone finds this package by searching**, and
+/// they are trivially lost: the release task rewrites the manifest's `version`
+/// with `sed` and copies everything else, so a key deleted here is a key gone
+/// from the registry with nothing failing.
+///
+/// The two names the package is genuinely searched by are required — the tool's
+/// own name is in `name` already, but `claude-code` and `statusline` are what a
+/// user types who does not know this exists, which is the whole point.
+///
+/// **The shape assertions are the anti-spam half.** npm lowercases and dedupes
+/// nothing for you, and a keyword list that grows a duplicate, a capital or a
+/// phrase-with-spaces is one somebody pasted rather than chose.
+#[test]
+fn the_package_carries_the_keywords_it_is_searched_by() {
+    let manifest: serde_json::Value = serde_json::from_str(&read("npm/package.json")).expect("npm/package.json is JSON");
+    let keywords: Vec<&str> = manifest["keywords"]
+        .as_array()
+        .unwrap_or_else(|| panic!("npm/package.json has no `keywords` array — the package is unfindable by search"))
+        .iter()
+        .map(|k| k.as_str().expect("every keyword is a string"))
+        .collect();
+
+    for needed in ["claude-code", "statusline", "powerline"] {
+        assert!(keywords.contains(&needed), "`{needed}` is how this package is found: {keywords:?}");
+    }
+
+    let unique: BTreeSet<&str> = keywords.iter().copied().collect();
+    assert_eq!(unique.len(), keywords.len(), "a keyword is listed twice: {keywords:?}");
+    for keyword in &keywords {
+        assert!(!keyword.is_empty(), "an empty keyword");
+        assert!(
+            keyword.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "`{keyword}` is not lowercase-and-hyphens, which is what npm search actually matches",
+        );
+    }
+    // A list long enough to be spam is a list nobody curated. npm itself caps
+    // the useful count well below this.
+    assert!(keywords.len() <= 20, "{} keywords is a paste, not a choice", keywords.len());
+}
+
 /// **The platform gate is derived, not transcribed.**
 ///
 /// `os`/`cpu` in the manifest are what makes npm refuse with `EBADPLATFORM`

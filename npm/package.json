@@ -1,7 +1,19 @@
 {
   "name": "@virajp.dev/claude-status",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "description": "Installer for claude-status, the Claude Code powerline status line. Downloads the release binary against a pinned digest; carries no binary itself.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "statusline",
+    "status-line",
+    "statusbar",
+    "powerline",
+    "cli",
+    "terminal",
+    "macos"
+  ],
   "license": "MIT",
   "homepage": "https://claude-status.virajp.dev",
   "repository": {
