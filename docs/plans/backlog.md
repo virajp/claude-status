@@ -16,11 +16,12 @@ from re-discovering the same ground.
 
 ## Pending
 
-**These three came out of finished cycles, not from anybody raising them.** Each
-was deferred deliberately inside a plan that then closed `status: done`, which
-is exactly how they became invisible: nothing is half-built, no cycle is
-waiting, and a reader checking this file on 2026-08-27 would have been told
-there was nothing pending. Moved here so the next planning pass sees them.
+**Three of these four came out of finished cycles, not from anybody raising
+them.** The fourth — the flaky test — came out of a release it broke. Each was
+deferred deliberately inside a plan that then closed `status: done`, which is
+exactly how they became invisible: nothing is half-built, no cycle is waiting,
+and a reader checking this file on 2026-08-27 would have been told there was
+nothing pending. Moved here so the next planning pass sees them.
 
 **Each entry carries its evidence rather than linking to the plan it came
 from.** Those plans were archived on 2026-08-27 into `docs/plans/archived/`,
@@ -104,6 +105,41 @@ certificate store rather than the macOS keychain, so "TLS needs nothing" is a
 claim a Linux plan must re-check rather than inherit.
 
 ---
+
+### The release-blocking flaky test
+
+**Surfaced by** the archived `2026-08-27-npm-installer` cycle, which did not
+cause it and did not fix it. Raised here because it **cost a release**, not
+because anyone was looking for it.
+
+`_shared::proc::tests::the_deadline_is_shared_not_per_command` gives a
+`Deadline::in_ms(300)` to a `sleep 0.2`, so **100 ms covers process spawn**. On
+`v1.1.2`'s release run a shared macOS runner lost that race, `test` went red,
+and `publish`, `bump-tap` and `publish-npm` were all skipped. A re-run passed
+with no code change.
+
+**Already true, and measured rather than argued:**
+
+- **It predates the cycle that found it.** `src/_shared/proc.rs` is untouched by
+  all seven of that cycle's commits.
+- **The cost is not the minute it wastes.** A red release run reads as "the
+  release failed" — the tag is pushed, the version is burned, and the person
+  looking has to read a log to learn it was a coin flip. On a tag that had
+  already published, that reading is wrong in the expensive direction.
+- **It is one of three timing tests in that module**, and the neighbours are not
+  equivalent: `a_large_output_does_not_deadlock_on_a_full_pipe` asserts a kill
+  happened and `an_already_expired_deadline_spawns_nothing` uses a zero deadline
+  — neither races a real sleep against a real budget.
+
+**What it is actually testing is worth keeping**: that a `Deadline` is shared
+across commands rather than restarting per command. That is a property of the
+arithmetic, not of the wall clock, and the open question is whether it can be
+asserted without spawning anything at all — which would remove the flake rather
+than widen it.
+
+**Do not just raise the deadline.** A wider margin is a slower test that fails
+less often; it is still a wall-clock race on shared hardware, and the next
+runner contention finds it again.
 
 ## Graduated
 

@@ -19,22 +19,12 @@ held is the thing that drifted.
 
 ## Active
 
-| Folder                                       | Plans | What it changes                                           |
-| -------------------------------------------- | ----- | --------------------------------------------------------- |
-| [npm-installer](./2026-08-27-npm-installer/) | 1     | `npx` as a third install channel, beside the tap and mise |
+**None.** `npm-installer` landed on 2026-08-27 and was archived the same day —
+it is listed under [Archived](#archived) below.
 
-**`npm-installer` reopens two decisions the `distribution` folder closed** —
-`drop-npm` and the deleted download path — which is the whole reason it is a
-plan rather than a commit. Its
-[index](./2026-08-27-npm-installer/index.md#this-is-a-third-channel-not-a-replacement)
-carries the table of what reverses and what specifically changed to allow it. It
-has **two prerequisites outside this repository**: the npm scope, which
-[the decision record](../decisions.md) says nobody had yet claimed, and Trusted
-Publishing.
-
-The four folders that were here before it — `config-and-cli`, `distribution`,
-`website` and `spec-retirement`, ten plans between them — all landed and were
-archived on 2026-08-27. They are listed under [Archived](#archived) below.
+The four folders before it — `config-and-cli`, `distribution`, `website` and
+`spec-retirement`, ten plans between them — all landed and were archived on
+2026-08-27 too.
 
 `retire-the-spec` was always last, because every other plan wrote into the
 document it deletes. It ran on 2026-08-26/27 and the document is gone; what it
@@ -108,6 +98,24 @@ and are **gitignored** — the record is kept locally, out of the repo. Nothing
 below links, because in a fresh clone there is nothing to link to; the merge
 commit is the durable pointer.
 
+### Archived 2026-08-27 — npm-installer
+
+One plan, `status: done`. Seven commits, all pushed straight to `main`, so each
+carries a plain sha rather than a merge.
+
+| Plan                                        | Requires | Landed                         |
+| ------------------------------------------- | -------- | ------------------------------ |
+| `2026-08-27-npm-installer/01-npm-installer` | —        | `0648e9a`, then six follow-ups |
+
+The follow-ups are the cycle, not afterthoughts: `372d2ee` (the `EALLOWGIT`
+fix), `fbb20a9` (the rename to `@virajp.dev`), `cc27fce` (a readme in the
+tarball), `3d32fc4` (images to the site, `_headers` made precise), `f788df6`
+(`v1.1.2`) and `f59b8dd` (`v1.1.3`).
+
+**Four of the five gaps it recorded came from one blind spot** — the plan
+verified the installer's logic and never its publish, and `npm publish` is not
+something this repository can execute. The archived plan carries them.
+
 ### Archived 2026-08-27 — the four 2026-08-23 folders
 
 Ten plans, all `status: done` before they moved. Rows are in execution order
@@ -170,9 +178,19 @@ before `distribution/03` ran and was never updated as the releases went out.
   Node 24 action bump, and the release-pipeline repairs that took three attempts
   to land. Its `bump-tap` run is what finally repointed the Homebrew formula at
   `claude-status.virajp.dev`.
-- **Homebrew is the channel.** npm is retired; the `@askviraj/claude-status`
-  registry entry holds a `0.0.1` placeholder that will be deprecated rather than
-  published to.
+- **`v1.1.1`, `v1.1.2` and `v1.1.3`** — the `npm-installer` cycle. `v1.1.1` is
+  the release the npx channel's first, hand-made npm publish was cut from;
+  `v1.1.2` is where Trusted Publishing first minted its own credential, and
+  `v1.1.3` is the first release where it did so unattended and on the first
+  attempt.
+- **`site-v3`** — the site began serving `/media/`, which is where the npm
+  readme's images live.
+- **Three channels, not one.** This entry said "Homebrew is the channel; pnpm is
+  retired" until 2026-08-27, and both halves are now out of date. `brew`, `mise`
+  and `npx @virajp.dev/claude-status --install` all work.
+  **`@askviraj/claude-status` stays unreclaimed** — the npx channel publishes
+  under a different scope, so the `0.0.1` placeholder that entry describes was
+  never the thing that shipped.
 
 **One target.** `supported_targets()` has one row, `aarch64-apple-darwin`. Linux
 was evaluated and **deferred, not rejected**; the evaluation is preserved in
