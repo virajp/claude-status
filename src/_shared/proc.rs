@@ -226,12 +226,28 @@ mod tests {
         assert_eq!(out, None);
     }
 
+    /// **500ms for a 200ms sleep, and the headroom is the point.**
+    ///
+    /// This was a 300ms budget, which left 100ms for spawn, wait and reap. That
+    /// is enough on a developer machine and not enough on a GitHub runner under
+    /// load: the child missed the deadline, was killed, and `is_some()` failed —
+    /// **twice in three runs on `main` on 2026-08-30**, on commits that changed
+    /// no Rust at all. A timing test that fails on someone else's load is a red
+    /// build nobody can act on, and the second one gets believed less than the
+    /// first.
+    ///
+    /// **Both numbers moved together, and the claim is unchanged.** The budget
+    /// went 300 -> 500 and the threshold 150 -> 350, so what is still asserted
+    /// is that AT LEAST 150ms of the shared budget was consumed by the first
+    /// command. Raising the budget alone would have inverted the second
+    /// assertion — 500ms less a 200ms sleep leaves ~300ms remaining, which is
+    /// not under 150 — and turned a flake into a permanent failure.
     #[test]
     fn the_deadline_is_shared_not_per_command() {
-        let deadline = Deadline::in_ms(300);
+        let deadline = Deadline::in_ms(500);
         assert!(run_bounded("sleep", &["0.2"], cwd(), deadline).is_some());
         // The second command inherits what is left of the same budget.
-        assert!(deadline.remaining() < Duration::from_millis(150));
+        assert!(deadline.remaining() < Duration::from_millis(350));
     }
 
     #[test]
