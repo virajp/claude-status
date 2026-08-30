@@ -54,6 +54,13 @@ npx @virajp.dev/claude-status --install --configure
 Nothing is installed globally by that one: the package is an installer, and it
 downloads the same released binary the other two routes get.
 
+Or hand it to Claude Code — [install.md](install.md) is a runbook it can follow,
+asking which route you want and offering to configure afterwards:
+
+```text
+Install claude-status by following https://claude-status.virajp.dev/install.md
+```
+
 `--configure` is the last step, not a formality — it's what wires Claude Code's
 `~/.claude/settings.json` to the binary. Restart Claude Code and the bar is
 there.

@@ -527,7 +527,12 @@ fn the_pull_request_path_builds_and_cannot_reach_a_deploy_secret() {
     // as it was, the build that would have caught it never ran; the first sign
     // would have been a deployed form describing a schema the binary no longer
     // has. The task that does the staging is in the list for the same reason.
-    for path in ["site/**", "schemas/**", "assets/claude-status.defaults.json", ".config/mise/tasks/site/**"] {
+    // `install.md` joined them for a sharper version of the same reason: it is
+    // the one page whose source lives outside `site/`, and the address it is
+    // staged to is what every install prompt in both readmes hands an agent.
+    for path in
+        ["site/**", "schemas/**", "assets/claude-status.defaults.json", "install.md", ".config/mise/tasks/site/**"]
+    {
         assert!(
             workflow.contains(&format!("- \"{path}\"")),
             "the pull_request path filter no longer covers {path}, so a change to it would not rebuild the site"
@@ -1175,23 +1180,21 @@ const STAGED_MEDIA: [(&str, &str); 2] =
 
 /// **The npm readme's images reach a browser without a tracked third copy.**
 ///
-/// The package's readme is rendered by npmjs.com from the published tarball,
-/// so its images have to be absolute URLs. They named
-/// raw.githubusercontent.com and now name this site, which means this site has
-/// to actually serve them — at `media/`, which is deliberately outside the
-/// fingerprinting below.
+/// The package's readme is rendered by npmjs.com from the published tarball, so
+/// its images have to be absolute URLs, and they name this site — which means
+/// this site has to serve them, at `media/`, outside the fingerprinting below.
+/// Why not GitHub raw, and why not a fingerprinted address: `docs/decisions.md`.
 ///
-/// `site/static/statusline.png` already exists, and this is a **second** copy
-/// of the same bytes. That is not an oversight: the landing page wants the
-/// cache-busting a hashed name gives it, and a published npm version is
-/// immutable — the readme inside an already-released tarball names one URL
-/// forever and cannot chase a name that changes every deploy.
+/// `site/static/statusline.png` already exists, and this is a **second** copy of
+/// the same bytes. Both are needed: the landing page wants the cache-busting a
+/// hashed name gives it, and a published npm version cannot chase a name that
+/// changes every deploy.
 ///
 /// Tracking the copies would make three tracked copies of the screenshot, and
-/// `the_two_tracked_screenshots_are_the_same_image` already records what
-/// happens with two: a re-render lands in one of them, both files are valid
-/// PNGs, both pages render, and nothing says so. So they are build output —
-/// staged, gitignored, and compared against their sources here.
+/// `the_two_tracked_screenshots_are_the_same_image` already records what happens
+/// with two: a re-render lands in one of them, both files are valid PNGs, both
+/// pages render, and nothing says so. So they are build output — staged,
+/// gitignored, and compared against their sources here.
 #[test]
 fn the_readme_images_are_staged_at_a_stable_address_rather_than_committed() {
     let ignore = read(".gitignore");
@@ -1250,6 +1253,126 @@ fn the_readme_images_are_staged_at_a_stable_address_rather_than_committed() {
         "site:assets and STAGED_MEDIA have drifted apart; an image staged by the task but not named in \
          STAGED_MEDIA is neither gitignored nor byte-compared against its source"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The agent runbook, served from this site at the address every prompt names
+// ---------------------------------------------------------------------------
+
+/// The three documents that print the install prompt, and the address it must
+/// name. The prompt's entire payload is one URL — an agent fetches whatever is
+/// at it — so the address IS the interface.
+const PROMPT_DOCS: [&str; 3] = ["readme.md", "npm/readme.md", "site/content/install.md"];
+const PROMPT_URL: &str = "https://claude-status.virajp.dev/install.md";
+
+/// Every line inside a ```` ```text ```` fence in `doc`.
+///
+/// The prompt is fenced as `text` in all three documents so a reader can copy
+/// it whole. Read out of the fence rather than matched anywhere in the file,
+/// because a document may name the rejected host in prose — and a check that
+/// cannot tell a rule from its counter-example punishes writing the rule down.
+fn prompt_blocks(doc: &str) -> Vec<&str> {
+    let mut inside = false;
+    let mut lines = Vec::new();
+    for line in doc.lines() {
+        if line.trim_start().starts_with("```") {
+            inside = line.trim() == "```text";
+            continue;
+        }
+        if inside {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
+/// **The install prompt names this site, and this site actually serves it.**
+///
+/// `install.md` at the repository root is written to be fetched rather than
+/// browsed, and both readmes plus the install page hand an agent one URL to
+/// fetch it from. That makes the address permanent in a way a documentation
+/// link is not: a published npm version is immutable, so the prompt inside
+/// `@virajp.dev/claude-status@1.2.3`'s readme names one URL forever and cannot
+/// be re-pointed by anything this repository does later. Which host it may name
+/// and why: `docs/decisions.md`.
+///
+/// The staged copy is build output rather than a tracked second file, and here
+/// the usual reason is sharper than it is for the images: dprint's `includes`
+/// is `**/*.md`, so a committed `site/static/install.md` would be reformatted
+/// on the next commit and would then differ from the file it is a copy of, with
+/// nothing to say so.
+#[test]
+fn the_agent_runbook_is_staged_at_the_address_every_install_prompt_names() {
+    const SOURCE: &str = "install.md";
+    const STAGED_COPY: &str = "site/static/install.md";
+
+    for doc in PROMPT_DOCS {
+        let text = read(doc);
+        let blocks = prompt_blocks(&text);
+        assert!(
+            blocks.iter().any(|l| l.contains(PROMPT_URL)),
+            "{doc} no longer prints a prompt naming {PROMPT_URL} — the prompt is the whole install route for \
+             an agent, and a document that stopped carrying it silently dropped that route"
+        );
+        assert!(
+            !blocks.iter().any(|l| l.contains("raw.githubusercontent.com")),
+            "{doc} hands an agent a raw.githubusercontent.com URL. That host has been going down under \
+             load, and a published readme naming it cannot be re-pointed"
+        );
+    }
+
+    assert!(
+        !tracked_files().iter().any(|p| p == STAGED_COPY),
+        "{STAGED_COPY} has been committed — dprint formats `**/*.md` and would rewrite a copy that has to \
+         stay byte-identical to {SOURCE}"
+    );
+    assert!(
+        read(".gitignore").lines().any(|l| l.trim() == STAGED_COPY),
+        ".gitignore no longer ignores {STAGED_COPY}, so the next build leaves it ready to be committed by accident"
+    );
+    assert!(
+        read("dprint.json").contains(&format!("\"{STAGED_COPY}\"")),
+        "dprint.json no longer excludes {STAGED_COPY} — the formatter would rewrite a file that has to stay \
+         byte-identical to {SOURCE}"
+    );
+    assert!(
+        read(".config/mise/tasks/site/assets").contains("${SITE_STATIC}/install.md"),
+        "site:assets no longer stages {SOURCE}, so every prompt already published points at a 404"
+    );
+
+    // Never fingerprinted. The prompt names a bare `/install.md`, and a hashed
+    // name is one no already-published prompt can chase — the same argument
+    // that keeps `media/` out of the fingerprint list, which is an explicit set
+    // of names rather than a glob precisely so this holds by construction.
+    let build = read(".config/mise/tasks/site/build");
+    let fingerprinted = build
+        .lines()
+        .find(|l| l.trim_start().starts_with("for asset in style.css"))
+        .expect("the build no longer has a fingerprint list — this guard is scanning for nothing");
+    assert!(
+        !fingerprinted.contains("install.md"),
+        "install.md is fingerprinted, so it ships at an address that changes every deploy while every \
+         published prompt still names the old one"
+    );
+
+    // Byte equality, when a build has actually run — conditional and loud about
+    // it, for the reason the other two staging tests record: a fresh checkout
+    // has no staged copy at all, and an assertion that silently passes in that
+    // state guards nothing.
+    let staged_path = root().join(STAGED_COPY);
+    if staged_path.exists() {
+        assert_eq!(
+            std::fs::read(root().join(SOURCE)).expect("the source exists"),
+            std::fs::read(&staged_path).expect("the staged copy is readable"),
+            "{STAGED_COPY} has drifted from {SOURCE} — re-run `mise run site:assets`"
+        );
+    } else if std::env::var_os("CI").is_some() {
+        panic!(
+            "{STAGED_COPY} is missing under CI. `code:test` stages it through its `site:assets` dependency, so an absence here means that dependency is gone and this byte comparison has been passing without comparing anything."
+        );
+    } else {
+        eprintln!("skipped the byte comparison for {STAGED_COPY}: no build has run in this checkout");
+    }
 }
 
 /// **Nothing under `media/` is ever fingerprinted.**

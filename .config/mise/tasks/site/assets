@@ -44,30 +44,7 @@ cd "$MISE_PROJECT_ROOT"
 # dprint as a second line of defence. `tests/site.rs` asserts both, because a
 # gitignore entry someone deletes is a tracked copy nobody notices.
 #
-# ---------------------------------------------------------------------------
-# WHY A COPY AND NOT A RUNTIME FETCH FROM raw.githubusercontent.com
-# ---------------------------------------------------------------------------
-#
-# The schema's `$id` is a raw.githubusercontent.com URL that serves the current
-# file from `main` and does send `access-control-allow-origin: *`, so fetching
-# it from the page would work. It was rejected for two reasons:
-#
-#   1. It makes a static documentation page stop working when GitHub is down,
-#      when a corporate proxy blocks raw.githubusercontent.com, or on a plane.
-#      Every other page on this site is readable offline once loaded.
-#   2. It would make the FORM newer than the PROSE around it. This site deploys
-#      on a `site-v*` tag, so all of its content is pinned at the last tag; a
-#      form fetched from `main` would describe keys the surrounding page does
-#      not document. Being uniformly one tag behind is a smaller lie than being
-#      internally inconsistent.
-#
-# The trade is real and goes the other way: a schema change does not reach the
-# deployed page until the next `site-v*` tag. That is the same trade every
-# other sentence on this site already takes.
-#
-# `.github/workflows/site.yml` was widened to rebuild on a change to either
-# source path, so a pull request that edits the schema still proves the page
-# builds against it.
+# Copied rather than fetched from GitHub raw at runtime; see docs/decisions.md.
 
 SITE_STATIC="${MISE_PROJECT_ROOT}/site/static"
 
@@ -93,32 +70,11 @@ done
 # `tests/site.rs::the_schema_and_the_shipped_defaults_are_staged_rather_than_committed`,
 # which compares source against staged copy at a point where they can differ.
 
-# ---------------------------------------------------------------------------
-# THE README IMAGES, AT AN ADDRESS THAT NEVER MOVES
-# ---------------------------------------------------------------------------
-#
-# The npm package's readme is rendered by npmjs.com from a published tarball,
-# so every image in it must be an absolute URL. It used to name
-# raw.githubusercontent.com; this site serves them instead, because GitHub's raw
-# host has been going down often enough that the package page renders with two
-# broken images while nothing about the package is wrong.
-#
-# `site/static/statusline.png` ALREADY EXISTS and is fingerprinted by
-# `site:build`. This is a SECOND copy, at `media/`, and the duplication is the
-# point: the site's own pages want the cache-busting that fingerprinting gives
-# them, and a published npm version is immutable — the readme in
-# `@virajp.dev/claude-status@1.2.3` names one URL forever and cannot chase a
-# name that changes every deploy. So the two copies answer two different
-# questions, and neither can be dropped for the other.
-#
-# `media/` is therefore never fingerprinted and never `immutable`; see the
-# `_headers` block in `site:build`, which is generated from what was actually
-# hashed so it cannot hand a stable address a year-long cache.
-#
-# Not gitignoring these would put a THIRD tracked copy of the screenshot in the
-# tree. `tests/site.rs::the_two_tracked_screenshots_are_the_same_image` records
-# what happens then: a re-render lands in one copy and not the other, both
-# files are valid PNGs, both pages render, and nothing says so.
+# The npm readme's images, at a stable `/media/` address. A SECOND copy of
+# `site/static/statusline.png`, which `site:build` fingerprints: the site's own
+# pages want that cache-busting and a published npm readme cannot chase a name
+# that changes every deploy. Staged rather than tracked, so a re-render cannot
+# land on one copy only. Why not GitHub raw: docs/decisions.md.
 
 MEDIA_DIR="${SITE_STATIC}/media"
 mkdir -p "${MEDIA_DIR}"
@@ -134,4 +90,20 @@ for image in lockup.png statusline.png; do
   command cp "${MISE_PROJECT_ROOT}/assets/${image}" "${MEDIA_DIR}/${image}"
 done
 
-print_header "Schema, defaults and readme images staged in site/static/"
+# The agent runbook, at `/install.md` — the address the install prompt in both
+# readmes hands an agent, so it has to outlive every published copy of that
+# prompt. Staged rather than tracked because dprint formats `**/*.md` and would
+# rewrite a copy that must stay byte-identical to its source. Never
+# fingerprinted: the fingerprint list in `site:build` is an explicit set of
+# names. Why not GitHub raw: docs/decisions.md.
+
+print_header "Copying the agent runbook into site/static/ ..."
+
+[ -f "${MISE_PROJECT_ROOT}/install.md" ] || {
+  print_error "install.md is missing — every prompt in the readmes points at /install.md and would fetch a 404"
+  exit 1
+}
+# `cp` and not a symlink, for the reason above the staging loop.
+command cp "${MISE_PROJECT_ROOT}/install.md" "${SITE_STATIC}/install.md"
+
+print_header "Schema, defaults, readme images and the runbook staged in site/static/"

@@ -1805,25 +1805,18 @@ fn every_image_in_the_npm_readme_is_absolute() {
     );
 }
 
-/// **The readme's images are served by the site, never by GitHub raw.**
+/// **The readme's images are served by the site, at `/media/`.**
 ///
-/// This replaces a test that pinned them to a release tag on
-/// `raw.githubusercontent.com`. That design was sound in isolation — an npm
-/// version is immutable, so its readme arguably should be — and it was dropped
-/// for an operational reason that outranks it: **raw.githubusercontent.com has
-/// been going down under load**, and a readme that will not render is worse
-/// than one showing a newer screenshot than its own release.
-///
-/// So the addresses must be the site's, and they must be under `/media/`,
-/// which `site:assets` stages and `site:build` deliberately does not
-/// fingerprint. A fingerprinted address would break every readme already on
-/// the registry the next time the site deployed.
+/// Not GitHub raw, and not a fingerprinted address: a published npm version is
+/// immutable, so a readme already on the registry names its URLs forever. The
+/// reasoning is in `docs/decisions.md`.
 #[test]
 fn every_image_in_the_npm_readme_is_served_by_the_site() {
     let readme = read("npm/readme.md");
 
-    // The comment explains why GitHub raw was abandoned and has to keep saying
-    // so, which is why this looks past comment prose to real image URLs only.
+    // Past the header comment, which names the rejected host, to real image
+    // URLs only — a check that cannot tell a rule from its counter-example
+    // punishes writing the rule down.
     let live: Vec<&str> = readme
         .lines()
         .filter(|l| !l.trim_start().starts_with("<!--") && !l.trim_start().starts_with("     "))

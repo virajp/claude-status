@@ -22,14 +22,17 @@ site/static/claude-status.schema.json
 site/static/claude-status.defaults.json
 
 # the two images the npm readme loads over https, staged into the static tree
-# by `site:assets` on every build. Copies of `assets/`, kept at a stable
-# `media/` address because a published npm version names its URLs forever. They
-# are ignored for the same reason as the two above: a tracked second copy is a
-# file that drifts from its source with nothing to say so — and for an image
-# that has already happened here once. See the task for the whole reasoning;
-# `tests/site.rs` asserts these two lines are still here.
+# by `site:assets` on every build. Copies of `assets/`, ignored so a re-render
+# cannot land on one copy only. `tests/site.rs` asserts these two lines are
+# still here; the hosting decision is in docs/decisions.md.
 site/static/media/lockup.png
 site/static/media/statusline.png
+
+# the agent runbook, staged into the static tree by `site:assets` so the site
+# serves it at `/install.md` — the address every install prompt hands an agent.
+# Ignored because dprint formats `**/*.md` and would rewrite a copy that has to
+# stay byte-identical to its source. `tests/site.rs` asserts this line.
+site/static/install.md
 
 
 # Added by cargo

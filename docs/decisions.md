@@ -2096,6 +2096,72 @@ already, for the reason that it writes to a file this tool does not own — and 
 contradiction resolved silently is how a script ends up doing the opposite of
 what it says on its own command line.
 
+### GitHub raw is not an address this project publishes
+
+**Decided 2026-08-30**, consolidating a rule that had been taken three times in
+three places and written out at every one of them. The prose was removed from
+those files on the same day: a rejected option explained six times over is six
+copies of one argument, and five of them sit in files a user can open.
+
+`raw.githubusercontent.com` serves the current file from `main`, sends
+`access-control-allow-origin: *`, and costs nothing to use. It was therefore the
+first answer every time this project needed a URL for a file in this repository,
+and it has now been declined three times:
+
+- **The npm readme's images.** npmjs.com renders the readme from the published
+  tarball and cannot serve a file out of it, so the images have to be absolute.
+  They named a release tag on GitHub raw and were rewritten per publish, on the
+  argument that an npm version is immutable and its readme should be too.
+- **The config generator's two inputs.** The form is built from the schema and
+  the shipped defaults, and fetching them from `main` at runtime would have
+  worked.
+- **The agent install runbook.** `install.md` is written to be fetched rather
+  than browsed; both readmes and the install page print a prompt whose entire
+  payload is one URL, and an agent reads whatever is at it.
+
+**The operational reason is the same one each time: that host has been going
+down under load.** A readme that will not render is worse than one showing a
+newer screenshot than its own release, a documentation page that stops working
+when GitHub is down is worse than one that is a tag behind, and a prompt that
+resolves to nothing is a user who concludes the project is broken before they
+have installed it. The generator carried two further objections of its own — a
+corporate proxy blocking the host, or a reader on a plane, against a site every
+other page of which is readable offline once loaded.
+
+**And in two of the three the address cannot be taken back.** A published npm
+version is immutable: the readme inside `@virajp.dev/claude-status@1.2.3` names
+its URLs forever, and nothing this repository does later can re-point them. That
+is what turns a hosting choice into a permanent one.
+
+**What replaced it settled into one shape.** The site serves all of them.
+`site:assets` stages each file into `site/static/` as build output — gitignored
+and excluded from dprint, because dprint's `includes` covers `**/*.json` and
+`**/*.md` and would reformat a tracked copy into a file that no longer matches
+its source with nothing to say so. None of them is fingerprinted: `site:build`
+fingerprints an explicit list of names, so a stable address holds by
+construction rather than by a rule someone remembers, and `_headers` leaves them
+to `/*` and `must-revalidate`, which is what an address whose bytes may change
+requires. The images live at `/media/`, the runbook at `/install.md`.
+
+**The tradeoff travelled with them, and is taken knowingly.** This site deploys
+on a `site-v*` tag, so everything it serves is pinned at the last tag while raw
+served `main` live. Every published readme now shows the *current* artwork
+rather than its own release's, and an edit to `install.md` does not reach the
+deployed copy until the next site tag. Being uniformly one tag behind is a
+smaller lie than being internally inconsistent, and both are smaller than an
+address that does not answer.
+
+**What still names raw, recorded as open rather than settled.** `SCHEMA_URL` in
+`src/modules/config/write.rs` is a raw URL, and `--configure` writes it as
+`"$schema"` into every `~/.config/claude-status/config.json` it creates; the
+schema's own `$id`, the shipped defaults, and the config examples on three site
+pages repeat it. A user's editor fetches it, so the outage argument applies
+unchanged. Moving it has a cost the other three did not: a schema served from
+this site is one tag behind the binary that just wrote the config being
+validated against it, and the two disagreeing is a red squiggle under a key that
+is correct. The site already stages and serves the schema, so the move is
+available whenever that cost is judged worth paying.
+
 ### Still unowned: code signing and notarisation
 
 **Recorded 2026-08-25** (`distribution/02`) as an open risk rather than a

@@ -1,20 +1,4 @@
-<!-- Absolute, and served by the site rather than by raw.githubusercontent.com.
-     npmjs.com cannot serve a file out of the tarball, so a relative path renders
-     as a broken image no matter what `files` ships — only an absolute URL works,
-     and the root readme stays repo-relative on purpose.
-
-     GitHub raw was the first answer here and was WRONG for a readme that has to
-     stay up: raw.githubusercontent.com has been going down under load. So these
-     point at claude-status.virajp.dev, which serves the same two images from
-     `/media/` — staged by `site:assets`, deliberately NOT fingerprinted, and
-     kept out of the `immutable` cache rules so a corrected image can actually
-     reach people.
-
-     `/media/` is a stable address, so these need no tag and no restamping. The
-     tradeoff is taken knowingly: every published version's readme shows the
-     CURRENT artwork rather than the artwork of its own release. For a logo and
-     a screenshot that is what you want, and it is the price of not depending on
-     a host that is down. -->
+<!-- Image URLs are absolute and the site's, on purpose. See docs/decisions.md. -->
 
 <img
   src="https://claude-status.virajp.dev/media/lockup.png"
@@ -53,6 +37,19 @@ home directory, and `--configure` wires Claude Code to it. Restart Claude Code
 and the bar is there.
 
 Running it again upgrades what it placed.
+
+### Or hand it to Claude Code
+
+Paste this at Claude Code's prompt and it does the whole thing — installs
+through this package, offers to wire Claude Code afterwards, and diagnoses with
+`claude-status --doctor` if anything goes wrong:
+
+```text
+Install claude-status via npx by following https://claude-status.virajp.dev/install.md
+```
+
+Swap `npx` for `pnpx` or `bunx` in that line and it uses the runner you named.
+Every step that writes anything is asked about first.
 
 ### Flags
 

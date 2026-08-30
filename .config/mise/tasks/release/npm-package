@@ -87,17 +87,9 @@ cp -R npm "$out"
 printf '{\n  "tag": "%s",\n  "name": "%s",\n  "sha256": "%s"\n}\n' \
   "$tag" "$name" "$digest" > "$out/asset.json"
 
-# **The readme's asset URLs are NOT stamped here, and that is deliberate.**
-#
-# They were, for one release: pinned to the tag and rewritten per publish,
-# because an npm version is immutable and its readme arguably should be too.
-# That design depended on raw.githubusercontent.com, which has been going down
-# under load — a readme that cannot render is worse than one showing a newer
-# screenshot. So the images moved to the site's `/media/`, which is a stable
-# address, and there is nothing left to rewrite.
-#
-# The tradeoff travelled with them: every published version's readme now shows
-# the CURRENT artwork rather than its own release's. Pinned by
+# **The readme's asset URLs are NOT stamped here, and that is deliberate.** They
+# were, for one release; the images now live at the site's stable `/media/` and
+# there is nothing left to rewrite. Why: docs/decisions.md. Pinned by
 # `every_image_in_the_npm_readme_is_served_by_the_site` in tests/npm.rs.
 
 # `sed` matches the value and leaves the rest of the line alone, so a `version`

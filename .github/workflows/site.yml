@@ -110,6 +110,11 @@ on:
       # `tests/site.rs` asserts on this list, so it cannot narrow quietly.
       - "schemas/**"
       - "assets/claude-status.defaults.json"
+      # The agent runbook, staged to `/install.md` by `site:assets`. It is the
+      # one page whose content lives outside `site/`, so without this line an
+      # edit to it would never reach the deployed copy every install prompt
+      # fetches.
+      - "install.md"
       - ".config/mise/tasks/site/**"
   workflow_dispatch: {}
 
