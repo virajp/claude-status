@@ -473,7 +473,7 @@ fn pure(node: &Path) -> Sandbox {
 /// package carried the binary and one artifact would otherwise have claimed two
 /// versions of itself. The package downloads a binary now instead of carrying
 /// one, so an installer fix ships without re-releasing a binary whose source
-/// did not change, which the three releases before this one all did.
+/// did not change — which six of the nine releases before this one all did.
 ///
 /// The split is enforced by DERIVATION rather than by agreement: `INSTALLS`
 /// comes out of `ASSET.tag`, and `install.mjs` does not read its own manifest

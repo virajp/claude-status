@@ -2179,12 +2179,20 @@ while the package *carried* the binary — one shipped thing, one number. Since
 installer and the binary are two artifacts with two changelogs, and pinning
 their numbers together stopped describing anything true.
 
-**The cost was measured, not argued.** `v1.1.6`, `v1.1.7` and `v1.1.8` each
-changed **zero files under `src/`**. Three consecutive binary releases rebuilt,
-re-uploaded, re-tapped and re-announced a binary whose source had not moved,
-because the only way to ship an installer fix was to release the binary again.
-Every `brew upgrade` user was told there was a new version of something that had
-not changed.
+**The cost was measured, not argued. Six of the nine releases to date changed
+zero files under `src/`** — v1.1.1, v1.1.2, v1.1.3, v1.1.6, v1.1.7 and v1.1.8,
+the last three consecutively. Each rebuilt, re-uploaded, re-tapped and
+re-announced a binary whose source had not moved, because the only way to ship
+an installer fix was to release the binary again. Every `brew upgrade` user was
+told there was a new version of something that could not affect them.
+
+**Measured tag-to-tag, and the first attempt was not.** Diffing each tag against
+its PARENT COMMIT reads `src=0` for every release this project has ever cut,
+because the tagged commit is usually the version bump alone — the work landed
+earlier on `main`. That method agreed with the right answer here and would have
+agreed just as loudly with a release full of binary changes.
+`git diff <prev
+tag> <tag>` is the comparison that means anything.
 
 **The split is enforced by derivation rather than by agreement.** `install.mjs`
 no longer reads its own `package.json` at all — the version it reports, checks

@@ -115,7 +115,7 @@ installer under, and `npm/asset.json` records which binary that installer
 fetches — so the relationship is written down rather than implied by two numbers
 being equal. They *were* one number, back when the package carried the binary;
 [the reversal](docs/decisions.md) records why that stopped being right, and the
-three consecutive releases that rebuilt a binary whose source had not changed.
+six releases out of nine that rebuilt a binary whose source had not changed.
 
 **A binary release needs both bumps.** npm cannot republish a version, and the
 installer must be published again to point at the new binary — which needs a new

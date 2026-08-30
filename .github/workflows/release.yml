@@ -51,10 +51,11 @@ name: Release
 # `npm-v*` publishes the INSTALLER ALONE, against the newest binary release
 # that already exists. Nothing is built, no release is cut, the tap is not
 # touched. It is here because the installer's version is no longer the crate's:
-# v1.1.6, v1.1.7 and v1.1.8 each changed **zero files under `src/`**, and each
-# rebuilt, re-uploaded and re-tapped a binary whose source had not moved,
-# because shipping an installer fix meant releasing the binary again.
-# `docs/decisions.md` holds both halves of that reversal.
+# **six of the nine releases to date changed zero files under `src/`** — the
+# last three consecutively — and each rebuilt, re-uploaded and re-tapped a
+# binary whose source had not moved, because shipping an installer fix meant
+# releasing the binary again. `docs/decisions.md` holds both halves of that
+# reversal, and the tag-to-tag measurement behind that six.
 #
 # **The two lines are in ONE workflow file because npm's trusted publishing
 # allows exactly one.** A Trusted Publisher registration on npmjs.com names a
