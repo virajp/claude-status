@@ -78,17 +78,6 @@ function beside(name) {
 }
 
 /**
- * The version this package installs, read from the manifest at runtime rather
- * than written down a second time here.
- *
- * `the_package_version_equals_the_crate_version` pins the manifest against
- * `crate_version()`, so there is one place a release bumps and no constant in
- * this file that can drift behind it.
- */
-export const VERSION =
-  JSON.parse(readFileSync(beside("package.json"), "utf8")).version;
-
-/**
  * The release artifact this version installs: tag, asset name, SHA-256.
  *
  * A separate file because the publish job rewrites it per release and nothing
@@ -98,6 +87,23 @@ export const VERSION =
  * sits, including here before it has ever been published.
  */
 export const ASSET = JSON.parse(readFileSync(beside("asset.json"), "utf8"));
+
+/**
+ * The version of the BINARY this package installs — `ASSET.tag` without its
+ * leading `v`.
+ *
+ * NOT this package's own version, and the distinction is the point. The two
+ * used to be one number: `package.json`'s version was pinned equal to the
+ * crate's, and every use below meant the binary while reading the manifest.
+ * That held only while the package carried the binary; it downloads one now, so
+ * they are two artifacts on two release lines and the installer may be
+ * published without the binary moving.
+ *
+ * Derived rather than declared, so this file never reads its own version and
+ * the two numbers cannot be conflated again by anything written here.
+ * `the_installed_version_is_the_assets_and_not_the_packages` pins it.
+ */
+export const INSTALLS = ASSET.tag.replace(/^v/, "");
 
 /**
  * The flag surface, and nothing else.
@@ -635,7 +641,7 @@ async function install({ configure, force }) {
     // version out of it would announce an upgrade from something that was
     // never on this path.
     if (ours) {
-      say(`upgrading ${receipt.version} → ${VERSION} at ${existing}`);
+      say(`upgrading ${receipt.version} → ${INSTALLS} at ${existing}`);
     }
     // In place: `which` found it, so its directory is on PATH by construction,
     // and moving a user's binary to a different directory on an upgrade would
@@ -724,25 +730,25 @@ async function install({ configure, force }) {
   // with_or_without_debug` asserts stdout EQUALS it. `release.yml`'s "Verify
   // the built binary" step does the same check on the same bytes.
   const reported = run(dest, ["--version"]);
-  if (reported !== VERSION) {
+  if (reported !== INSTALLS) {
     say(
       `claude-status: ${dest} reports ${
         reported ?? "nothing"
-      }, but this package installs ${VERSION}`,
+      }, but this package installs ${INSTALLS}`,
     );
     say(
       "  it is left where it was placed — this cannot tell which of the two is wrong",
     );
     return 1;
   }
-  say(`installed claude-status ${VERSION} to ${dest}`);
+  say(`installed claude-status ${INSTALLS} to ${dest}`);
 
   const configured = await wire(dest, configure);
   // Written last, because it records whether wiring ran and that is not known
   // until it has. The digest is of what was actually placed, not of the
   // tarball: it is what the next run compares the file on disk against.
   writeReceipt(home, {
-    version: VERSION,
+    version: INSTALLS,
     tag: ASSET.tag,
     path: dest,
     sha256: sha256Of(dest),

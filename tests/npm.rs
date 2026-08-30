@@ -93,6 +93,65 @@ fn ask_rust(script: &str) -> String {
     answer
 }
 
+/// Every job, in every workflow, that runs `npm publish`.
+///
+/// Found by what a job DOES rather than by where it lives, and it reads every
+/// workflow rather than the one that publishes today. That is not
+/// thoroughness for its own sake: there must be exactly ONE such job, because
+/// npm's trusted publishing binds to a repository and a workflow FILENAME, and
+/// a second publisher could not authenticate at all. A scan that named
+/// `release.yml` would go green while a second workflow was added and every
+/// guard below silently stopped covering the thing that publishes.
+///
+/// `tests/workflows.rs` learned the same lesson from the other direction: the
+/// failure mode is not "a workflow is wrong", it is "the workflows disagree",
+/// and only a scan that reads all of them can see it.
+///
+/// Comments are stripped by [`job`], so a step that explains what it stopped
+/// doing cannot be mistaken for one that still does it.
+fn npm_publishing_jobs() -> Vec<(String, String, String)> {
+    let dir = root().join(".github/workflows");
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("the workflow directory exists") {
+        let path = entry.expect("a directory entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yml") {
+            continue;
+        }
+        let file = path.file_name().expect("a filename").to_string_lossy().to_string();
+        let source = std::fs::read_to_string(&path).expect("a readable workflow");
+        for name in job_names(&source) {
+            let body = job(&source, &name);
+            if body.contains("npm publish") {
+                found.push((file.clone(), name, body));
+            }
+        }
+    }
+    assert_eq!(
+        found.len(),
+        1,
+        "found {} jobs running `npm publish`, and there may be exactly one. **npm's trusted publishing \
+         binds to a repository AND a workflow filename**: the OIDC token is minted against that pair, so a \
+         second publishing workflow cannot authenticate at all however correct its YAML. The two tag lines \
+         live in one file for that reason. Jobs found: {:?}",
+        found.len(),
+        found.iter().map(|(f, n, _)| format!("{f}:{n}")).collect::<Vec<_>>()
+    );
+    found
+}
+
+/// Every job name in a workflow: a line at exactly two spaces of indent, under
+/// `jobs:`, ending in a colon.
+fn job_names(workflow: &str) -> Vec<String> {
+    let Some(at) = workflow.find("\njobs:\n") else {
+        return Vec::new();
+    };
+    workflow[at..]
+        .lines()
+        .filter(|l| l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':'))
+        .map(|l| l.trim().trim_end_matches(':').to_string())
+        .collect()
+}
+
 /// Return one job's YAML body from `release.yml`, comments stripped.
 ///
 /// `tests/release.rs`'s, unchanged, including why the comments go: these steps
@@ -102,7 +161,7 @@ fn job(workflow: &str, name: &str) -> String {
     let after = workflow
         .split(&format!("\n  {name}:\n"))
         .nth(1)
-        .unwrap_or_else(|| panic!("no `{name}` job in release.yml"));
+        .unwrap_or_else(|| panic!("no `{name}` job in the workflow"));
     let mut body = String::new();
     for line in after.lines() {
         let is_next_job = !line.starts_with("    ") && line.starts_with("  ") && line.trim_end().ends_with(':');
@@ -387,7 +446,7 @@ impl Sandbox {
 /// The importing is what makes the module's shape load-bearing: an
 /// `install.mjs` that did anything on import would download and place a binary
 /// here.
-const PROBE: &str = r#"import { ASSET, VERSION, chooseInstallDir, classifyExisting, helpText, installCandidates, isRunnerShim, parseArgs, unwireSettings } from "./install.mjs";
+const PROBE: &str = r#"import { ASSET, INSTALLS, chooseInstallDir, classifyExisting, helpText, installCandidates, isRunnerShim, parseArgs, unwireSettings } from "./install.mjs";
 
 const answer = eval(process.argv[2]);
 process.stdout.write(JSON.stringify(answer === undefined ? null : answer));
@@ -396,9 +455,8 @@ process.stdout.write(JSON.stringify(answer === undefined ? null : answer));
 /// The staged package's exports, with no `$HOME` or asset behind them.
 ///
 /// The pure functions need none of the machinery [`Sandbox`] builds, but they
-/// do need `install.mjs` to sit beside a `package.json` and an `asset.json` —
-/// it reads both at import time — so the staging is shared rather than
-/// duplicated.
+/// do need `install.mjs` to sit beside an `asset.json` — it reads that at
+/// import time — so the staging is shared rather than duplicated.
 fn pure(node: &Path) -> Sandbox {
     Sandbox::new(node)
 }
@@ -407,38 +465,60 @@ fn pure(node: &Path) -> Sandbox {
 // The manifest
 // ---------------------------------------------------------------------------
 
-/// **One version, and it is the crate's.**
+/// **Two version lines, and the installer reads only one of them.**
 ///
-/// The npm package once carried a hand-set `0.x` while the binary reported
-/// `1.0.0` — one artifact claiming two versions of itself — and that is the
-/// concrete failure the channel came back with a guard against. The release
-/// task stamps the staged manifest from `crate_version()` so nothing is typed;
-/// this is what keeps the *tracked* manifest honest in between releases, where
-/// no stamping has happened and a reader would otherwise be told the wrong
-/// thing by the only file they can see.
+/// `npm/package.json`'s version is the INSTALLER's, published on its own line;
+/// `ASSET.tag` names the BINARY it fetches. They used to be one number — the
+/// release task stamped the manifest from `crate_version()`, because the
+/// package carried the binary and one artifact would otherwise have claimed two
+/// versions of itself. The package downloads a binary now instead of carrying
+/// one, so an installer fix ships without re-releasing a binary whose source
+/// did not change, which the three releases before this one all did.
 ///
-/// Asked of `crate_version()` rather than of `Cargo.toml`, because
-/// `crate_version()` is what `verify` checks the pushed tag against.
+/// The split is enforced by DERIVATION rather than by agreement: `INSTALLS`
+/// comes out of `ASSET.tag`, and `install.mjs` does not read its own manifest
+/// at all. That is the assertion below — a rule about what the file may say
+/// beats one about what two numbers happen to be, because the numbers are equal
+/// today and would pass either way.
 #[test]
-fn the_package_version_equals_the_crate_version() {
+fn the_installed_version_is_the_assets_and_not_the_packages() {
     let from_shell = ask_rust("crate_version");
     assert_eq!(
         from_shell, CRATE_VERSION,
         "`crate_version()` and the compiled crate disagree — every other comparison in this file is built on it"
     );
 
-    let manifest: serde_json::Value = serde_json::from_str(&read("npm/package.json")).expect("npm/package.json is JSON");
+    // The whole split, in one line of source. `beside("package.json")` was how
+    // the installer read its own version; nothing may read it again, because a
+    // second reader is how the two numbers get quietly re-pinned to each other.
+    let installer = read("npm/install.mjs");
+    for (n, line) in installer.lines().enumerate() {
+        assert!(
+            !line.contains("package.json") || line.trim_start().starts_with('*'),
+            "npm/install.mjs:{} reads its own manifest — the version it installs must come from ASSET.tag, \
+             which names the release it actually fetches, not from the number this package is published under",
+            n + 1
+        );
+    }
+
+    // And the derivation itself, asked of the staged package rather than read
+    // out of the source: `v1.2.3` in, `1.2.3` out. The binary's own `--version`
+    // is compared against this EXACTLY, so a surviving `v` would refuse every
+    // install on this channel rather than merely printing oddly.
+    let node = node_or_skip!("the installed-version derivation");
+    let staged = pure(&node);
+    let tag = staged.probe("ASSET.tag");
+    let installs = staged.probe("INSTALLS");
     assert_eq!(
-        manifest["version"].as_str(),
-        Some(from_shell.as_str()),
-        "npm/package.json claims a version the crate does not — a user who runs `npx @virajp.dev/claude-status` gets an installer that names a release that is not the one it fetches"
+        installs,
+        serde_json::json!(tag.as_str().expect("ASSET.tag is a string").trim_start_matches('v')),
+        "INSTALLS is not ASSET.tag without its leading `v`"
     );
 }
 
 /// **Keywords are the only way anyone finds this package by searching**, and
-/// they are trivially lost: the release task rewrites the manifest's `version`
-/// with `sed` and copies everything else, so a key deleted here is a key gone
-/// from the registry with nothing failing.
+/// they are trivially lost: the release task copies the manifest verbatim, so a
+/// key deleted here is a key gone from the registry with nothing failing.
 ///
 /// The two names the package is genuinely searched by are required — the tool's
 /// own name is in `name` already, but `claude-code` and `statusline` are what a
@@ -1580,21 +1660,20 @@ fn the_uninstall_refuses_a_binary_it_did_not_place() {
 /// well-formed, plausible, and wrong.
 #[test]
 fn the_publish_npm_job_pins_a_digest_from_the_published_release() {
-    let workflow = read(".github/workflows/release.yml");
-    let publish_npm = job(&workflow, "publish-npm");
-
-    assert!(
-        publish_npm.contains("gh release download") && publish_npm.contains("SHA256SUMS"),
-        "the job does not read the published release's own checksum manifest, so this channel and the tap can pin different bytes for one tag"
-    );
-    assert!(
-        publish_npm.contains("release/npm-package"),
-        "the job does not call the staging task, so the injection lives somewhere nothing in this suite can run"
-    );
-    assert!(
-        !publish_npm.contains("shasum"),
-        "the job hashes something itself — the digest must come from the release, never from bytes rebuilt here"
-    );
+    for (file, name, body) in npm_publishing_jobs() {
+        assert!(
+            body.contains("gh release download") && body.contains("SHA256SUMS"),
+            "{file}'s `{name}` does not read the published release's own checksum manifest, so this channel and the tap can pin different bytes for one tag"
+        );
+        assert!(
+            body.contains("release/npm-package"),
+            "{file}'s `{name}` does not call the staging task, so the injection lives somewhere nothing in this suite can run"
+        );
+        assert!(
+            !body.contains("shasum"),
+            "{file}'s `{name}` hashes something itself — the digest must come from the release, never from bytes rebuilt here"
+        );
+    }
 
     let dir = TempDir::new().expect("a temp dir");
     let manifest = dir.path().join("SHA256SUMS");
@@ -1634,8 +1713,9 @@ fn the_publish_npm_job_pins_a_digest_from_the_published_release() {
             .expect("it is JSON");
     assert_eq!(
         manifest_json["version"].as_str(),
-        Some("9.8.7"),
-        "the staged manifest kept its own version — the previous release's package would publish under this tag's digest"
+        serde_json::from_str::<serde_json::Value>(&read("npm/package.json")).expect("JSON")["version"].as_str(),
+        "the staged manifest was stamped from the binary's version — that is the conflation the two release \
+         lines exist to end, and it would publish the installer under a number it did not choose"
     );
 
     // The staging is a COPY. `npm/` itself must not carry a tag's values home
@@ -1658,16 +1738,66 @@ fn the_publish_npm_job_pins_a_digest_from_the_published_release() {
 /// so removing either is red.
 #[test]
 fn a_manual_dispatch_cannot_publish_to_npm() {
-    let workflow = read(".github/workflows/release.yml");
-    let publish_npm = job(&workflow, "publish-npm");
+    for (file, name, body) in npm_publishing_jobs() {
+        // The comparison, not the variable name. This asserted
+        // `body.contains("REF_TYPE")` and could not fail: the name also appears
+        // in the step's own `env:` block, so gutting the `if` to `if false`
+        // left the guard green. Measured, by doing exactly that.
+        assert!(
+            body.contains(r#"!= "tag""#) && body.contains("exit 1"),
+            "{file}'s `{name}` does not refuse a non-tag ref outright, so a workflow_dispatch from a branch could publish a version that can never be taken back"
+        );
+        // Never the workflow's entry point. `release.yml`'s publisher depends on
+        // the job that cut the release; `npm.yml`'s depends on the job that
+        // resolved which release it is pointing at. Either way something has run
+        // and agreed before a number is burned.
+        assert!(
+            body.contains("needs:"),
+            "{file}'s `{name}` is ungated — a publishing job that runs first has nothing standing between a dispatch and a version that can never be taken back"
+        );
+    }
+}
 
+/// **An `npm-v*` tag cannot cut a binary release.**
+///
+/// The two lines share one workflow because npm's trusted publishing allows
+/// exactly one, and sharing it means every binary job is now reachable from a
+/// tag that was never meant to build anything. A stray `npm-v` tag that reached
+/// `publish` would cut a GitHub release, upload assets and bump the tap for a
+/// version nobody asked for.
+///
+/// What stops it is `verify`'s `mode` output and an `if` on each of those jobs.
+/// Both halves are asserted, because a mode nothing reads is not a guard — and
+/// the inverse is asserted too: gate the publisher the same way and the
+/// installer's line would reach the registry never, failing silently green.
+#[test]
+fn the_installer_tag_line_cannot_cut_a_binary_release() {
+    let workflow = read(".github/workflows/release.yml");
+
+    for line in [r#"- "v*""#, r#"- "npm-v*""#] {
+        assert!(workflow.contains(line), "release.yml no longer triggers on {line} — one of the two release lines is gone");
+    }
     assert!(
-        publish_npm.contains("github.ref_type") || publish_npm.contains("REF_TYPE"),
-        "the job never checks what kind of ref it is running against, so a workflow_dispatch from a branch could publish a version that can never be taken back"
+        workflow.contains("npm-v*) mode=installer"),
+        "`verify` no longer decides which line it is on, so every `if` below reads an output that is never set"
+    );
+
+    for name in ["test", "build", "publish", "bump-tap"] {
+        assert!(
+            job(&workflow, name).contains("needs.verify.outputs.mode == 'binary'"),
+            "`{name}` is reachable from an npm-v tag, so publishing an installer would build and release a binary nobody tagged"
+        );
+    }
+
+    let publish_npm = job(&workflow, "publish-npm");
+    assert!(
+        !publish_npm.contains("mode == 'binary'"),
+        "`publish-npm` is gated to the binary line, so the installer's own tag line publishes nothing at all"
     );
     assert!(
-        publish_npm.contains("needs:") && publish_npm.contains("publish"),
-        "the job does not depend on `publish`, so it could publish an installer for a release that was never cut"
+        publish_npm.contains("needs.publish.result == 'skipped'"),
+        "`publish-npm` does not tolerate a skipped `publish`, and `publish` IS skipped on the installer line — \
+         so the one job that line exists to run would sit the run out"
     );
 }
 
@@ -1684,17 +1814,16 @@ fn a_manual_dispatch_cannot_publish_to_npm() {
 /// and `npm` all ship in the runner image.
 #[test]
 fn the_publish_npm_job_installs_no_tools_it_does_not_use() {
-    let workflow = read(".github/workflows/release.yml");
-    let publish_npm = job(&workflow, "publish-npm");
-
-    assert!(
-        publish_npm.contains("mise-action"),
-        "the job no longer pins a mise version at all — this test assumes the action is present with install disabled"
-    );
-    assert!(
-        publish_npm.contains("install: false"),
-        "the job installs tools it never uses; every one is a way for a shipped release to end up with no npm package"
-    );
+    for (file, name, body) in npm_publishing_jobs() {
+        assert!(
+            body.contains("mise-action"),
+            "{file}'s `{name}` no longer pins a mise version at all — this test assumes the action is present with install disabled"
+        );
+        assert!(
+            body.contains("install: false"),
+            "{file}'s `{name}` installs tools it never uses; every one is a way for a shipped release to end up with no npm package"
+        );
+    }
 }
 
 /// **The staged directory is named as a path, and the `./` is the whole test.**
@@ -1715,19 +1844,18 @@ fn the_publish_npm_job_installs_no_tools_it_does_not_use() {
 /// the publish works, only that the argument is still spelled as a path.
 #[test]
 fn the_publish_command_names_the_staged_directory_as_a_path() {
-    let workflow = read(".github/workflows/release.yml");
-    let publish_npm = job(&workflow, "publish-npm");
+    for (file, name, body) in npm_publishing_jobs() {
+        let publish_line = body
+            .lines()
+            .find(|l| l.contains("npm publish"))
+            .expect("a job matched on `npm publish` and then had no line with it");
 
-    let publish_line = publish_npm
-        .lines()
-        .find(|l| l.contains("npm publish"))
-        .expect("the publish-npm job no longer runs `npm publish` — this test is guarding nothing");
-
-    assert!(
-        publish_line.contains("./target/npm"),
-        "`npm publish` names the staged directory without a leading `./`, so npm reads it as the git shorthand `github:target/npm` and fails with EALLOWGIT before reaching the registry: {}",
-        publish_line.trim()
-    );
+        assert!(
+            publish_line.contains("./target/npm"),
+            "{file}'s `{name}` names the staged directory without a leading `./`, so npm reads it as the git shorthand `github:target/npm` and fails with EALLOWGIT before reaching the registry: {}",
+            publish_line.trim()
+        );
+    }
 }
 
 /// **The readme ships, or npm shows the package with no page at all.**

@@ -97,23 +97,45 @@ your own.
 
 ## Releasing
 
-Tag-driven. Bump `version` in `Cargo.toml` — the single source for every
-published version, and what the binary self-reports — commit, then push a
-matching `v*` tag. CI checks the tag against `Cargo.toml` before it builds
-anything.
+Tag-driven, on **three** lines that ship independently:
 
-There is **one** version, because there is one artifact. `crate_version()` is
-the single source, and the release workflow refuses to publish a binary whose
-`--version` disagrees with it.
+| Line      | Bump first                              | Then tag     | Ships                                                          |
+| --------- | --------------------------------------- | ------------ | -------------------------------------------------------------- |
+| `v*`      | `Cargo.toml` **and** `npm/package.json` | `v1.2.0`     | the binary, the Homebrew tap, and the installer pointing at it |
+| `npm-v*`  | `npm/package.json`                      | `npm-v1.2.1` | the npx installer alone, against the newest binary release     |
+| `site-v*` | nothing                                 | `site-v5`    | claude-status.virajp.dev                                       |
 
-**The release is the whole distribution — nothing is published to a registry.**
-Per target it carries a `.tar.gz` with `claude-status` at the archive root, the
-raw binary beside it, and a `SHA256SUMS` covering both. The tarball is what a
-Homebrew formula consumes; the raw binary is for anyone who wants it directly.
-`distribution/01` retired the npm channel and deleted the TypeScript installer,
-the Node toolchain and the OIDC trusted-publishing setup with it — see
+Each tag is checked against **the manifest that owns its number** before
+anything else runs, so a mismatched tag fails in seconds.
+
+**There are three versions because there are three artifacts.** The binary
+self-reports `crate_version()`, and the release refuses to publish one whose
+`--version` disagrees. `npm/package.json` is what the registry publishes the
+installer under, and `npm/asset.json` records which binary that installer
+fetches — so the relationship is written down rather than implied by two numbers
+being equal. They *were* one number, back when the package carried the binary;
+[the reversal](docs/decisions.md) records why that stopped being right, and the
+three consecutive releases that rebuilt a binary whose source had not changed.
+
+**A binary release needs both bumps.** npm cannot republish a version, and the
+installer must be published again to point at the new binary — which needs a new
+installer number. Forget it and npm refuses the publish; the binary release is
+complete and untouched, so bump `npm/package.json` and push an `npm-v` tag.
+
+**Both tag lines are in one workflow file, and must stay there.** npm's trusted
+publishing binds to a repository *and* a workflow filename, so a second
+publishing workflow cannot authenticate however correct its YAML.
+
+**The GitHub release is the binary's whole distribution.** Per target it carries
+a `.tar.gz` with `claude-status` at the archive root, the raw binary beside it,
+and a `SHA256SUMS` covering both. The tarball is what a Homebrew formula
+consumes; the raw binary is for anyone who wants it directly. `distribution/01`
+retired the npm channel and deleted the TypeScript installer, the Node toolchain
+and the OIDC trusted-publishing setup with it — see
 [npm is retired as a channel](docs/decisions.md#npm-is-retired-as-a-channel) for
-why.
+why, and note that `npm-installer` brought a channel back on different terms:
+what is published now is an installer that downloads this release, never a
+package carrying the bytes.
 
 Both asset names come from `asset_name()` in
 `.config/mise/tasks/_scripts/_rust`, driven by `supported_targets`, so adding a

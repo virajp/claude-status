@@ -47,16 +47,20 @@ out="${2:-target/npm}"
   exit 1
 }
 
-# ONE version, and it is the crate's. `docs/decisions.md` records the cycle
-# where the npm package carried a hand-set `0.x` while the binary reported
-# `1.0.0` — "one artifact claimed two versions of itself". So the staged
-# manifest is STAMPED below rather than trusted, and nothing here is typed by a
-# human.
+# TWO version lines, and this task touches neither.
+#
+# `version` here is the BINARY's — it names the release whose asset is pinned
+# below, and nothing else. The npm package's own version is whatever
+# `npm/package.json` carries, shipped as tracked and bumped by hand on its own
+# line; see docs/decisions.md. This task used to stamp that manifest from
+# `crate_version()`, back when the package carried the binary and one artifact
+# would otherwise have claimed two versions of itself.
 #
 # `VERSION` is how CI hands down `verify`'s answer, which that job computed with
 # this same `crate_version` and refused the release unless the pushed tag agreed
 # with it. Reading it saves `publish-npm` a `cargo` it would otherwise have to
-# install to ask the same question twice.
+# install to ask the same question twice. On the installer's own release line it
+# is handed the binary release being targeted instead.
 version="${VERSION:-$(crate_version)}"
 [ -n "$version" ] || {
   echo "no version: \$VERSION is unset and crate_version() returned nothing" >&2
@@ -92,25 +96,19 @@ printf '{\n  "tag": "%s",\n  "name": "%s",\n  "sha256": "%s"\n}\n' \
 # there is nothing left to rewrite. Why: docs/decisions.md. Pinned by
 # `every_image_in_the_npm_readme_is_served_by_the_site` in tests/npm.rs.
 
-# `sed` matches the value and leaves the rest of the line alone, so a `version`
-# key that is last in the object keeps its lack of a trailing comma.
-sed -E "s/^([[:space:]]*\"version\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\1\"${version}\"/" \
-  "$out/package.json" > "$out/package.json.new"
-mv "$out/package.json.new" "$out/package.json"
+# The staged manifest is NOT rewritten. `package.json` ships exactly as tracked,
+# which is what makes the installer's version its own: the only file this task
+# writes is `asset.json`, and the only thing it says is which binary to fetch.
 
-# Read back, because `sed` exits 0 whether or not it matched anything — the
-# failure `render_formula`'s comment describes. A manifest that quietly kept its
-# own value would publish the PREVIOUS version's package under this tag's
-# digest, with the run green behind it. Two `version` keys fail here too: the
-# capture yields two lines and matches neither.
-staged="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$out/package.json")"
-if [ "$staged" != "$version" ]; then
-  echo "staged package.json reports version '$staged', expected '$version' — the substitution did not take" >&2
+package="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$out/package.json")"
+[ -n "$package" ] || {
+  echo "staged package.json carries no version — npm publish would refuse it" >&2
   exit 1
-fi
+}
 
 echo "  staged $out"
-echo "    version  $version"
+echo "    package  $package   (the installer, published under this)"
+echo "    installs $version   (the binary it fetches)"
 echo "    tag      $tag"
 echo "    asset    $name"
 echo "    sha256   $digest"

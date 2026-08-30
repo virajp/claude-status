@@ -2162,6 +2162,62 @@ validated against it, and the two disagreeing is a red squiggle under a key that
 is correct. The site already stages and serves the schema, so the move is
 available whenever that cost is judged worth paying.
 
+### The installer's version split from the binary's
+
+**Reversed 2026-08-30.** The npm package now carries its own version and ships
+on its own tag line.
+
+**Was:** one version, and it was the crate's. `npm/package.json` was stamped
+from `crate_version()` at publish time, and a test pinned the tracked manifest
+to it in between. The concrete failure behind that rule is recorded above: the
+package once carried a hand-set `0.x` while the binary reported `1.0.0`, so
+**one artifact claimed two versions of itself.**
+
+**That argument was about an artifact that no longer exists.** It was correct
+while the package *carried* the binary — one shipped thing, one number. Since
+`npm-installer` the package carries no bytes: it downloads a release asset. The
+installer and the binary are two artifacts with two changelogs, and pinning
+their numbers together stopped describing anything true.
+
+**The cost was measured, not argued.** `v1.1.6`, `v1.1.7` and `v1.1.8` each
+changed **zero files under `src/`**. Three consecutive binary releases rebuilt,
+re-uploaded, re-tapped and re-announced a binary whose source had not moved,
+because the only way to ship an installer fix was to release the binary again.
+Every `brew upgrade` user was told there was a new version of something that had
+not changed.
+
+**The split is enforced by derivation rather than by agreement.** `install.mjs`
+no longer reads its own `package.json` at all — the version it reports, checks
+the downloaded binary against, and writes into the receipt is `INSTALLS`, which
+is `ASSET.tag` without its leading `v`. Every one of those uses always meant the
+binary; they read the package's number only because the two were pinned equal. A
+rule about what the file may *read* survives the two numbers happening to
+coincide, which they do today and would pass either way, so
+`the_installed_version_is_the_assets_and_not_the_packages` asserts the source
+and not the values.
+
+**Both tag lines live in one workflow file, and this is not a style choice.**
+npm's trusted publishing binds a registration to a repository **and a workflow
+filename**; the OIDC token is minted against that pair. A second workflow
+running `npm publish` could not authenticate at all, however correct its YAML.
+The first cut of this change was a separate `npm.yml` and would have failed on
+its first tag. `npm_publishing_jobs` asserts there is exactly one such job
+anywhere in `.github/workflows/`, so the mistake cannot be made twice.
+
+**What a binary release costs now: two bumps rather than one.** npm cannot
+republish a version, and a new binary is no use on the npx channel until the
+package points at it — so `Cargo.toml` and `npm/package.json` both move for a
+`v*` tag. Forgetting is a refused publish against a release that is already
+complete, which is recoverable with an `npm-v` tag and loses nothing.
+
+**A guard that could not fail was found by trying to make it fail.** The
+dispatch guard on the publishing job asserted the body contained the string
+`REF_TYPE` — which also appears in the step's own `env:` block, so gutting the
+comparison to `if false` left the test green. It now matches the comparison and
+the `exit 1`, verified by doing exactly that and watching it go red. The same
+shape as the eleven-line comment above the failing step in `ci.yml`: a scan that
+reads what a file *says* rather than what it *does* is not a guard.
+
 ### Still unowned: code signing and notarisation
 
 **Recorded 2026-08-25** (`distribution/02`) as an open risk rather than a
