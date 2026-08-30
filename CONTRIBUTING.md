@@ -97,32 +97,31 @@ your own.
 
 ## Releasing
 
-Tag-driven, on **three** lines that ship independently:
+Tag-driven, on **two** lines that ship independently:
 
-| Line      | Bump first                              | Then tag     | Ships                                                          |
-| --------- | --------------------------------------- | ------------ | -------------------------------------------------------------- |
-| `v*`      | `Cargo.toml` **and** `npm/package.json` | `v1.2.0`     | the binary, the Homebrew tap, and the installer pointing at it |
-| `npm-v*`  | `npm/package.json`                      | `npm-v1.2.1` | the npx installer alone, against the newest binary release     |
-| `site-v*` | nothing                                 | `site-v5`    | claude-status.virajp.dev                                       |
+| Line      | Bump first                              | Then tag  | Ships                                               |
+| --------- | --------------------------------------- | --------- | --------------------------------------------------- |
+| `v*`      | `Cargo.toml` **and** `npm/package.json` | `v1.2.0`  | the binary, the Homebrew tap, and the npx installer |
+| `site-v*` | nothing                                 | `site-v5` | claude-status.virajp.dev                            |
 
-Each tag is checked against **the manifest that owns its number** before
-anything else runs, so a mismatched tag fails in seconds.
+Each tag is checked against the manifest that owns its number before anything
+else runs, so a mismatched tag fails in seconds.
 
-**There are three versions because there are three artifacts.** The binary
-self-reports `crate_version()`, and the release refuses to publish one whose
-`--version` disagrees. `npm/package.json` is what the registry publishes the
-installer under, and `npm/asset.json` records which binary that installer
-fetches — so the relationship is written down rather than implied by two numbers
-being equal. They *were* one number, back when the package carried the binary;
-[the reversal](docs/decisions.md) records why that stopped being right, and the
-six releases out of nine that rebuilt a binary whose source had not changed.
+**The binary and the installer carry different version numbers**, even though
+they ship together. The binary self-reports `crate_version()`, and the release
+refuses to publish one whose `--version` disagrees. `npm/package.json` is what
+the registry publishes the installer under, and `npm/asset.json` inside the
+published package records which binary that installer fetches — so an artifact
+that downloads another artifact does not claim to *be* it. They were one number
+while the package carried the binary; [the reversal](docs/decisions.md) records
+why that stopped being right.
 
-**A binary release needs both bumps.** npm cannot republish a version, and the
-installer must be published again to point at the new binary — which needs a new
-installer number. Forget it and npm refuses the publish; the binary release is
-complete and untouched, so bump `npm/package.json` and push an `npm-v` tag.
+**So a release bumps two manifests.** npm cannot republish a version, and the
+installer is published on every binary release, so it needs a new number each
+time. Forget it and npm refuses the publish; the binary release is complete and
+untouched, so bump `npm/package.json` and re-run the `publish-npm` job alone.
 
-**Both tag lines are in one workflow file, and must stay there.** npm's trusted
+**The npm publish must stay in this one workflow file.** npm's trusted
 publishing binds to a repository *and* a workflow filename, so a second
 publishing workflow cannot authenticate however correct its YAML.
 

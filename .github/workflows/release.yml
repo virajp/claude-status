@@ -42,43 +42,37 @@ name: Release
 # flags actually used are accepted by both, verified on bsdtar 3.5.3.
 #
 # ---------------------------------------------------------------------------
-# TWO TAG LINES, ONE FILE
+# ONE TAG LINE, TWO VERSION NUMBERS
 # ---------------------------------------------------------------------------
 #
-# `v*` releases the BINARY and publishes the installer alongside it — a new
-# binary is no use on the npx channel until the package points at it.
+# `v*` releases the binary, bumps the tap, and publishes the npx installer
+# alongside it — a new binary is no use on that channel until the package
+# points at it.
 #
-# `npm-v*` publishes the INSTALLER ALONE, against the newest binary release
-# that already exists. Nothing is built, no release is cut, the tap is not
-# touched. It is here because the installer's version is no longer the crate's:
-# **six of the nine releases to date changed zero files under `src/`** — the
-# last three consecutively — and each rebuilt, re-uploaded and re-tapped a
-# binary whose source had not moved, because shipping an installer fix meant
-# releasing the binary again. `docs/decisions.md` holds both halves of that
-# reversal, and the tag-to-tag measurement behind that six.
+# **The installer is published under its OWN number**, whatever
+# `npm/package.json` carries, not under the crate's. The two were one number
+# while the package carried the binary; it downloads one now, and an artifact
+# that fetches another artifact should not claim to be it. `npm/asset.json`
+# inside the published package records which binary it installs, so the
+# relationship is written down rather than implied by two numbers matching.
+# `docs/decisions.md` holds both halves.
 #
-# **The two lines are in ONE workflow file because npm's trusted publishing
-# allows exactly one.** A Trusted Publisher registration on npmjs.com names a
-# repository AND a workflow filename, and the OIDC token is minted against that
-# pair — so a second workflow that ran `npm publish` could not authenticate at
-# all, however correct its YAML. That is the constraint that decided the shape
-# here; without it this would be two files.
+# **So a release bumps two manifests**: `Cargo.toml` and `npm/package.json`.
+# npm cannot republish a version, so the installer needs a new number every time
+# it is published, which is every time the binary is released. Forget it and the
+# publish is refused against a release that is already complete — recoverable by
+# bumping and re-running this job.
 #
-# `v*` and `npm-v*` cannot collide: GitHub tag globs anchor at the start of the
-# ref name, so `v*` never matches `npm-v1.2.0`. The same argument `site.yml`
-# records for `site-v*`, and the reason all three lines share a repository.
+# An `npm-v*` line that published the installer WITHOUT a binary release existed
+# for part of 2026-08-30 and was removed the same day; `docs/decisions.md`
+# records what it was for and why it went.
 #
-# To release the BINARY: bump `version` in Cargo.toml AND `npm/package.json`
-# (npm cannot republish a version, so the installer needs a new number too),
-# commit, then push a matching `v` tag.
-#
-# To release the INSTALLER alone: bump `npm/package.json`, commit, then push a
-# matching `npm-v` tag.
+# To release: bump `version` in `Cargo.toml` AND `npm/package.json`, commit,
+# then push a matching `v` tag.
 on:
   push:
     tags:
       - "v*"
-      - "npm-v*"
   workflow_dispatch: {}
 
 permissions:
@@ -107,7 +101,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
-      mode: ${{ steps.version.outputs.mode }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -119,48 +112,9 @@ jobs:
 
       - uses: jdx/mise-action@v4
 
-      - name: Verify the tag against the manifest that owns its version
+      - name: Verify the tag matches Cargo.toml
         id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
-          # Which line is this? `npm-v*` publishes the installer alone; anything
-          # else is a binary release. Checked against the ref NAME rather than
-          # against a tag glob, because a workflow_dispatch has neither.
-          case "$GITHUB_REF_NAME" in
-            npm-v*) mode=installer ;;
-            *)      mode=binary ;;
-          esac
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-
-          if [ "$mode" = "installer" ]; then
-            # The installer's own number, and the tag must agree with it — the
-            # mirror of the Cargo.toml gate below, for the other manifest.
-            installer="$(node -p "require('./npm/package.json').version")"
-            tag="${GITHUB_REF_NAME#npm-v}"
-            if [ "$tag" != "$installer" ]; then
-              echo "::error::tag npm-v$tag does not match npm/package.json version $installer"
-              exit 1
-            fi
-
-            # Which binary it will install: the newest release that exists,
-            # resolved here rather than written down. A target committed to the
-            # tree would be a number to remember and would go stale in silence,
-            # which is the failure this split exists to remove. Drafts and
-            # pre-releases are excluded — neither has a downloadable
-            # SHA256SUMS, so an installer pinned to one would 404 for everybody.
-            latest="$(gh release list --exclude-drafts --exclude-pre-releases \
-              --json tagName --jq '[.[] | select(.tagName | startswith("v"))] | .[0].tagName')"
-            if [ -z "$latest" ]; then
-              echo "::error::no v* release exists, so there is no binary for this installer to point at"
-              exit 1
-            fi
-            echo "version=${latest#v}" >> "$GITHUB_OUTPUT"
-            echo "Publishing installer $installer, which will install $latest"
-            exit 0
-          fi
-
           pkg="$(cargo pkgid | sed -E 's/.*[@#]([0-9]+\.[0-9]+\.[0-9]+.*)$/\1/')"
           echo "version=$pkg" >> "$GITHUB_OUTPUT"
           if [ "${{ github.ref_type }}" = "tag" ]; then
@@ -172,15 +126,7 @@ jobs:
           fi
           echo "Releasing claude-status $pkg"
 
-      # Built here, not in `publish`. `publish` installs no tools and is worth
-      # keeping that way, and this runs before anything is compiled — a broken
-      # generator costs a few seconds rather than a wasted build.
-      #
-      # `--generate-notes` used to do this and produced 74 characters for
-      # `v0.1.0`: it diffs against a previous tag and reads pull requests, and
-      # this repository had neither.
       - name: Generate the release notes
-        if: steps.version.outputs.mode == 'binary'
         run: |
           set -e
           mkdir -p notes
@@ -192,7 +138,6 @@ jobs:
           cat notes/RELEASE_NOTES.md
 
       - uses: actions/upload-artifact@v7
-        if: steps.version.outputs.mode == 'binary'
         with:
           name: release-notes
           path: notes/RELEASE_NOTES.md
@@ -207,7 +152,6 @@ jobs:
   # binary is built but never executed is a claim nobody checked.
   test:
     needs: verify
-    if: needs.verify.outputs.mode == 'binary'
     strategy:
       fail-fast: true
       matrix:
@@ -268,7 +212,6 @@ jobs:
   # Kept in step with `supported_targets` in .config/mise/tasks/_scripts/_rust.
   build:
     needs: verify
-    if: needs.verify.outputs.mode == 'binary'
     strategy:
       fail-fast: true
       matrix:
@@ -324,7 +267,6 @@ jobs:
 
   publish:
     needs: [ verify, test, build ]
-    if: needs.verify.outputs.mode == 'binary'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -490,7 +432,6 @@ jobs:
   # `sed` and `git`, all of which the runner image ships.
   bump-tap:
     needs: [ verify, publish ]
-    if: needs.verify.outputs.mode == 'binary'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -661,19 +602,6 @@ jobs:
   # a scoped publish only under a scope its publisher owns.
   publish-npm:
     needs: [ verify, publish ]
-    # Reached on both lines, and `publish` is SKIPPED on the installer's — so
-    # the default "all needs succeeded" would sit this job out exactly when it
-    # is the only one with work to do. `always()` is what lets a skipped need
-    # through, and every other arm is spelled out because `always()` on its own
-    # would also run this after `publish` FAILED, publishing an installer for a
-    # release that was never cut.
-    #
-    # `cancelled()` is excluded explicitly: a cancelled run must not reach a
-    # registry that cannot take a version back.
-    if: >-
-      always() && !cancelled()
-      && needs.verify.result == 'success'
-      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04
     # Narrowed from the workflow's `contents: write`, which this job must not
     # have: it reads the release and may not touch it.
@@ -820,6 +748,6 @@ jobs:
           # `npm publish`, so only a real tag could find it. Pinned by
           # `the_publish_command_names_the_staged_directory_as_a_path`.
           if ! npm publish --provenance --access public ./target/npm; then
-            echo "::error::the npm publish of $name@$installer failed. v$VERSION IS RELEASED — the GitHub Release and its assets are complete and untouched by this job. If npm refused the version, bump npm/package.json and publish the installer on its own line with an npm-v tag; otherwise re-run this job alone once npm is reachable, or once $name has had the one manual first publish a Trusted Publisher registration requires (see this job's comment)."
+            echo "::error::the npm publish of $name@$installer failed. v$VERSION IS RELEASED — the GitHub Release and its assets are complete and untouched by this job. If npm refused the version, npm/package.json was not bumped for this release — bump it and re-run this job alone; otherwise re-run it once npm is reachable, or once $name has had the one manual first publish a Trusted Publisher registration requires (see this job's comment)."
             exit 1
           fi

@@ -472,8 +472,9 @@ fn pure(node: &Path) -> Sandbox {
 /// release task stamped the manifest from `crate_version()`, because the
 /// package carried the binary and one artifact would otherwise have claimed two
 /// versions of itself. The package downloads a binary now instead of carrying
-/// one, so an installer fix ships without re-releasing a binary whose source
-/// did not change — which six of the nine releases before this one all did.
+/// one, and an artifact that fetches another artifact should not claim to be
+/// it — `npm/asset.json` records which binary it installs, so the relationship
+/// is written down rather than implied by two numbers matching.
 ///
 /// The split is enforced by DERIVATION rather than by agreement: `INSTALLS`
 /// comes out of `ASSET.tag`, and `install.mjs` does not read its own manifest
@@ -1756,49 +1757,6 @@ fn a_manual_dispatch_cannot_publish_to_npm() {
             "{file}'s `{name}` is ungated — a publishing job that runs first has nothing standing between a dispatch and a version that can never be taken back"
         );
     }
-}
-
-/// **An `npm-v*` tag cannot cut a binary release.**
-///
-/// The two lines share one workflow because npm's trusted publishing allows
-/// exactly one, and sharing it means every binary job is now reachable from a
-/// tag that was never meant to build anything. A stray `npm-v` tag that reached
-/// `publish` would cut a GitHub release, upload assets and bump the tap for a
-/// version nobody asked for.
-///
-/// What stops it is `verify`'s `mode` output and an `if` on each of those jobs.
-/// Both halves are asserted, because a mode nothing reads is not a guard — and
-/// the inverse is asserted too: gate the publisher the same way and the
-/// installer's line would reach the registry never, failing silently green.
-#[test]
-fn the_installer_tag_line_cannot_cut_a_binary_release() {
-    let workflow = read(".github/workflows/release.yml");
-
-    for line in [r#"- "v*""#, r#"- "npm-v*""#] {
-        assert!(workflow.contains(line), "release.yml no longer triggers on {line} — one of the two release lines is gone");
-    }
-    assert!(
-        workflow.contains("npm-v*) mode=installer"),
-        "`verify` no longer decides which line it is on, so every `if` below reads an output that is never set"
-    );
-
-    for name in ["test", "build", "publish", "bump-tap"] {
-        assert!(
-            job(&workflow, name).contains("needs.verify.outputs.mode == 'binary'"),
-            "`{name}` is reachable from an npm-v tag, so publishing an installer would build and release a binary nobody tagged"
-        );
-    }
-
-    let publish_npm = job(&workflow, "publish-npm");
-    assert!(
-        !publish_npm.contains("mode == 'binary'"),
-        "`publish-npm` is gated to the binary line, so the installer's own tag line publishes nothing at all"
-    );
-    assert!(
-        publish_npm.contains("needs.publish.result == 'skipped'"),
-        "`publish-npm` does not tolerate a skipped `publish`, and `publish` IS skipped on the installer line — \
-         so the one job that line exists to run would sit the run out"
-    );
 }
 
 /// **`publish-npm` installs no tools it does not use.**

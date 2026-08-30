@@ -2204,7 +2204,7 @@ coincide, which they do today and would pass either way, so
 `the_installed_version_is_the_assets_and_not_the_packages` asserts the source
 and not the values.
 
-**Both tag lines live in one workflow file, and this is not a style choice.**
+**The npm publish lives in one workflow file, and this is not a style choice.**
 npm's trusted publishing binds a registration to a repository **and a workflow
 filename**; the OIDC token is minted against that pair. A second workflow
 running `npm publish` could not authenticate at all, however correct its YAML.
@@ -2213,10 +2213,26 @@ its first tag. `npm_publishing_jobs` asserts there is exactly one such job
 anywhere in `.github/workflows/`, so the mistake cannot be made twice.
 
 **What a binary release costs now: two bumps rather than one.** npm cannot
-republish a version, and a new binary is no use on the npx channel until the
-package points at it — so `Cargo.toml` and `npm/package.json` both move for a
-`v*` tag. Forgetting is a refused publish against a release that is already
-complete, which is recoverable with an `npm-v` tag and loses nothing.
+republish a version, and the installer is published on every binary release — so
+`Cargo.toml` and `npm/package.json` both move for a `v*` tag. Forgetting is a
+refused publish against a release that is already complete, recoverable by
+bumping and re-running the job alone.
+
+**Amended the same day: the `npm-v*` tag line was removed.** The split shipped
+with a second line that published the installer ALONE, against the newest binary
+release — the point being that six of the nine releases to date changed nothing
+under `src/`, and each of them rebuilt, re-uploaded and re-tapped a binary whose
+source had not moved. **The maintainer removed it.** What survives is the
+numbering: the installer still carries its own version and still records which
+binary it installs, so nothing claims to be something it is not.
+
+**The cost of removing it is the one the split measured**, and it is being taken
+knowingly: an installer-only fix once again requires a binary release, so a
+`brew upgrade` user is told there is a new version of a binary that has not
+changed. The machinery is in git history at `b8e69ba` if that trade is ever
+re-examined — the mode branching in `verify`, the four job conditions, and
+`the_installer_tag_line_cannot_cut_a_binary_release`, which pinned an `npm-v`
+tag against reaching the jobs that build and tap.
 
 **A guard that could not fail was found by trying to make it fail.** The
 dispatch guard on the publishing job asserted the body contained the string
