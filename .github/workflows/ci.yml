@@ -51,7 +51,11 @@ name: CI
 on:
   push:
     branches:
+      # `develop` is where work lands, so it is the branch this gate exists for.
+      # `main` stays listed because a merge into it is a new commit state that
+      # nothing else re-checks — the merge can break what both sides passed.
       - main
+      - develop
   pull_request:
   workflow_dispatch: {}
 

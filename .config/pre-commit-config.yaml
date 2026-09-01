@@ -28,6 +28,19 @@ repos:
         files: ^\.config/mise(\.(dev|ci))?\.toml$
         stages: [ pre-commit ]
 
+      - id: branch
+        name: Work happens on develop
+        description: Refuses a commit on `main`, which is the release branch.
+          The CI half of this gate cannot fire until a tag is pushed, by which
+          point the commit is already on `main`. Merges are unaffected — git
+          runs `pre-merge-commit` for those, and a conflicted merge concluded
+          with `git commit` is let through on `MERGE_HEAD`.
+        entry: mise x -- mise run code:branch
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [ pre-commit ]
+
       - id: git-config
         name: Forbidden Local git-config
         description: Prevents local .git/config from overriding global user and

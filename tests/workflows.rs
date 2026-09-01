@@ -306,3 +306,90 @@ jobs:
         "the `uses:` scan does not read what it is supposed to read"
     );
 }
+
+/// The check that proves a tagged ref is on `main`.
+///
+/// Matched as a substring of a `run:` block rather than by parsing the step:
+/// what matters is that the comparison happens, and the two workflows spell the
+/// surrounding step differently — `release.yml` guards it with `github.ref_type`
+/// inside a job that does other work, `site.yml` gives it a job of its own.
+const MAIN_CONTAINMENT: &str = "git merge-base --is-ancestor \"$GITHUB_SHA\" origin/main";
+
+/// The fetch without which the comparison above cannot run.
+const MAIN_FETCH: &str = "git fetch --no-tags origin main";
+
+/// **Every tag line ships from `main`, and neither of them can prove it alone.**
+///
+/// `release.yml` builds and publishes a binary; `site.yml` deploys the public
+/// site. Both fire on a tag, and a tag can be cut from any branch — so without
+/// this check either one would happily ship a commit that was never merged,
+/// carrying a version number `main` does not describe.
+///
+/// The `--is-ancestor` spelling is the point and not an implementation detail.
+/// An equality check against `refs/heads/main` would refuse a tag cut before
+/// later work landed, which is a legitimate release of an earlier commit; the
+/// question is containment, not identity.
+#[test]
+fn every_tag_triggered_workflow_refuses_a_tag_that_is_not_on_main() {
+    let gated: Vec<String> = workflows()
+        .into_iter()
+        .filter(|(_, body)| {
+            // Comments are stripped for `jobs`' reason: both files explain this
+            // gate at length directly above it, and prose must not be what
+            // makes this test green.
+            let code: String =
+                body.lines().map(|l| l.split('#').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+            code.contains("tags:")
+        })
+        .map(|(name, body)| {
+            let code: String =
+                body.lines().map(|l| l.split('#').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+            assert!(
+                code.contains(MAIN_CONTAINMENT),
+                "{name} runs on a tag but never checks the tag is on main — a tag cut from develop would ship"
+            );
+            assert!(
+                code.contains(MAIN_FETCH),
+                "{name} compares against origin/main without fetching it; a checkout at a tag ref does not \
+                 bring that ref, so the comparison would fail on a missing ref rather than on merit"
+            );
+            name
+        })
+        .collect();
+
+    // **The control.** Every assertion above lives inside a `map` over a
+    // filtered list, so a filter that matched nothing would pass this test
+    // while checking no workflow at all. Both tag lines must be found.
+    assert!(
+        gated.contains(&"release.yml".to_string()) && gated.contains(&"site.yml".to_string()),
+        "the tag-triggered set is {gated:?}; expected both release.yml and site.yml — a filter that \
+         stopped matching would make the assertions above vacuous"
+    );
+}
+
+/// **CI runs on `develop`, because that is where every change now lands.**
+///
+/// Work is authored on `develop` and merged to `main`; a CI trigger that named
+/// only `main` would leave the branch all the work happens on unchecked until
+/// the merge, which is the one moment the check is too late to be cheap.
+///
+/// `main` stays listed for a reason that is not symmetry: a merge commit is a
+/// state neither side tested, so the merge itself has to be checked.
+#[test]
+fn ci_runs_on_both_the_work_branch_and_the_release_branch() {
+    let (_, body) = workflows()
+        .into_iter()
+        .find(|(name, _)| name == "ci.yml")
+        .expect("ci.yml is missing");
+
+    let code: String =
+        body.lines().map(|l| l.split('#').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+    let on = code.split("jobs:").next().expect("ci.yml has a jobs: key");
+
+    for branch in ["main", "develop"] {
+        assert!(
+            on.contains(&format!("- {branch}")),
+            "ci.yml does not run on pushes to {branch}; its triggers are:\n{on}"
+        );
+    }
+}

@@ -2483,6 +2483,45 @@ written as though it were the only way the rule could become wrong, and the rule
 was retired by a route nobody had listed. An ignore rule earns its place by
 being re-checked, not by carrying a condition.
 
+### Work moved to `develop`, and `main` became release-only
+
+**Decided 2026-09-02.**
+
+Every commit up to `9c2b56e` landed directly on `main`, and both tag lines were
+cut from wherever `HEAD` happened to be. That worked because one person was
+pushing, and it had no gate at all: nothing distinguished a commit that had been
+confirmed from one pushed a minute earlier, and a `v*` tag would have released
+either.
+
+**Now:** work is authored on `develop`, reaches `main` only by merge, and both
+tag lines refuse a commit that is not contained in `main`.
+
+**Four gates, deliberately at four different moments.** The two CI gates
+(`release.yml`'s `verify`, `site.yml`'s `gate`) cannot fail until a tag has been
+pushed — and a pushed tag is the one mistake with no clean recovery, because the
+GitHub release exists and npm will not republish a version. So they are mirrored
+locally by `code:branch`, which fires at `git commit`, and `release:preflight`,
+which fires before the tag is cut. The local pair can be skipped and the CI pair
+are too late; neither is redundant.
+
+**Containment, not equality.** Both CI gates ask `git merge-base --is-ancestor`
+rather than comparing the ref to `refs/heads/main`. A tag cut before later work
+landed sits *behind* `main` and is still a valid release of an earlier commit;
+equality would refuse it. What is refused is a commit that is not on `main` at
+all.
+
+**The site was gated too, and it cost something.** `site.yml`'s header records
+that the `site-v*` line exists so "a docs correction does not need a release" —
+and that is still true: a typo fix needs no *binary* release. What it now needs
+is a merge to `main` first. The trade was taken because the site is user-facing
+production, and a site that can show text no one merged is the same class of
+problem as a binary that can.
+
+**`develop` is the GitHub default branch**, so a clone and a new pull request
+both land where work happens. The cost is that the repository's front page shows
+unreleased state; `main` is what the tags and the installers point at, and no
+user reaches the repository front page to install.
+
 ---
 
 ## Provenance
