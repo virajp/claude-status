@@ -85,7 +85,7 @@ rather than ranked.
 
 ## Other ways to install
 
-`brew` and `mise` both work and end at the same place. All three routes are
+`brew` and `mise` both work and end at the same place. All four routes are
 written up on the site:
 
 **[claude-status.virajp.dev/install](https://claude-status.virajp.dev/install/)**

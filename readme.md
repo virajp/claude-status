@@ -66,8 +66,8 @@ Install claude-status by following https://claude-status.virajp.dev/install.md
 there.
 
 **[claude-status.virajp.dev](https://claude-status.virajp.dev)** has the rest:
-all three routes in full, what `--configure` writes and what it replaces, and
-the platforms that are and aren't served.
+all four routes in full, what `--configure` writes and what it replaces, and the
+platforms that are and aren't served.
 
 ## Documentation
 
