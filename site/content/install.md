@@ -4,7 +4,31 @@ description = "Get the binary, then wire Claude Code to it."
 weight = 1
 +++
 
-Apple Silicon macOS. Three routes, and all of them end at the same wiring step.
+Apple Silicon macOS. Four ways in, and all of them end at the same wiring step.
+
+## Claude Code
+
+The shortest way in is the three below with the typing done for you.
+`install.md` at the root of the repository is a runbook written for an agent
+rather than for a person: paste this at Claude Code's prompt and it reads the
+file and works through it.
+
+```text
+Install claude-status by following https://claude-status.virajp.dev/install.md
+```
+
+Name a route in that sentence — "via npx", "with brew" — and it takes you at
+your word. Say nothing and it checks which of `brew`, `mise`, `npx`, `pnpx` and
+`bunx` your machine actually has, and asks you to pick one of those.
+
+It then asks whether to wire Claude Code, and runs `claude-status --configure`
+only if you say yes. If anything fails it runs `claude-status --doctor`, reads
+the report, and tells you what it proposes to change before changing it — every
+edit under your home directory is a question, not a step.
+
+[The runbook itself](https://github.com/virajp/claude-status/blob/main/install.md)
+is worth a read before you hand it to anything: it is the page you are reading
+now, written as instructions.
 
 ## Homebrew
 
@@ -29,17 +53,6 @@ order that works.
 
 `brew upgrade` keeps it current from then on, and neither of the first two
 commands is repeated.
-
-## mise
-
-If you already manage your tools with [mise](https://mise.jdx.dev), one command:
-
-```sh
-mise use --global "github:virajp/claude-status@latest"
-```
-
-That pulls the released binary straight from the GitHub release and puts it on
-your `PATH`. `mise upgrade` moves it forward.
 
 ## npx
 
@@ -101,29 +114,16 @@ exists at all: it lets a script decline as explicitly as it consents.
 **Passing both is refused, not ranked.** A contradiction resolved silently is
 how a script ends up doing the opposite of what it says.
 
-## Claude Code
+## mise
 
-There is a fourth way in, and it is the three above with the typing done for
-you. `install.md` at the root of the repository is a runbook written for an
-agent rather than for a person: paste this at Claude Code's prompt and it reads
-the file and works through it.
+If you already manage your tools with [mise](https://mise.jdx.dev), one command:
 
-```text
-Install claude-status by following https://claude-status.virajp.dev/install.md
+```sh
+mise use --global "github:virajp/claude-status@latest"
 ```
 
-Name a route in that sentence — "via npx", "with brew" — and it takes you at
-your word. Say nothing and it checks which of `brew`, `mise`, `npx`, `pnpx` and
-`bunx` your machine actually has, and asks you to pick one of those.
-
-It then asks whether to wire Claude Code, and runs `claude-status --configure`
-only if you say yes. If anything fails it runs `claude-status --doctor`, reads
-the report, and tells you what it proposes to change before changing it — every
-edit under your home directory is a question, not a step.
-
-[The runbook itself](https://github.com/virajp/claude-status/blob/main/install.md)
-is worth a read before you hand it to anything: it is the page you are reading
-now, written as instructions.
+That pulls the released binary straight from the GitHub release and puts it on
+your `PATH`. `mise upgrade` moves it forward.
 
 ## Then wire Claude Code to it
 
