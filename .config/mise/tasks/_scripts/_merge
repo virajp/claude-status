@@ -42,7 +42,7 @@ merge_to_destination_branch() {
   if [ "${DESTINATION_BRANCH}" = "main" ] && [ "${CURRENT_BRANCH}" != "develop" ]; then
     print_error "ERROR: merges INTO 'main' are only allowed from 'develop'."
     print_warn "- you are on '${CURRENT_BRANCH}'"
-    print_warn "- run \`mise run merge:develop\` first, then merge develop into main"
+    print_warn "- run \`mise run code:merge:develop\` first, then merge develop into main"
     exit 1
   fi
 

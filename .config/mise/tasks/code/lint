@@ -44,14 +44,20 @@ actionlint
 
 # `-x` follows sourced files, so the `_scripts/` libraries are analysed as the
 # task scripts actually see them rather than as orphans full of undefined names.
+#
+# **Found, not listed.** This was one glob per task directory, and that shape
+# had two failure modes, both of which were hit within a day of each other: a
+# new directory was invisible to this gate until somebody remembered to add it
+# — `merge/` was, for exactly one commit — and once tasks nested (`code/merge/`)
+# the parent's glob handed shellcheck a *directory*, which it cannot read.
+# Walking the tree has neither problem, and there is no list to keep in step.
+#
+# `-exec ... +` rather than a pipe to `xargs`: it batches the same way, it does
+# not run at all when nothing matches, and its non-zero exit reaches `set -e`
+# here — which a pipeline's would not.
 print_header "Linting (shellcheck) ..."
-shellcheck -x \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/_scripts/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/build/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/code/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/merge/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/release/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/setup/* \
-  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/site/*
+find "${MISE_PROJECT_ROOT}/.config/mise/tasks" \
+  -type f ! -name '*.md' \
+  -exec shellcheck -x {} +
 
 print_header "Linting done"
