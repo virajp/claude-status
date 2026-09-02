@@ -16,14 +16,21 @@ has been confirmed.
 The cycle is: commit to `develop` → confirm → merge `develop` into `main` → tag
 from `main`.
 
-**Four gates enforce this, and they fail at different moments on purpose:**
+**Merge with the tasks, not by hand.** `mise run merge:develop` lands a feature
+branch on `develop`; `mise run merge:main` lands `develop` on `main`. Both
+refuse a dirty or unpushed branch, merge `--no-ff` so the merge is a commit git
+can point at, push, and return you to the branch you started on — including from
+a linked worktree, where the checkout has to happen in the main one.
 
-| Gate                          | Fires at           | Refuses                                      |
-| ----------------------------- | ------------------ | -------------------------------------------- |
-| `code:branch`, via pre-commit | `git commit`       | a commit authored on `main`                  |
-| `release:preflight`           | before you tag     | a release cut from the wrong branch or state |
-| `release.yml`, in `verify`    | a pushed `v*`      | a tag whose commit is not on `main`          |
-| `site.yml`, in `gate`         | a pushed `site-v*` | the same, before the site deploys            |
+**Five gates enforce this, and they fail at different moments on purpose:**
+
+| Gate                           | Fires at           | Refuses                                                         |
+| ------------------------------ | ------------------ | --------------------------------------------------------------- |
+| `code:branch`, via pre-commit  | `git commit`       | a commit authored on `main`                                     |
+| `merge:develop` / `merge:main` | the merge          | a merge from `main`, or into `main` from anything but `develop` |
+| `release:preflight`            | before you tag     | a release cut from the wrong branch or state                    |
+| `release.yml`, in `verify`     | a pushed `v*`      | a tag whose commit is not on `main`                             |
+| `site.yml`, in `gate`          | a pushed `site-v*` | the same, before the site deploys                               |
 
 The local pair exist because the CI pair cannot fail until the tag is already
 pushed, and un-pushing a tag is worse than not cutting one. The CI pair exist

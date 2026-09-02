@@ -49,6 +49,7 @@ shellcheck -x \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/_scripts/* \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/build/* \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/code/* \
+  "${MISE_PROJECT_ROOT}"/.config/mise/tasks/merge/* \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/release/* \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/setup/* \
   "${MISE_PROJECT_ROOT}"/.config/mise/tasks/site/*

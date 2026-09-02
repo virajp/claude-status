@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+#MISE description="Predicates the merge tasks ask before touching a branch"
+#MISE hide=true
+
+# Each of these answers one question and answers it as an exit status, so a
+# caller reads as `if has_untracked_files; then`. They print nothing — the
+# caller owns the wording, because the same predicate is a hard error in one
+# task and a note in another.
+
+# Tracked files with modifications, staged or not.
+has_uncommitted_changes() {
+  [ -n "$(git status --porcelain)" ]
+}
+
+# Files git is not tracking and .gitignore does not cover.
+#
+# Separate from the check above even though `git status --porcelain` lists both:
+# an untracked file is a different mistake from an uncommitted edit — it is work
+# that would be left behind by a branch switch rather than carried along — and
+# the two deserve different messages.
+has_untracked_files() {
+  [ -n "$(git ls-files --others --exclude-standard)" ]
+}
+
+# A branch with no upstream, so "unpushed" cannot be measured against anything.
+is_local_branch() {
+  ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
+}
+
+# Commits on this branch that no remote has.
+has_unpushed_commits() {
+  [ -n "$(git log --branches --not --remotes)" ]
+}
+
+# Whether this is a linked worktree rather than the main checkout.
+#
+# The distinction matters to a merge because a branch checked out in one
+# worktree cannot be checked out in another — so a merge run from a linked
+# worktree has to do its checkout in the main one.
+is_git_worktree() {
+  local git_dir git_common_dir
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+  git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+  [ "${git_dir}" != "${git_common_dir}" ]
+}
+
+# The absolute path of the main worktree, which `git worktree list` prints first.
+get_main_worktree_path() {
+  git worktree list --porcelain | awk 'NR==1{sub(/^worktree /, ""); print; exit}'
+}

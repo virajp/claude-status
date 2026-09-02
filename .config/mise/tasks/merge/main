@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Merge develop into main, the release branch"
+#MISE hide=false
+
+# The step `release:preflight` and both CI gates are waiting for: a `v*` or
+# `site-v*` tag is refused unless its commit is contained in `main`, and this is
+# what puts it there. `_merge` refuses to run this from anywhere but `develop`.
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_merge"
+
+merge_to_destination_branch "main"
