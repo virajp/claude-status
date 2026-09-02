@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#MISE description="Check a release can be cut from here before the tag is pushed"
+
+# The local mirror of `release.yml`'s gates, run before the tag exists.
+#
+# Every check below is one the workflow also makes. The workflow is the
+# authority — this task cannot be skipped into a broken release, because CI
+# still refuses one. What it buys is *when* the failure lands: a tag that fails
+# `verify` has already been pushed, and un-pushing a tag is worse than not
+# cutting it. This says no while saying no is still free.
+#
+# It writes nothing and tags nothing. The last line prints the command to run.
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+readonly RELEASE_BRANCH="main"
+
+FAILED=0
+
+fail() {
+  print_error "  FAIL  $1"
+  FAILED=1
+}
+
+pass() { print_header "  ok    $1"; }
+
+print_header "Release preflight"
+
+# 1 — the branch. `release.yml` refuses a tag whose commit is not contained in
+# `main`, so a tag cut anywhere else is a release that fails after it exists.
+BRANCH=$(git symbolic-ref --quiet --short HEAD || echo "<detached>")
+if [ "${BRANCH}" = "${RELEASE_BRANCH}" ]; then
+  pass "on ${RELEASE_BRANCH}"
+else
+  fail "on ${BRANCH}, not ${RELEASE_BRANCH} — merge develop into ${RELEASE_BRANCH} first"
+fi
+
+# 2 — a clean tree. A tag names a commit, so anything uncommitted is not in the
+# release however finished it feels.
+if [ -z "$(git status --porcelain)" ]; then
+  pass "working tree clean"
+else
+  fail "working tree is dirty — commit or stash before tagging"
+fi
+
+# 3 — the two manifests agree. `publish-npm` cannot republish a version, so a
+# forgotten bump in npm/package.json fails the publish against a release that
+# is otherwise complete.
+CARGO_VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "${MISE_PROJECT_ROOT}/Cargo.toml" | head -1)
+NPM_VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "${MISE_PROJECT_ROOT}/npm/package.json" | head -1)
+if [ -n "${CARGO_VERSION}" ] && [ "${CARGO_VERSION}" = "${NPM_VERSION}" ]; then
+  pass "Cargo.toml and npm/package.json both at ${CARGO_VERSION}"
+else
+  fail "version mismatch — Cargo.toml ${CARGO_VERSION:-<unreadable>}, npm/package.json ${NPM_VERSION:-<unreadable>}"
+fi
+
+# 4 — the tag is free. npm refuses a republish and the release already exists,
+# so a reused tag is the one failure with no clean recovery.
+TAG="v${CARGO_VERSION}"
+if [ -n "${CARGO_VERSION}" ] && git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+  fail "${TAG} already exists locally"
+elif [ -n "${CARGO_VERSION}" ] && [ -n "$(git ls-remote --tags origin "${TAG}" 2>/dev/null)" ]; then
+  fail "${TAG} already exists on origin"
+else
+  pass "${TAG} is free"
+fi
+
+# 5 — pushed. The tag is resolved on the server, so a local-only commit would
+# be released as whatever origin has instead.
+if git rev-parse --verify --quiet "origin/${RELEASE_BRANCH}" >/dev/null; then
+  if [ "$(git rev-list --count "origin/${RELEASE_BRANCH}..HEAD" 2>/dev/null || echo 0)" = "0" ]; then
+    pass "HEAD is on origin/${RELEASE_BRANCH}"
+  else
+    fail "HEAD is ahead of origin/${RELEASE_BRANCH} — push before tagging"
+  fi
+else
+  fail "no origin/${RELEASE_BRANCH} to compare against — fetch first"
+fi
+
+print_newline
+if [ "${FAILED}" -ne 0 ]; then
+  print_error "Not ready to release."
+  exit 1
+fi
+
+print_header "Ready. To release:"
+print_yellow "    git tag -a ${TAG} -m \"${TAG}\" && git push origin ${TAG}"

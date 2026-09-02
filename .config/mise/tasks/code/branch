@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#MISE description="Refuse a commit on the release branch; work happens on develop"
+
+# `main` is the release branch: a `v*` tag is cut from it, and `release.yml`
+# refuses a tag whose commit is not contained in it. Nothing is authored there.
+#
+# This is the local half of that gate. The CI half cannot catch the mistake
+# until a tag is pushed, by which point the commit is already on `main` and the
+# fix is a history edit. This one fires at `git commit`.
+#
+# **Merges are not commits this can see, and that is deliberate.** Landing
+# `develop` on `main` creates a merge commit, and git runs `pre-merge-commit`
+# for it rather than `pre-commit` — so the hook that calls this task never
+# fires for a merge. The one case where it does fire is a merge that
+# **conflicted**, which is concluded with a plain `git commit`; `MERGE_HEAD` is
+# what distinguishes it, and it is allowed through below.
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+readonly RELEASE_BRANCH="main"
+readonly WORK_BRANCH="develop"
+
+print_header_wait "Checking the branch ... "
+
+# A rebase, a bisect or a `git commit` on a detached HEAD has no branch to
+# judge, and guessing one would block work this policy says nothing about.
+BRANCH=$(git symbolic-ref --quiet --short HEAD || true)
+if [ -z "${BRANCH}" ]; then
+  print_header "OK (detached HEAD)"
+  exit 0
+fi
+
+if [ "${BRANCH}" != "${RELEASE_BRANCH}" ]; then
+  print_header "OK (${BRANCH})"
+  exit 0
+fi
+
+# Concluding a conflicted merge — the one commit on `main` this policy wants.
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+  print_header "OK (concluding a merge)"
+  exit 0
+fi
+
+print_error "ERROR"
+print_warn "- you are on ${RELEASE_BRANCH}, which is the release branch"
+print_warn "- changes are authored on ${WORK_BRANCH} and merged here"
+print_error "Move this work to ${WORK_BRANCH}:"
+print_yellow "    git switch -c ${WORK_BRANCH}   # or: git switch ${WORK_BRANCH}"
+exit 1

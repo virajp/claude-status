@@ -1,5 +1,49 @@
 # claude-status
 
+## Branches
+
+**All work happens on `develop`. Nothing is authored on `main`.**
+
+`main` is the release branch: it holds what has shipped, and both tag lines are
+cut from it. Work lands on `develop`, and reaches `main` only by merge, once it
+has been confirmed.
+
+| Branch    | Holds                                | You may                |
+| --------- | ------------------------------------ | ---------------------- |
+| `develop` | work in progress; the GitHub default | commit, push freely    |
+| `main`    | what has shipped; the release branch | merge into it, and tag |
+
+The cycle is: commit to `develop` → confirm → merge `develop` into `main` → tag
+from `main`.
+
+**Merge with the tasks, not by hand.** `mise run merge:develop` lands a feature
+branch on `develop`; `mise run merge:main` lands `develop` on `main`. Both
+refuse a dirty or unpushed branch, merge `--no-ff` so the merge is a commit git
+can point at, push, and return you to the branch you started on — including from
+a linked worktree, where the checkout has to happen in the main one.
+
+**Five gates enforce this, and they fail at different moments on purpose:**
+
+| Gate                           | Fires at           | Refuses                                                         |
+| ------------------------------ | ------------------ | --------------------------------------------------------------- |
+| `code:branch`, via pre-commit  | `git commit`       | a commit authored on `main`                                     |
+| `merge:develop` / `merge:main` | the merge          | a merge from `main`, or into `main` from anything but `develop` |
+| `release:preflight`            | before you tag     | a release cut from the wrong branch or state                    |
+| `release.yml`, in `verify`     | a pushed `v*`      | a tag whose commit is not on `main`                             |
+| `site.yml`, in `gate`          | a pushed `site-v*` | the same, before the site deploys                               |
+
+The local pair exist because the CI pair cannot fail until the tag is already
+pushed, and un-pushing a tag is worse than not cutting one. The CI pair exist
+because the local pair can be skipped. Neither replaces the other.
+
+**Merging to `main` is not blocked by `code:branch`** — git runs
+`pre-merge-commit` for a merge, not `pre-commit`, and a merge that conflicted
+and is concluded with `git commit` is let through on `MERGE_HEAD`.
+
+Both CI gates ask whether the tagged commit is *contained in* `main`, not
+whether it equals `main` — a tag that sits behind later work is still a valid
+release of an earlier commit.
+
 ## vwf workflow
 
 This repo uses the **vwf** Product → Blueprint → Plan → Execute workflow. Docs

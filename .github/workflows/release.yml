@@ -112,6 +112,28 @@ jobs:
 
       - uses: jdx/mise-action@v4
 
+      # `main` is the release branch. A `v*` tag cut from `develop` would build
+      # and publish code that was never merged, and the version it claims would
+      # not be the version `main` describes.
+      #
+      # `--is-ancestor` rather than an equality check on the ref: the tag may
+      # sit behind `main` if work landed after it was cut, and that is a valid
+      # release of an earlier commit. What is refused is a commit that is not on
+      # `main` at all.
+      #
+      # The explicit fetch is load-bearing — `checkout` at a tag ref does not
+      # bring `origin/main` with it, `fetch-depth: 0` notwithstanding, so the
+      # comparison would otherwise fail on a missing ref rather than on merit.
+      - name: Refuse a tag that is not on main
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} is not on main — merge develop into main, then re-cut the tag"
+            exit 1
+          fi
+          echo "${GITHUB_REF_NAME} is contained in main"
+
       - name: Verify the tag matches Cargo.toml
         id: version
         run: |

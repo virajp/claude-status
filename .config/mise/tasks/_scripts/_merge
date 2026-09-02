@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+#MISE description="The merge both merge:* tasks run"
+#MISE hide=true
+
+# One function, two entrypoints. `merge/develop` and `merge/main` differ only in
+# the branch they name, and keeping the sequence here is what stops them
+# drifting into two subtly different merges.
+#
+# **The policy this enforces is `CLAUDE.md`'s.** Work is authored on `develop`
+# and reaches `main` only by merge, so:
+#
+#   - nothing merges *from* `main` — nothing is authored there to merge
+#   - only `develop` merges *into* `main` — a feature branch that skipped
+#     `develop` has not been through the branch CI builds
+#
+# It merges `--no-ff` on purpose. A fast-forward would leave `main` and
+# `develop` as the same commit with no record that a merge happened, and the
+# merge commit is what makes "what shipped" a question git can answer.
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_checks"
+
+merge_to_destination_branch() {
+  local DESTINATION_BRANCH="$1"
+  local CURRENT_BRANCH
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+  if [ "${CURRENT_BRANCH}" = "${DESTINATION_BRANCH}" ]; then
+    print_yellow "You are already on '${DESTINATION_BRANCH}'. No merge needed!"
+    exit 1
+  fi
+
+  if [ "${CURRENT_BRANCH}" = "main" ]; then
+    print_error "ERROR: merges FROM 'main' are not allowed."
+    print_warn "- 'main' is the release branch; nothing is authored there"
+    print_warn "- switch to 'develop' or a feature branch and try again"
+    exit 1
+  fi
+
+  if [ "${DESTINATION_BRANCH}" = "main" ] && [ "${CURRENT_BRANCH}" != "develop" ]; then
+    print_error "ERROR: merges INTO 'main' are only allowed from 'develop'."
+    print_warn "- you are on '${CURRENT_BRANCH}'"
+    print_warn "- run \`mise run merge:develop\` first, then merge develop into main"
+    exit 1
+  fi
+
+  # A branch checked out in a linked worktree cannot be checked out again in
+  # another, so the checkout below has to happen in the main worktree. Where we
+  # end up afterwards differs by case: from a linked worktree the main worktree
+  # goes back to whatever branch it was on, and from the main worktree we return
+  # to the branch the merge was launched from.
+  local IS_WORKTREE=false
+  local MAIN_WORKTREE_PATH=""
+  local MAIN_WORKTREE_BRANCH=""
+  local RESTORE_BRANCH=""
+
+  if is_git_worktree; then
+    IS_WORKTREE=true
+    MAIN_WORKTREE_PATH=$(get_main_worktree_path)
+    MAIN_WORKTREE_BRANCH=$(git -C "${MAIN_WORKTREE_PATH}" rev-parse --abbrev-ref HEAD)
+    if [ "${MAIN_WORKTREE_BRANCH}" != "${DESTINATION_BRANCH}" ]; then
+      RESTORE_BRANCH="${MAIN_WORKTREE_BRANCH}"
+    fi
+  else
+    RESTORE_BRANCH="${CURRENT_BRANCH}"
+  fi
+
+  print_wait "Checking if any untracked files exist ... "
+  if has_untracked_files; then
+    print_error "ERROR"
+    print_error "- Untracked files exist, please commit or remove them and try again."
+    exit 1
+  fi
+  print_ok
+
+  print_wait "Checking if any uncommitted changes exist ... "
+  if has_uncommitted_changes; then
+    print_error "ERROR"
+    print_error "- Uncommitted changes exist, please commit or remove them and try again."
+    exit 1
+  fi
+  print_ok
+
+  # Unpushed work is refused rather than pushed for us: the merge is about to
+  # publish this branch's commits into the destination, and a commit the remote
+  # has never seen is one CI has never built.
+  print_wait "Checking if any unpushed commits exist ... "
+  if is_local_branch; then
+    print_yellow "local branch"
+  elif has_unpushed_commits; then
+    print_error "ERROR"
+    print_error "- Unpushed commits exist, please push them and try again."
+    exit 1
+  else
+    print_ok
+  fi
+
+  if [ "${IS_WORKTREE}" = true ]; then
+    print_wait "Switching to main worktree at ${MAIN_WORKTREE_PATH} ... "
+    if ! cd "${MAIN_WORKTREE_PATH}"; then
+      print_error "ERROR"
+      print_error "FAILED to switch to main worktree at '${MAIN_WORKTREE_PATH}'!"
+      exit 1
+    fi
+    print_ok
+  fi
+
+  print_wait "Checkout ${DESTINATION_BRANCH} branch ... "
+  if ! git checkout "${DESTINATION_BRANCH}" >/dev/null 2>&1; then
+    print_error "ERROR"
+    print_error "FAILED to checkout '${DESTINATION_BRANCH}' branch!"
+    exit 1
+  fi
+  print_ok
+
+  # Tags come with it because `main` is where releases are cut, and a stale tag
+  # list is how a version gets reused.
+  print_wait "Pulling latest changes from ${DESTINATION_BRANCH} branch ... "
+  if ! git pull origin "${DESTINATION_BRANCH}" --tags >/dev/null 2>&1; then
+    [ -n "${RESTORE_BRANCH}" ] && git checkout "${RESTORE_BRANCH}" -q >/dev/null 2>&1
+    print_error "ERROR"
+    print_error "FAILED to pull latest changes from '${DESTINATION_BRANCH}' branch!"
+    exit 1
+  fi
+  print_ok
+
+  # **A conflict stops here, and the tree is left mid-merge on purpose.**
+  # Aborting would discard the one piece of information worth having — which
+  # files disagree — and resolving it is a judgement call this task cannot make.
+  print_wait "Merging ${CURRENT_BRANCH} into ${DESTINATION_BRANCH} ... "
+  if ! git merge --no-ff "${CURRENT_BRANCH}" -m "Merge ${CURRENT_BRANCH} in ${DESTINATION_BRANCH}" >/dev/null 2>&1; then
+    print_error "ERROR"
+    print_error "FAILED to merge ${CURRENT_BRANCH} into ${DESTINATION_BRANCH}!"
+    print_warn "- the tree is left mid-merge; resolve the conflicts and commit,"
+    print_warn "  or run \`git merge --abort\` to undo it"
+    exit 1
+  fi
+  print_ok
+
+  print_wait "Pushing ${DESTINATION_BRANCH} branch to origin ... "
+  if ! git push origin "${DESTINATION_BRANCH}" --follow-tags >/dev/null 2>&1; then
+    print_error "ERROR"
+    print_error "FAILED to push ${DESTINATION_BRANCH} branch to origin!"
+    exit 1
+  fi
+  print_ok
+
+  if [ -n "${RESTORE_BRANCH}" ]; then
+    if [ "${IS_WORKTREE}" = true ]; then
+      print_wait "Restoring main worktree to ${RESTORE_BRANCH} branch ... "
+    else
+      print_wait "Checkout back to ${RESTORE_BRANCH} branch ... "
+    fi
+    if ! git checkout "${RESTORE_BRANCH}" >/dev/null 2>&1; then
+      print_error "ERROR"
+      print_error "FAILED to checkout back to '${RESTORE_BRANCH}' branch!"
+      exit 1
+    fi
+    print_ok
+  fi
+
+  print_newline
+  print_header "Merge completed successfully!"
+}

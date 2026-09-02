@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Merge the current branch into develop"
+#MISE hide=false
+
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_merge"
+
+merge_to_destination_branch "develop"
