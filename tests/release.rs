@@ -630,6 +630,153 @@ fn the_render_refuses_a_template_it_cannot_place() {
     );
 }
 
+/// A formula rendered from the real template, in a scratch tap, for the
+/// metadata tests below. Returns the tap directory and the rendered file's
+/// sha256 as `shasum` reports it.
+fn rendered_tap(dir: &std::path::Path, url: &str, digest: &str) -> (PathBuf, String) {
+    let tap = dir.join("tap");
+    let out = bash(
+        &format!(
+            "render_formula {}/{TEMPLATE} '{url}' '{digest}' tap/Formula/claude-status.rb",
+            root().display()
+        ),
+        dir,
+    );
+    assert!(out.status.success(), "render_formula failed: {}", String::from_utf8_lossy(&out.stderr));
+    let sum = bash("shasum -a 256 tap/Formula/claude-status.rb | awk '{ print $1 }'", dir);
+    let formula_digest = String::from_utf8_lossy(&sum.stdout).trim().to_string();
+    assert_eq!(formula_digest.len(), 64, "shasum did not yield a digest: {formula_digest:?}");
+    (tap, formula_digest)
+}
+
+/// **The metadata is what mise reads, field for field.**
+///
+/// mise resolves `brew:virajp/tap/claude-status` from
+/// `api/formula/claude-status.json` at the tap's `HEAD` before it ever looks at
+/// the formula, and then fetches the formula at `tap_git_head`, verifies it
+/// against `ruby_source_checksum`, and runs its `install`. Every field asserted
+/// here is one mise refuses to install without, or one it writes into the keg's
+/// receipt and reads back on upgrade (`tap`).
+///
+/// Measured against mise 2026.9.5: without this file, resolution falls back to
+/// mise's Ruby shim, which fails on this formula with "could not infer formula
+/// version" — it reads the version from the url's basename, where there is
+/// none. Adding the `version` line it asks for is the `brew audit` failure
+/// `the_render_produces_a_whole_formula_with_the_new_url_and_digest` pins.
+#[test]
+fn the_metadata_render_describes_the_formula_at_a_pinned_commit() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    let url = "https://github.com/virajp/claude-status/releases/download/v1.2.3/claude-status-darwin-arm64.tar.gz";
+    let digest = "3333333333333333333333333333333333333333333333333333333333333333";
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    let (tap, formula_digest) = rendered_tap(dir.path(), url, digest);
+
+    let out = bash(
+        &format!("render_formula_api virajp/tap tap Formula/claude-status.rb 1.2.3 '{url}' '{digest}' {commit}"),
+        dir.path(),
+    );
+    assert!(out.status.success(), "render_formula_api failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let raw = std::fs::read_to_string(tap.join("api/formula/claude-status.json")).expect("the rendered metadata");
+    let json: serde_json::Value = serde_json::from_str(&raw).expect("the metadata is JSON");
+
+    assert_eq!(json["name"], "claude-status");
+    assert_eq!(json["tap"], "virajp/tap", "without `tap`, mise records the keg as homebrew/core's and never upgrades it");
+    assert_eq!(json["versions"]["stable"], "1.2.3");
+    assert_eq!(json["urls"]["stable"]["url"], url);
+    assert_eq!(json["urls"]["stable"]["checksum"], digest);
+    assert_eq!(json["ruby_source_path"], "Formula/claude-status.rb");
+    assert_eq!(
+        json["ruby_source_checksum"]["sha256"], formula_digest,
+        "the formula checksum is not the rendered formula's — mise would refuse the file it fetches"
+    );
+    assert_eq!(json["tap_git_head"], commit);
+    assert_eq!(
+        json["dependencies"],
+        serde_json::json!([]),
+        "a dependency here is a homebrew/core formula mise will try to fetch; `depends_on :macos` must not become one"
+    );
+    assert_eq!(json["bottle"], serde_json::json!({}), "a bottle entry sends mise to pour rather than run `install`");
+}
+
+/// **Metadata that mise could not act on is not written.**
+///
+/// Each refusal is a field mise checks before it installs anything. A blank
+/// version or a short commit would render as valid JSON and fail only on a
+/// user's machine, in `mise bootstrap packages apply`.
+#[test]
+fn the_metadata_render_refuses_what_mise_would() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    let url = "https://example.com/x.tar.gz";
+    let digest = "4444444444444444444444444444444444444444444444444444444444444444";
+    let commit = "89abcdef0123456789abcdef0123456789abcdef";
+    let (tap, _) = rendered_tap(dir.path(), url, digest);
+
+    let attempt = |args: &str| bash(&format!("render_formula_api virajp/tap tap Formula/claude-status.rb {args}"), dir.path());
+
+    let blank_version = attempt(&format!("'' '{url}' '{digest}' {commit}"));
+    assert!(!blank_version.status.success(), "an empty version was accepted");
+
+    let short_commit = attempt(&format!("1.0.0 '{url}' '{digest}' 89abcdef"));
+    assert!(!short_commit.status.success(), "an abbreviated commit was accepted; mise fetches the formula at that exact path");
+
+    let not_a_sha = attempt(&format!("1.0.0 '{url}' '{digest}' HEAD"));
+    assert!(!not_a_sha.status.success(), "`HEAD` was accepted as a commit; it is the drift the pin exists to prevent");
+
+    let no_formula = bash(
+        &format!("render_formula_api virajp/tap tap Formula/missing.rb 1.0.0 '{url}' '{digest}' {commit}"),
+        dir.path(),
+    );
+    assert!(!no_formula.status.success(), "metadata was rendered for a formula that does not exist");
+    assert!(!tap.join("api/formula/missing.json").exists(), "and a file was written for it");
+
+    // CONTROL: the same arguments, well-formed, succeed.
+    let good = attempt(&format!("1.0.0 '{url}' '{digest}' {commit}"));
+    assert!(
+        good.status.success(),
+        "the helper rejected well-formed arguments, so its refusals above prove nothing: {}",
+        String::from_utf8_lossy(&good.stderr)
+    );
+}
+
+/// **The bump job commits the formula before its metadata, and pushes both.**
+///
+/// `tap_git_head` must name a commit that contains the formula it describes,
+/// and a commit's sha does not exist until it is made — so the order in the
+/// job is the correctness, not tidiness. The metadata is rendered from
+/// `git rev-parse HEAD` taken after the formula commit, and it is rendered
+/// regardless of whether the formula changed, because every release before the
+/// metadata existed left a tap whose formula is current and whose metadata is
+/// absent.
+#[test]
+fn the_bump_job_renders_metadata_after_committing_the_formula() {
+    let workflow = read(".github/workflows/release.yml");
+    let (_, jobs) = split_jobs(&workflow);
+    let bump = jobs
+        .iter()
+        .find(|(n, _)| *n == "bump-tap")
+        .map(|(_, b)| b.as_str())
+        .expect("release.yml lost its `bump-tap` job");
+
+    let formula_commit = bump.find("git commit -m \"claude-status $VERSION\"").expect("the formula commit is gone");
+    let metadata = bump.find("render_formula_api").expect("bump-tap no longer renders the api metadata");
+    let metadata_add = bump.find("git add api/formula/claude-status.json").expect("the metadata is never staged");
+    let push = bump.rfind("git push").expect("bump-tap never pushes");
+
+    assert!(formula_commit < metadata, "the metadata is rendered before the formula is committed, so it pins a commit without the formula");
+    // The sha is read inside the render call, after the formula commit — not
+    // from a variable captured earlier, which would be the pre-bump `HEAD`.
+    let call = &bump[metadata..metadata_add];
+    assert!(call.contains("$(git rev-parse HEAD)"), "the metadata is not pinned to the post-commit `git rev-parse HEAD`:\n{call}");
+    assert!(metadata_add < push, "the metadata is staged after the push");
+
+    // Not inside the formula's "nothing changed" branch: an early `exit 0`
+    // between the formula check and the metadata render would skip the render
+    // on exactly the tap this change has to repair.
+    let between = &bump[formula_commit..metadata];
+    assert!(!between.contains("exit 0"), "an `exit 0` sits between the formula commit and the metadata render:\n{between}");
+}
+
 /// **The shipped template is a formula, not a stub.**
 ///
 /// It is the only copy of `desc`, `homepage`, `caveats` and the `depends_on`

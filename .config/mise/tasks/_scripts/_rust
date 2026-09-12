@@ -254,3 +254,82 @@ render_formula() {
     return 1
   }
 }
+
+# Render the tap's API metadata for a formula: `api/formula/<name>.json`.
+#
+# **This exists for mise, not for brew.** `brew` never reads it. mise's
+# `bootstrap packages` resolves `brew:virajp/tap/claude-status` by fetching
+# this file from the tap's `HEAD` first, and only when it is absent falls back
+# to evaluating the formula with its own Ruby shim. That shim cannot resolve
+# this formula: it infers the version from the url's basename alone, and
+# `claude-status-darwin-arm64.tar.gz` carries none — brew scans the whole path
+# and finds it in `/v1.1.9/`. The one line that would satisfy the shim, an
+# explicit `version`, is the one `brew audit` refuses (see `render_formula`).
+# Publishing the metadata brew would have generated is the way out that changes
+# neither the formula nor the audit.
+#
+# The shape is formulae.brew.sh's, cut down to what mise reads. Three fields
+# are load-bearing beyond the obvious version and url pair: `ruby_source_path`,
+# `ruby_source_checksum` and `tap_git_head`, which together let mise fetch the
+# formula at a pinned commit and verify it before running its `install`. So
+# **the commit must already contain the formula this file describes** — which
+# is why the bump job commits the formula first and this file second.
+#
+# `tap` is not decoration: mise writes it into the keg's install receipt and
+# reads it back to match the keg to `brew:<tap>/<name>` on upgrade and prune.
+# Without it the keg is recorded as homebrew/core's, and never upgrades.
+render_formula_api() {
+  tap_name="$1"
+  tap_dir="$2"
+  formula_rel="$3"
+  version="$4"
+  url="$5"
+  digest="$6"
+  commit="$7"
+
+  formula="$tap_dir/$formula_rel"
+  if [ ! -f "$formula" ]; then
+    echo "no formula at $formula to describe" >&2
+    return 1
+  fi
+  if [ -z "$version" ]; then
+    echo "an empty version would publish metadata mise cannot install" >&2
+    return 1
+  fi
+  # A full sha, not a ref: mise fetches `<commit>/<formula_rel>` from
+  # raw.githubusercontent.com, and `HEAD` there is the very drift this pins
+  # against.
+  case "$commit" in
+    *[!0-9a-f]* | "")
+      echo "'$commit' is not a commit sha; mise fetches the formula at that commit" >&2
+      return 1
+      ;;
+  esac
+  if [ "${#commit}" -ne 40 ]; then
+    echo "'$commit' is ${#commit} chars, not a full 40-char commit sha" >&2
+    return 1
+  fi
+
+  # The formula's own digest, from the same tool `SHA256SUMS` is written with.
+  formula_digest="$(shasum -a 256 "$formula" | awk '{ print $1 }')"
+
+  name="$(basename "$formula_rel" .rb)"
+  out="$tap_dir/api/formula/$name.json"
+  mkdir -p "$(dirname "$out")"
+  printf '{
+  "name": "%s",
+  "tap": "%s",
+  "versions": { "stable": "%s" },
+  "revision": 0,
+  "keg_only": false,
+  "dependencies": [],
+  "build_dependencies": [],
+  "bottle": {},
+  "urls": { "stable": { "url": "%s", "checksum": "%s" } },
+  "ruby_source_path": "%s",
+  "ruby_source_checksum": { "sha256": "%s" },
+  "tap_git_head": "%s"
+}
+' "$name" "$tap_name" "$version" "$url" "$digest" "$formula_rel" "$formula_digest" "$commit" > "$out.new"
+  mv "$out.new" "$out"
+}

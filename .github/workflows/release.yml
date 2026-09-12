@@ -451,7 +451,13 @@ jobs:
   # This job installs nothing, for the same reason `publish` does not: it runs
   # after the build has spent its minutes, and a tool download failing here is
   # a green release whose tap silently did not move. It needs `gh`, `awk`,
-  # `sed` and `git`, all of which the runner image ships.
+  # `sed`, `shasum` and `git`, all of which the runner image ships.
+  #
+  # It writes two files, and the second is for mise, not brew: the formula,
+  # and `api/formula/claude-status.json` — the metadata mise's
+  # `bootstrap packages` reads so that `brew:virajp/tap/claude-status` resolves
+  # without mise having to evaluate the formula itself, which it cannot
+  # (`render_formula_api` in `_scripts/_rust` says why).
   bump-tap:
     needs: [ verify, publish ]
     runs-on: ubuntu-24.04
@@ -570,6 +576,7 @@ jobs:
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          before="$(git rev-parse HEAD)"
 
           # `add` BEFORE the emptiness check. On the first release the formula
           # is a new file, and `git diff` does not see untracked paths — the
@@ -578,11 +585,39 @@ jobs:
           # `diff --cached` after staging sees adds and modifications alike.
           git add Formula/claude-status.rb
           if git diff --cached --quiet; then
-            echo "the formula already pins $VERSION — nothing to bump."
+            echo "the formula already pins $VERSION."
+          else
+            git commit -m "claude-status $VERSION"
+          fi
+
+          # Two commits, not one, and the order is the point. The metadata
+          # names the commit mise must fetch the formula from, so the formula
+          # has to be committed before its metadata can be written — a sha is
+          # not known until the commit exists. `HEAD` here contains the formula
+          # whether or not the branch above committed anything: an unchanged
+          # formula is still the formula at `HEAD`.
+          #
+          # Rendered after the emptiness check on the formula, not inside it,
+          # so a tap whose formula is current but whose metadata is missing or
+          # stale still gets it — that is the state every release before the
+          # metadata existed left behind.
+          render_formula_api \
+            virajp/tap . Formula/claude-status.rb \
+            "$VERSION" "$URL" "$DIGEST" "$(git rev-parse HEAD)"
+
+          git add api/formula/claude-status.json
+          if git diff --cached --quiet; then
+            echo "the metadata already describes $VERSION."
+          else
+            git commit -m "claude-status $VERSION: api metadata"
+          fi
+
+          # Neither commit happened: the tap is already exactly this release.
+          if [ "$(git rev-parse HEAD)" = "$before" ]; then
+            echo "the tap already carries $VERSION — nothing to bump."
             exit 0
           fi
 
-          git commit -m "claude-status $VERSION"
           git push
 
   # The npm package moves only after the release exists, and pins a digest read
