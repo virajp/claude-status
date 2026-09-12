@@ -1910,6 +1910,56 @@ there is no name to get wrong.** The digest is read from that release's
 `SHA256SUMS`, matched on the whole asset name, and **a miss is fatal rather than
 empty.**
 
+### The tap publishes API metadata, for mise and not for brew
+
+**Decided 2026-09-13.** `bump-tap` writes a second file into the tap beside the
+formula: `api/formula/claude-status.json`, in the shape of formulae.brew.sh's
+API, cut down to what mise reads. `brew` never opens it.
+
+**The problem it answers.** mise's `bootstrap packages` can install a tapped
+formula without Homebrew — `"brew:virajp/tap/claude-status" = "latest"` — and
+resolves it by fetching that JSON from the tap's `HEAD` first, falling back to
+evaluating the formula with a Ruby shim of its own. Measured against mise
+2026.9.5, the shim fails on this formula twice over: it infers the version from
+the url's **basename** alone, and `claude-status-darwin-arm64.tar.gz` carries
+none (brew scans the whole path and finds `/v1.1.9/`); and it records
+`depends_on :macos` as a runtime dependency named `macos`, which it would then
+try to fetch from homebrew/core.
+
+**Why the formula was not changed instead.** The shim's own suggestion is an
+explicit `version` line. That line is the `brew audit` failure `render_formula`
+has refused since `distribution/02` — re-measured on Homebrew 6.0.22 against a
+scratch tap: `` `version 1.1.9` is redundant with version scanned from URL ``.
+Satisfying the shim fully would also mean dropping `depends_on :macos`, the one
+thing that stops a Linux `brew install` from unpacking a Mach-O binary. Renaming
+the asset to carry the version was the other option, and it was rejected for its
+blast radius — the name is pinned by the npm installer, the `github:` mise
+backend, the release job and the docs — and because it would tie a published
+name to one tool's regex.
+
+**Publishing the metadata brew would have generated** changes neither the
+formula nor what `brew audit` says about it, and gives mise exactly the fields
+it asks for: `versions.stable`, the url and digest pair, and the triple that
+lets it fetch and verify the formula at a pinned commit before running its
+`install` — `ruby_source_path`, `ruby_source_checksum`, `tap_git_head`. mise's
+install shim was run against the real 1.1.9 tarball into a scratch prefix before
+this was chosen: `bin.install` works and the keg's binary runs, so metadata
+resolution was the whole of the breakage.
+
+**Two commits per release, in a fixed order.** `tap_git_head` must name a commit
+that contains the formula it describes, and a sha does not exist until the
+commit does — so the formula is committed first and the metadata second, pinned
+to `git rev-parse HEAD` read *after* that commit. The metadata is rendered even
+when the formula did not change, because every release before 2026-09-13 left a
+tap whose formula was current and whose metadata was absent. `tap` is written
+into the JSON because mise copies it into the keg's install receipt and matches
+on it at upgrade and prune; without it the keg is recorded as homebrew/core's.
+
+**What is not owned.** The JSON's shape is mise's reading of formulae.brew.sh,
+and nothing here tracks mise. A field mise starts requiring will fail as a
+resolution error on a user's machine, as the version did — the fix is the same
+one, in `render_formula_api`.
+
 ### The standing credential is a GitHub App, and what that does and does not buy
 
 **Decided 2026-08-25** (`distribution/02`). `distribution/01` had removed the

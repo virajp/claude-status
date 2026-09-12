@@ -21,7 +21,10 @@ class ClaudeStatus < Formula
   license "MIT"
 
   # No `version`. Homebrew scans it out of the url, and a `version` line beside
-  # a version-bearing url is a hard `brew audit` failure.
+  # a version-bearing url is a hard `brew audit` failure. mise's own formula
+  # shim cannot scan it — it reads the basename only — which is why the tap
+  # also carries `api/formula/claude-status.json`, rendered by
+  # `render_formula_api` in `_scripts/_rust`; mise reads that first.
 
   # `ArchRequirement` is `fatal true`, so an Intel Mac is refused with "The
   # arm64 architecture is required for this software." rather than installing
