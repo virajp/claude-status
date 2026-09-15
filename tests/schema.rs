@@ -64,7 +64,7 @@ const DESCRIPTION_COUNT: usize = 49;
 /// additions: every one of the 39 existing strings is byte-identical, which is
 /// what makes the count and the digest moving together the expected result
 /// rather than a swap hiding inside a rewrite.
-const DESCRIPTION_DIGEST: u64 = 0x46bc_672d_a9c7_f85d;
+const DESCRIPTION_DIGEST: u64 = 0xd2cc_8890_f890_7b7f;
 
 /// The only four `default` values the published schema has ever carried.
 ///
@@ -84,13 +84,13 @@ const DESCRIPTION_DIGEST: u64 = 0x46bc_672d_a9c7_f85d;
 /// red. Deriving the expectation is what makes that pair impossible — change
 /// `caps::DEFAULTS` alone and the drift test fires; break the wiring alone and
 /// this one does.
-fn expected_defaults() -> [(&'static str, u64); 4] {
+fn expected_defaults() -> [(&'static str, i64); 4] {
     let d = caps::DEFAULTS;
     [
-        ("context", u64::from(d.context)),
-        ("fiveHour", u64::from(d.five_hour)),
-        ("sevenDay", u64::from(d.seven_day)),
-        ("spend", u64::from(d.spend)),
+        ("context", i64::from(d.context)),
+        ("fiveHour", i64::from(d.five_hour)),
+        ("sevenDay", i64::from(d.seven_day)),
+        ("spend", i64::from(d.spend)),
     ]
 }
 

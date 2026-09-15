@@ -38,8 +38,8 @@ below.
 {
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "lines": [
-    ["model", "context", "rl5h", "rl7d", "spend", "cost"],
-    ["project", "worktree", "branch"]
+    ["model", "context", "rl5h", "rl7d", "rl7dm", "spend"],
+    ["project", "worktree", "branch", "cost"]
   ],
   "segments": {
     "cost": { "bg": "green", "bold": true }
@@ -129,8 +129,8 @@ in that directory.
 {
   "caps": {
     "context": 65,
-    "fiveHour": 90,
-    "sevenDay": 80,
+    "fiveHour": 95,
+    "sevenDay": 98,
     "spend": 90
   }
 }
@@ -144,8 +144,9 @@ keep their defaults.
 whereas an exhausted budget needs somebody to act. The figure comes from the
 same cache the `spend` segment reads, so the hook never fetches.
 
-A cap that is absent, negative, non-numeric or above 1000 falls back to its
-shipped default. `0` is a real cap, meaning "breach on any usage at all".
+A cap of `-1` switches that one off. Anything else outside `-1`–`100`, or
+non-numeric, falls back to its shipped default. `0` is a real cap, meaning
+"breach on any usage at all".
 
 ### The spend segment
 

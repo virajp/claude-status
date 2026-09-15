@@ -1698,6 +1698,36 @@ shipped default rather than being clamped**, so a config that failed to make
 sense behaves like one that was never written. **`0` is a real cap** meaning
 "breach on any usage at all", and is not mistaken for unset.
 
+**Reversed in part 2026-09-15.** The bound was `0..=1000`, and the only way to
+switch a cap off was to set it above 100, where a strict `>` could never be met
+— a trick the docs never named. The bound is now **`-1..=100`, and `-1` means
+off**, per cap. It is the one value outside a percentage that reads as an intent
+rather than a typo; `-2` or `101` still fall back to the default. The 5-hour and
+7-day defaults moved from 90/80 to 95/98 in the same change.
+
+### `rl7dm`: the per-model 7-day window rides on the spend fetch
+
+**Decided 2026-09-15.** The statusline payload carries one 7-day figure. The
+OAuth usage endpoint — the one the spend refresh already polls — also lists
+`limits[]`, and a row of kind `weekly_scoped` with a `scope.model` is a model's
+own weekly window (`Fable`, on the seats that have one). `rl7dm` renders those
+rows as `Fable 12% · Opus 40%`, from the spend cache, and omits when there are
+none.
+
+**One fetch, one cache, one gate 1.** The refresh spawns when *either* `spend`
+or `rl7dm` is in the layout, and the 24-hour stretch for Pro/Max seats is
+**cancelled while `rl7dm` is present** — the stretch exists because gate 4 hides
+`spend` on those seats, but `rl7dm` is not plan-gated, and a day-old percentage
+there is worse than none. A second fetch path was the alternative and was
+rejected: the endpoint's per-account throttle is the reason the cache is
+machine-global in the first place.
+
+**No reset time.** It is the same reset `rl7d` already shows.
+
+**`cost` moved to the end of the second line** in the same change, to make room;
+the first line is now every figure that counts down, the second is where you are
+and what it has cost.
+
 ### npm is retired as a channel
 
 **Decided 2026-08-23** (`drop-npm`), before it ever shipped a real version. The

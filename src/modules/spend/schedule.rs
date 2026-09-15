@@ -35,7 +35,11 @@ pub enum Decision {
 ///
 /// It exists because gate 4 hides the segment for Pro/Max seats, but a seat can
 /// become a team seat, so the machine still re-checks daily.
-pub fn decide(cached: Option<&SpendCache>, config: &SpendConfig, now_ms: i64) -> Decision {
+///
+/// `models_wanted` — `rl7dm` is in the layout — cancels the stretch: that
+/// segment renders on every plan from the same fetch, and a day-old figure is
+/// worse than none. See `a_layout_with_rl7dm_is_never_stretched`.
+pub fn decide(cached: Option<&SpendCache>, config: &SpendConfig, now_ms: i64, models_wanted: bool) -> Decision {
     if config.refresh_minutes == 0.0 {
         return Decision::Disabled;
     }
@@ -49,12 +53,13 @@ pub fn decide(cached: Option<&SpendCache>, config: &SpendConfig, now_ms: i64) ->
         return Decision::InBackoff { until: cache.backoff_until };
     }
 
-    let interval = interval_for(cache, config);
+    let interval = interval_for(cache, config, models_wanted);
     if now_ms - cache.ts > interval { Decision::Spawn } else { Decision::Fresh }
 }
 
-fn interval_for(cache: &SpendCache, config: &SpendConfig) -> i64 {
-    let stretched = config.show == "auto"
+fn interval_for(cache: &SpendCache, config: &SpendConfig, models_wanted: bool) -> i64 {
+    let stretched = !models_wanted
+        && config.show == "auto"
         && cache.plan.as_deref().is_some_and(|plan| !plan.is_empty())
         && !is_team_plan(cache.plan.as_deref());
 
@@ -70,50 +75,58 @@ mod tests {
     }
 
     fn cache(plan: Option<&str>, ts: i64, backoff: i64) -> SpendCache {
-        SpendCache { ts, plan: plan.map(str::to_string), failures: 0, backoff_until: backoff, data: None }
+        SpendCache { ts, plan: plan.map(str::to_string), failures: 0, backoff_until: backoff, data: None, models: vec![] }
     }
 
     const NOW: i64 = 1_000_000_000;
 
     #[test]
+    fn a_layout_with_rl7dm_is_never_stretched() {
+        let seventeen_hours_ago = NOW - 17 * 60 * 60 * 1000;
+        let max_plan = cache(Some("max"), seventeen_hours_ago, 0);
+        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW, false), Decision::Fresh);
+        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW, true), Decision::Spawn);
+    }
+
+    #[test]
     fn no_cache_means_spawn() {
-        assert_eq!(decide(None, &cfg("auto", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(None, &cfg("auto", 15.0), NOW, false), Decision::Spawn);
     }
 
     #[test]
     fn zero_minutes_disables_the_spawn_entirely() {
         // Including when there is no cache at all — the render still draws
         // whatever it has, it just never fetches.
-        assert_eq!(decide(None, &cfg("auto", 0.0), NOW), Decision::Disabled);
+        assert_eq!(decide(None, &cfg("auto", 0.0), NOW, false), Decision::Disabled);
         let stale = cache(Some("team"), 0, 0);
-        assert_eq!(decide(Some(&stale), &cfg("auto", 0.0), NOW), Decision::Disabled);
+        assert_eq!(decide(Some(&stale), &cfg("auto", 0.0), NOW, false), Decision::Disabled);
     }
 
     #[test]
     fn a_fresh_cache_does_not_spawn() {
         let fresh = cache(Some("team"), NOW - 60_000, 0);
-        assert_eq!(decide(Some(&fresh), &cfg("auto", 15.0), NOW), Decision::Fresh);
+        assert_eq!(decide(Some(&fresh), &cfg("auto", 15.0), NOW, false), Decision::Fresh);
     }
 
     #[test]
     fn a_stale_cache_spawns() {
         let stale = cache(Some("team"), NOW - 16 * 60_000, 0);
-        assert_eq!(decide(Some(&stale), &cfg("auto", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(Some(&stale), &cfg("auto", 15.0), NOW, false), Decision::Spawn);
     }
 
     #[test]
     fn staleness_is_a_strict_comparison() {
         let exactly = cache(Some("team"), NOW - 15 * 60_000, 0);
-        assert_eq!(decide(Some(&exactly), &cfg("auto", 15.0), NOW), Decision::Fresh, "exactly at the TTL is fresh");
+        assert_eq!(decide(Some(&exactly), &cfg("auto", 15.0), NOW, false), Decision::Fresh, "exactly at the TTL is fresh");
     }
 
     #[test]
     fn a_future_backoff_blocks_the_spawn() {
         let backed_off = cache(Some("team"), 0, NOW + 1000);
-        assert_eq!(decide(Some(&backed_off), &cfg("auto", 15.0), NOW), Decision::InBackoff { until: NOW + 1000 });
+        assert_eq!(decide(Some(&backed_off), &cfg("auto", 15.0), NOW, false), Decision::InBackoff { until: NOW + 1000 });
 
         let expired = cache(Some("team"), 0, NOW);
-        assert_eq!(decide(Some(&expired), &cfg("auto", 15.0), NOW), Decision::Spawn, "strictly greater");
+        assert_eq!(decide(Some(&expired), &cfg("auto", 15.0), NOW, false), Decision::Spawn, "strictly greater");
     }
 
     #[test]
@@ -123,28 +136,28 @@ mod tests {
         // All four hold: auto, a cache, a recorded plan, not team → stretched,
         // so seventeen hours is still fresh.
         let max_plan = cache(Some("max"), seventeen_hours_ago, 0);
-        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW), Decision::Fresh);
+        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW, false), Decision::Fresh);
 
         // show is not auto → normal interval.
-        assert_eq!(decide(Some(&max_plan), &cfg("always", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(Some(&max_plan), &cfg("always", 15.0), NOW, false), Decision::Spawn);
 
         // The plan IS team → normal interval.
         let team = cache(Some("team"), seventeen_hours_ago, 0);
-        assert_eq!(decide(Some(&team), &cfg("auto", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(Some(&team), &cfg("auto", 15.0), NOW, false), Decision::Spawn);
 
         // No plan recorded → normal interval, because the plan tag comes from
         // the very fetch being scheduled.
         let unknown = cache(None, seventeen_hours_ago, 0);
-        assert_eq!(decide(Some(&unknown), &cfg("auto", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(Some(&unknown), &cfg("auto", 15.0), NOW, false), Decision::Spawn);
 
         let empty_plan = cache(Some(""), seventeen_hours_ago, 0);
-        assert_eq!(decide(Some(&empty_plan), &cfg("auto", 15.0), NOW), Decision::Spawn);
+        assert_eq!(decide(Some(&empty_plan), &cfg("auto", 15.0), NOW, false), Decision::Spawn);
     }
 
     #[test]
     fn a_stretched_cache_still_refreshes_after_a_day() {
         let two_days = NOW - 2 * STRETCHED_MS;
         let max_plan = cache(Some("max"), two_days, 0);
-        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW), Decision::Spawn, "a seat can become a team seat");
+        assert_eq!(decide(Some(&max_plan), &cfg("auto", 15.0), NOW, false), Decision::Spawn, "a seat can become a team seat");
     }
 }

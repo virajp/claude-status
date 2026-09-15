@@ -26,6 +26,30 @@ pub fn extract(body: &Value) -> Option<Spend> {
     modern(body).or_else(|| legacy(body))
 }
 
+/// One model's own 7-day window, as the cache stores it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelWindow {
+    /// The endpoint's display name — `Fable`, not a model id.
+    pub name: String,
+    pub percent: f64,
+}
+
+/// The per-model 7-day windows: every `limits[]` row of kind `weekly_scoped`
+/// whose scope names a model. A seat with none gets an empty list, which is
+/// the usual case and not an error. Order is the endpoint's.
+pub fn extract_models(body: &Value) -> Vec<ModelWindow> {
+    body.get("limits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|row| row.get("kind").and_then(Value::as_str) == Some("weekly_scoped"))
+        .filter_map(|row| {
+            let name = row.get("scope")?.get("model")?.get("display_name")?.as_str()?;
+            Some(ModelWindow { name: name.to_string(), percent: row.get("percent")?.as_f64()? })
+        })
+        .collect()
+}
+
 /// The current shape: a `spend` object with minor-unit amounts.
 fn modern(body: &Value) -> Option<Spend> {
     let spend = body.get("spend")?;
@@ -61,6 +85,26 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn model_windows_are_the_scoped_weekly_rows_and_nothing_else() {
+        let body = json!({ "limits": [
+            { "kind": "session", "group": "session", "percent": 3, "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 81, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 12,
+              "scope": { "model": { "id": null, "display_name": "Fable" }, "surface": null } },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 40,
+              "scope": { "model": null, "surface": "cowork" } },
+        ]});
+        assert_eq!(extract_models(&body), vec![ModelWindow { name: "Fable".into(), percent: 12.0 }]);
+    }
+
+    #[test]
+    fn a_body_without_limits_has_no_model_windows() {
+        assert!(extract_models(&json!({})).is_empty());
+        assert!(extract_models(&json!({ "limits": null })).is_empty());
+        assert!(extract_models(&json!({ "limits": [{ "kind": "weekly_scoped" }] })).is_empty());
+    }
 
     #[test]
     fn the_modern_shape_is_read_first() {

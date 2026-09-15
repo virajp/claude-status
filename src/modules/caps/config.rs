@@ -36,9 +36,10 @@ use crate::config::Config;
 /// The shipped caps, as percentages. The embedded layer carries these too — the
 /// constant is the fallback for a `caps` block that is absent or malformed, so
 /// a broken config file behaves like one that was never written.
-pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 90, seven_day: 80, spend: 90 };
+pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 95, seven_day: 98, spend: 90 };
 
-/// The thresholds a breach is measured against, as percentages.
+/// The thresholds a breach is measured against, as percentages. `-1` switches
+/// that one cap off; see [`crate::caps::level`].
 ///
 /// [`serde::Serialize`] is derived where [`Deserialize`] is hand-written: reading has
 /// to degrade each key independently, but writing has one shape and no
@@ -46,7 +47,7 @@ pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 90, seven_day: 80, spe
 /// on `fiveHour`/`sevenDay`.
 ///
 /// The `JsonSchema` derive is a **third** reading of the same shape, and the
-/// only one that has to be told the bounds: [`cap`] enforces `0..=1000` in
+/// only one that has to be told the bounds: [`cap`] enforces `-1..=100` in
 /// code, where a derive cannot see it. `#[serde(default)]` is absent here — the
 /// hand-written [`Deserialize`] already answers absence per key — so the
 /// generated schema is told not to require any of the four.
@@ -58,21 +59,21 @@ pub const DEFAULTS: Caps = Caps { context: 65, five_hour: 90, seven_day: 80, spe
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Caps {
-    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
-    #[cfg_attr(feature = "schema", schemars(description = "Percent of the context window. Default 65."))]
-    pub context: u32,
-    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
-    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 5-hour rate-limit window. Default 90."))]
-    pub five_hour: u32,
-    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
-    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 7-day rate-limit window. Default 80."))]
-    pub seven_day: u32,
+    #[cfg_attr(feature = "schema", schemars(range(min = -1, max = 100)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the context window. Default 65. -1 disables."))]
+    pub context: i32,
+    #[cfg_attr(feature = "schema", schemars(range(min = -1, max = 100)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 5-hour rate-limit window. Default 95. -1 disables."))]
+    pub five_hour: i32,
+    #[cfg_attr(feature = "schema", schemars(range(min = -1, max = 100)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the 7-day rate-limit window. Default 98. -1 disables."))]
+    pub seven_day: i32,
     /// The monthly budget cap, also a percentage — not an amount. A budget is
     /// an account-level figure in the account's own currency; a percentage is
     /// the only form that means the same thing on every seat.
-    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 1000)))]
-    #[cfg_attr(feature = "schema", schemars(description = "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer."))]
-    pub spend: u32,
+    #[cfg_attr(feature = "schema", schemars(range(min = -1, max = 100)))]
+    #[cfg_attr(feature = "schema", schemars(description = "Percent of the account's monthly budget. Default 90. -1 disables. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer."))]
+    pub spend: i32,
 }
 
 impl Default for Caps {
@@ -103,13 +104,14 @@ pub fn resolve(config: &Config) -> Caps {
     config.caps
 }
 
-/// A negative or absurd number is ignored rather than clamped: `as u32` on a
-/// negative float is a trap, and a cap of `-1` is a typo, not an intent.
-fn cap(caps: &Value, key: &str, fallback: u32) -> u32 {
+/// `-1` is the one value outside a percentage that means something — "off".
+/// Anything else outside `-1..=100` is ignored rather than clamped: a cap of
+/// `-2` or `500` is a typo, not an intent.
+fn cap(caps: &Value, key: &str, fallback: i32) -> i32 {
     caps.get(key)
         .and_then(Value::as_f64)
-        .filter(|v| v.is_finite() && *v >= 0.0 && *v <= 1000.0)
-        .map_or(fallback, |v| v as u32)
+        .filter(|v| v.is_finite() && *v >= -1.0 && *v <= 100.0)
+        .map_or(fallback, |v| v as i32)
 }
 
 #[cfg(test)]
@@ -153,7 +155,7 @@ mod tests {
 
     #[test]
     fn a_nonsense_value_falls_back_rather_than_clamping() {
-        for bad in [json!(-1), json!("80"), json!(null), json!({}), json!(5000)] {
+        for bad in [json!(-2), json!("80"), json!(null), json!({}), json!(101), json!(5000)] {
             assert_eq!(
                 caps_from(json!({ "caps": { "context": bad } })).context,
                 DEFAULTS.context,
@@ -167,5 +169,10 @@ mod tests {
         // `0` breaches on any usage at all, which is a legitimate way to say
         // "always warn me". It must not be mistaken for unset.
         assert_eq!(caps_from(json!({ "caps": { "context": 0 } })).context, 0);
+    }
+
+    #[test]
+    fn minus_one_is_read_as_off_not_as_nonsense() {
+        assert_eq!(caps_from(json!({ "caps": { "sevenDay": -1 } })).seven_day, -1);
     }
 }

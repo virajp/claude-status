@@ -270,6 +270,27 @@ fn panel_mentions_spend(panel: &str) -> bool {
     panel.contains('\u{f09d}')
 }
 
+#[test]
+fn rl7dm_renders_the_cached_model_windows_on_a_max_seat_and_omits_without_any() {
+    // `show` is left at `auto`, so `spend` is hidden on a max seat; `rl7dm`
+    // is not gated by plan and draws from the same cache file.
+    let home = Home::new(r#"{ "projectName": "e2e-fixture", "spend": { "refreshMinutes": 0 } }"#);
+    let cache = home.path().join(".cache").join("claude-status").join("spend.json");
+    let payload = r#"{"session_id":"abc123","model":{"display_name":"Opus"}}"#;
+
+    let bare = stdout(&run(&home, &["--statusline"], payload, &[]));
+    assert!(!bare.contains("Fable"), "no model window, no segment: {}", bare.escape_debug());
+
+    std::fs::write(
+        &cache,
+        r#"{"ts":9999999999999,"plan":"max","failures":0,"backoffUntil":0,"data":null,"models":[{"name":"Fable","percent":12.0},{"name":"Opus","percent":40.0}]}"#,
+    )
+    .unwrap();
+    let out = stdout(&run(&home, &["--statusline"], payload, &[]));
+    assert!(out.contains("Fable 12% · Opus 40%"), "{}", out.escape_debug());
+    assert!(!panel_mentions_spend(&out), "spend stays hidden on a max seat");
+}
+
 /// A usage mirror the caps hook will read, written where the hook looks.
 fn seed_mirror(dir: &Path, session_id: &str, body: &str) {
     std::fs::create_dir_all(dir).unwrap();
@@ -284,7 +305,7 @@ fn caps_run(home: &Home, usage_dir: &Path, stdin: &str, var: &str) -> Output {
 fn the_caps_hook_emits_one_directive_when_the_seven_day_cap_is_breached() {
     let home = Home::new(&safe_config());
     let usage = home.path().join("usage");
-    seed_mirror(&usage, "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":1774600000}"#);
+    seed_mirror(&usage, "s1", r#"{"sevenDayPct":99,"sevenDayResetsAt":1774600000}"#);
 
     let out = caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR");
     assert!(out.status.success());
@@ -292,7 +313,7 @@ fn the_caps_hook_emits_one_directive_when_the_seven_day_cap_is_breached() {
     let emitted: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("one JSON object");
     let ctx = emitted["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
     assert_eq!(emitted["hookSpecificOutput"]["hookEventName"], "PostToolUse");
-    assert!(ctx.contains("7-DAY LIMIT CAP") && ctx.contains("85%"), "{ctx}");
+    assert!(ctx.contains("7-DAY LIMIT CAP") && ctx.contains("99%"), "{ctx}");
     assert!(ctx.contains("vwf:handoff") && ctx.contains("/vwf:recall next"), "{ctx}");
     assert!(!ctx.contains("docs/handoffs/"), "the stale path from the JS: {ctx}");
 }
@@ -301,7 +322,7 @@ fn the_caps_hook_emits_one_directive_when_the_seven_day_cap_is_breached() {
 fn the_more_severe_of_two_breaches_is_the_one_reported() {
     let home = Home::new(&safe_config());
     let usage = home.path().join("usage");
-    seed_mirror(&usage, "s1", r#"{"ctxPct":99,"sevenDayPct":85}"#);
+    seed_mirror(&usage, "s1", r#"{"ctxPct":99,"sevenDayPct":99}"#);
 
     let panel = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
     assert!(panel.contains("7-DAY"), "{panel}");
@@ -321,7 +342,7 @@ fn the_directive_is_debounced_until_the_breach_escalates() {
     assert_eq!(second, "", "the same level does not fire again");
 
     // Escalating to the 7-day cap fires a second time.
-    seed_mirror(&usage, "s1", r#"{"ctxPct":70,"sevenDayPct":85}"#);
+    seed_mirror(&usage, "s1", r#"{"ctxPct":70,"sevenDayPct":99}"#);
     let third = stdout(&caps_run(&home, &usage, stdin, "CLAUDE_STATUS_USAGE_DIR"));
     assert!(third.contains("7-DAY"), "an escalation fires: {third}");
 
@@ -526,7 +547,7 @@ fn the_caps_hook_is_completely_silent_when_it_has_nothing_to_read() {
 fn an_iso_reset_timestamp_degrades_to_soon_rather_than_parsing() {
     let home = Home::new(&safe_config());
     let usage = home.path().join("usage");
-    seed_mirror(&usage, "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":"2026-08-21T00:00:00Z"}"#);
+    seed_mirror(&usage, "s1", r#"{"sevenDayPct":99,"sevenDayResetsAt":"2026-08-21T00:00:00Z"}"#);
 
     let out = stdout(&caps_run(&home, &usage, r#"{"session_id":"s1"}"#, "CLAUDE_STATUS_USAGE_DIR"));
     assert!(out.contains("resets in soon"), "matches the JS numeric-only coercion: {out}");
@@ -545,7 +566,7 @@ fn the_usage_dir_variable_migrates_without_breaking_the_old_name() {
 
     // With both set, the new name wins.
     let other = home.path().join("elsewhere");
-    seed_mirror(&other, "s2", r#"{"sevenDayPct":85}"#);
+    seed_mirror(&other, "s2", r#"{"sevenDayPct":99}"#);
     let out = run(&home, &["--caps-hook"], r#"{"session_id":"s2"}"#, &[
         ("CLAUDE_STATUS_USAGE_DIR", other.to_str().unwrap()),
         ("AI_PLUGINS_USAGE_DIR", usage.to_str().unwrap()),
@@ -2378,7 +2399,7 @@ fn with_no_home_the_caps_hook_stays_silent() {
     // a breach-level mirror here is exactly what it would have found and acted
     // on. Without this the test proves nothing: an absent file produces silence
     // either way, which is how it passed before this seeding was added.
-    seed_mirror(&dir.path().join("~").join("usage"), "s1", r#"{"sevenDayPct":85,"sevenDayResetsAt":1774600000}"#);
+    seed_mirror(&dir.path().join("~").join("usage"), "s1", r#"{"sevenDayPct":99,"sevenDayResetsAt":1774600000}"#);
 
     let out = run_without_home(
         &["--caps-hook"],

@@ -296,32 +296,35 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
     git::resolve_markers(&mut git_facts);
     narrate(&format!("git markers: ahead={} +{} -{}", git_facts.ahead, git_facts.additions, git_facts.deletions));
 
-    let spend = resolve_spend(&layers.config, facts.now_ms, narrate);
-    render_main(&facts, &git_facts, &layers.config, spend.as_deref())
+    let (spend, models) = resolve_spend(&layers.config, facts.now_ms, narrate);
+    render_main(&facts, &git_facts, &layers.config, spend.as_deref(), models.as_deref())
 }
 
-/// The spend segment's text, and the decision to spawn a refresh behind it.
+/// The `spend` and `rl7dm` segments' text, and the decision to spawn a refresh
+/// behind them. Both come from one fetch and one cache, which is why they are
+/// resolved together.
 ///
-/// **Gate 1 comes before everything.** A user without `spend` in their layout
-/// pays nothing for it: no cache read, no fork, no keychain prompt. That is
-/// why this is not simply a segment builder.
+/// **Gate 1 comes before everything.** A user with neither segment in their
+/// layout pays nothing for them: no cache read, no fork, no keychain prompt.
+/// That is why this is not simply a segment builder.
 ///
 /// A render never fetches. When the cache is stale this spawns a detached
 /// child and returns the **cached** text immediately, without waiting.
-fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option<String> {
-    if !spend::in_layout(&config.lines) {
-        narrate("spend: not in the layout, nothing read");
-        return None;
+fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> (Option<String>, Option<String>) {
+    let models_wanted = spend::models_in_layout(&config.lines);
+    if !spend::in_layout(&config.lines) && !models_wanted {
+        narrate("spend: neither spend nor rl7dm in the layout, nothing read");
+        return (None, None);
     }
 
     let Some(cache_path) = spend::cache::path() else {
         narrate("spend: no $HOME, so no cache to read and nowhere to refresh into");
-        return None;
+        return (None, None);
     };
 
     let cached = spend::cache::read_from(&cache_path);
 
-    match spend::schedule::decide(cached.as_ref(), &config.spend, now_ms) {
+    match spend::schedule::decide(cached.as_ref(), &config.spend, now_ms, models_wanted) {
         spend::schedule::Decision::Spawn => {
             let spawned = proc::spawn_detached(&[cli::REFRESH_FLAG]);
             narrate(&format!("spend: stale, refresh child spawned={spawned}"));
@@ -331,7 +334,9 @@ fn resolve_spend(config: &Config, now_ms: i64, narrate: &dyn Fn(&str)) -> Option
 
     let verdict = spend::verdict(cached.as_ref(), &config.spend, &config.lines, config.symbol("spend"));
     narrate(&format!("spend: {verdict:?}"));
-    verdict.text().map(str::to_string)
+    let models = models_wanted.then(|| spend::models_text(cached.as_ref())).flatten();
+    narrate(&format!("rl7dm: {models:?}"));
+    (verdict.text().map(str::to_string), models)
 }
 
 /// The `--doctor` report: what this binary sees.
@@ -551,8 +556,16 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> Marked) -> String {
     // dynamic value inside it already went through `segments::build`.
     let _ = writeln!(out, "\nSAMPLE RENDER");
     // No spend text: the SPEND section above already reported what it would
-    // draw and why, and the sample's facts are synthetic anyway.
-    let sample = render_main(&sample_facts(), &git_facts, &config, None);
+    // draw and why, and the sample's facts are synthetic anyway. The model
+    // windows are different — not plan-gated, and the one figure here that
+    // is real — so the sample draws what the cache holds, if `rl7dm` is in
+    // the layout.
+    let models = spend::models_in_layout(&config.lines)
+        .then(|| spend::cache::path().as_deref().and_then(spend::cache::read_from))
+        .flatten()
+        .as_ref()
+        .and_then(|cached| spend::models_text(Some(cached)));
+    let sample = render_main(&sample_facts(), &git_facts, &config, None, models.as_deref());
     for line in sample.lines() {
         let _ = writeln!(out, "  {line}");
     }
@@ -697,8 +710,8 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Renders a bar from already-built facts. The seam the golden tests use, and
 /// the one place a caller can pin the clock.
-pub fn render_bar(facts: &MainFacts, git: &GitFacts, config: &Config, spend: Option<&str>) -> String {
-    render_main(facts, git, config, spend)
+pub fn render_bar(facts: &MainFacts, git: &GitFacts, config: &Config, spend: Option<&str>, models: Option<&str>) -> String {
+    render_main(facts, git, config, spend, models)
 }
 
 #[cfg(test)]

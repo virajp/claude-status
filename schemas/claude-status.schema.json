@@ -15,30 +15,30 @@
       "properties": {
         "context": {
           "type": "integer",
-          "maximum": 1000,
-          "minimum": 0,
-          "description": "Percent of the context window. Default 65.",
+          "maximum": 100,
+          "description": "Percent of the context window. Default 65. -1 disables.",
+          "minimum": -1,
           "default": 65
         },
         "fiveHour": {
           "type": "integer",
-          "maximum": 1000,
-          "minimum": 0,
-          "description": "Percent of the 5-hour rate-limit window. Default 90.",
-          "default": 90
+          "maximum": 100,
+          "description": "Percent of the 5-hour rate-limit window. Default 95. -1 disables.",
+          "minimum": -1,
+          "default": 95
         },
         "sevenDay": {
           "type": "integer",
-          "maximum": 1000,
-          "minimum": 0,
-          "description": "Percent of the 7-day rate-limit window. Default 80.",
-          "default": 80
+          "maximum": 100,
+          "description": "Percent of the 7-day rate-limit window. Default 98. -1 disables.",
+          "minimum": -1,
+          "default": 98
         },
         "spend": {
           "type": "integer",
-          "maximum": 1000,
-          "minimum": 0,
-          "description": "Percent of the account's monthly budget. Default 90. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer.",
+          "maximum": 100,
+          "description": "Percent of the account's monthly budget. Default 90. -1 disables. Only ever breaches on a seat that has a budget block — team and enterprise — and the figure comes from the spend cache the refresh child maintains, never from a fetch on the hook path. Checked before the other three, because a budget does not reset on a timer.",
+          "minimum": -1,
           "default": 90
         }
       },
@@ -153,7 +153,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/style"
       },
-      "description": "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."
+      "description": "Default styling per main-bar segment id (model, context, rl5h, rl7d, rl7dm, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."
     },
     "lines": {
       "type": "array",

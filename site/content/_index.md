@@ -16,7 +16,8 @@ lede = "A powerline bar under Claude Code carrying what you actually keep checki
 - **Context you can feel.** A gauge, the token count and the percentage — so you
   know you are getting close before Claude tells you.
 - **Both rate-limit windows.** The 5-hour and the 7-day, each with the time
-  until it resets.
+  until it resets — and the 7-day per model, on a seat where one model has its
+  own weekly limit.
 - **Cost as you go.** The session's spend, and on a seat billed against a
   monthly budget rather than the rolling windows, that budget beside it.
 - **Your subagents.** A second panel, a row per subagent, with its name, model,
@@ -34,7 +35,7 @@ more than the process starting.
 
 A `PostToolUse` hook watches your usage and, when you cross a cap, tells Claude
 to wrap up and hand off rather than letting the session run on. The shipped caps
-are 65% of the context window, 90% of the 5-hour window, 80% of the 7-day one
+are 65% of the context window, 95% of the 5-hour window, 98% of the 7-day one
 and 90% of a monthly budget — all four are yours to change, and a repository you
 cloned cannot raise them past what you set. See [Configure](@/configure.md).
 

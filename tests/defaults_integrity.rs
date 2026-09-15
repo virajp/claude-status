@@ -159,8 +159,8 @@ fn the_defaults_carry_no_project_name() {
 fn the_default_layout_is_two_lines() {
     let d = defaults();
     let expected: Value = serde_json::json!([
-        ["model", "context", "rl5h", "rl7d", "spend", "cost"],
-        ["project", "worktree", "branch"],
+        ["model", "context", "rl5h", "rl7d", "rl7dm", "spend"],
+        ["project", "worktree", "branch", "cost"],
     ]);
     assert_eq!(at(&d, "lines"), &expected);
 }

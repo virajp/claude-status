@@ -85,7 +85,7 @@ fn fixture_facts() -> MainFacts {
 #[test]
 fn the_reference_fixture_renders() {
     let git = GitFacts { branch: Some("main".into()), ..Default::default() };
-    assert_golden("fixture", &render_bar(&fixture_facts(), &git, &config(), None));
+    assert_golden("fixture", &render_bar(&fixture_facts(), &git, &config(), None, None));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn a_cold_start_with_no_payload_still_draws_a_full_bar() {
     // Deviation from the JS, which rendered blank without a config file: the
     // embedded defaults layer means a cold machine gets a real bar.
     let facts = MainFacts { now_ms: PINNED_NOW, ..Default::default() };
-    assert_golden("cold_start", &render_bar(&facts, &GitFacts::default(), &config(), None));
+    assert_golden("cold_start", &render_bar(&facts, &GitFacts::default(), &config(), None, None));
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn a_worktree_with_every_git_marker_renders() {
         worktree_subpath: Some("main-bar".into()),
         ..Default::default()
     };
-    assert_golden("worktree", &render_bar(&fixture_facts(), &git, &config(), None));
+    assert_golden("worktree", &render_bar(&fixture_facts(), &git, &config(), None, None));
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn adjacent_same_background_segments_take_the_thin_seam() {
     // `model` and `rl5h` are both blue, but the shipped layout never puts them
     // side by side, so the default bar never exercises this branch.
     let config = Config::new(with_layout(json!([["model", "rl5h", "context"]])));
-    assert_golden("thin_seam", &render_bar(&fixture_facts(), &GitFacts::default(), &config, None));
+    assert_golden("thin_seam", &render_bar(&fixture_facts(), &GitFacts::default(), &config, None, None));
 }
 
 #[test]
@@ -124,7 +124,15 @@ fn the_spend_segment_renders_when_every_gate_passes() {
     // other segment.
     let config = Config::new(with_layout(json!([["model", "spend", "cost"]])));
     let spend = "\u{f155} $75.93/$150 (51%)";
-    assert_golden("spend", &render_bar(&fixture_facts(), &GitFacts::default(), &config, Some(spend)));
+    assert_golden("spend", &render_bar(&fixture_facts(), &GitFacts::default(), &config, Some(spend), None));
+}
+
+#[test]
+fn the_per_model_windows_render_beside_the_seven_day_one() {
+    // Same seam as spend: the text arrives pre-resolved from the cache.
+    let config = Config::new(with_layout(json!([["rl7d", "rl7dm"]])));
+    let models = "Fable 12% · Opus 40%";
+    assert_golden("rl7dm", &render_bar(&fixture_facts(), &GitFacts::default(), &config, None, Some(models)));
 }
 
 /// The reference subagent payload — `tests/fixtures/subagent.json` — with the panel-wide model
