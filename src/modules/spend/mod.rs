@@ -113,7 +113,27 @@ fn show<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
 /// Gate 1, and the reason it is first: a user without the segment pays
 /// **nothing** for it — no file read, no fork, no keychain prompt.
 pub fn in_layout(lines: &[Vec<SegmentEntry>]) -> bool {
-    lines.iter().flatten().any(|entry| entry.id() == Some("spend"))
+    has(lines, "spend")
+}
+
+/// Is `rl7dm` — the per-model 7-day windows — in any row? It rides on the
+/// same fetch and the same cache as `spend`, and shares gate 1 with it.
+pub fn models_in_layout(lines: &[Vec<SegmentEntry>]) -> bool {
+    has(lines, "rl7dm")
+}
+
+fn has(lines: &[Vec<SegmentEntry>], id: &str) -> bool {
+    lines.iter().flatten().any(|entry| entry.id() == Some(id))
+}
+
+/// `Fable 12% · Opus 40%`, or `None` when the cache holds no model window —
+/// the segment omits like any other with no data.
+pub fn models_text(cached: Option<&cache::SpendCache>) -> Option<String> {
+    let models = &cached?.models;
+    if models.is_empty() {
+        return None;
+    }
+    Some(models.iter().map(|m| format!("{} {}%", m.name, to_fixed(m.percent, 0))).collect::<Vec<_>>().join(" · "))
 }
 
 /// The four gates, in order.
@@ -188,7 +208,7 @@ mod tests {
     }
 
     fn cache_with(plan: Option<&str>, data: Option<extract::Spend>) -> SpendCache {
-        SpendCache { ts: 0, plan: plan.map(str::to_string), failures: 0, backoff_until: 0, data }
+        SpendCache { ts: 0, plan: plan.map(str::to_string), failures: 0, backoff_until: 0, data, models: vec![] }
     }
 
     fn cfg(show: &str) -> SpendConfig {
@@ -202,6 +222,24 @@ mod tests {
 
     fn lines_with_spend() -> Vec<Vec<SegmentEntry>> {
         row([json!("model"), json!("spend"), json!("cost")])
+    }
+
+    #[test]
+    fn rl7dm_renders_every_model_window_on_any_plan_and_omits_with_none() {
+        let mut cache = cache_with(Some("max"), None);
+        assert_eq!(models_text(Some(&cache)), None);
+        assert_eq!(models_text(None), None);
+        cache.models = vec![
+            extract::ModelWindow { name: "Fable".into(), percent: 12.4 },
+            extract::ModelWindow { name: "Opus".into(), percent: 40.0 },
+        ];
+        assert_eq!(models_text(Some(&cache)).as_deref(), Some("Fable 12% · Opus 40%"));
+    }
+
+    #[test]
+    fn rl7dm_is_found_in_any_row() {
+        assert!(models_in_layout(&row([json!("model"), json!("rl7dm"), json!("cost")])));
+        assert!(!models_in_layout(&lines_with_spend()));
     }
 
     #[test]

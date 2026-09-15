@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/virajp/claude-status/main/schemas/claude-status.schema.json",
   "caps": {
     "context": 65,
-    "fiveHour": 90,
-    "sevenDay": 80,
+    "fiveHour": 95,
+    "sevenDay": 98,
     "spend": 90
   },
   "defaultFg": "white",
@@ -18,13 +18,14 @@
       "context",
       "rl5h",
       "rl7d",
-      "spend",
-      "cost"
+      "rl7dm",
+      "spend"
     ],
     [
       "project",
       "worktree",
-      "branch"
+      "branch",
+      "cost"
     ]
   ],
   "palette": {
@@ -114,6 +115,9 @@
       "bg": "blue"
     },
     "rl7d": {
+      "bg": "purple"
+    },
+    "rl7dm": {
       "bg": "purple"
     },
     "session": {

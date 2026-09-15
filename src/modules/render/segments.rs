@@ -1,4 +1,4 @@
-//! The ten main-bar segment builders, and the styling that wraps them.
+//! The twelve main-bar segment builders, and the styling that wraps them.
 //!
 //! A builder returning `None` means "no data" and **omits the segment
 //! entirely** — it does not render an empty box.
@@ -15,8 +15,8 @@ use crate::render::powerline::Segment;
 use crate::time::to_epoch_ms;
 
 /// Every segment id the bar knows.
-pub const KNOWN: [&str; 11] =
-    ["model", "context", "rl5h", "rl7d", "session", "cost", "spend", "duration", "project", "worktree", "branch"];
+pub const KNOWN: [&str; 12] =
+    ["model", "context", "rl5h", "rl7d", "rl7dm", "session", "cost", "spend", "duration", "project", "worktree", "branch"];
 
 /// Builds one line's segments, dropping every one that omits.
 pub fn build_line(
@@ -25,8 +25,9 @@ pub fn build_line(
     git: &GitFacts,
     config: &Config,
     spend: Option<&str>,
+    models: Option<&str>,
 ) -> Vec<Segment> {
-    entries.iter().filter_map(|entry| build(entry, facts, git, config, spend)).collect()
+    entries.iter().filter_map(|entry| build(entry, facts, git, config, spend, models)).collect()
 }
 
 fn build(
@@ -35,6 +36,7 @@ fn build(
     git: &GitFacts,
     config: &Config,
     spend: Option<&str>,
+    models: Option<&str>,
 ) -> Option<Segment> {
     // An entry is a bare segment id, or an object keyed by `name` **or** `id`
     // carrying inline styling overrides. Anything else names no segment.
@@ -47,7 +49,7 @@ fn build(
     }
 
     // A panicking builder costs its own segment and nothing else.
-    let text = catch_unwind(AssertUnwindSafe(|| text_for(id, facts, git, config, spend))).ok().flatten()?;
+    let text = catch_unwind(AssertUnwindSafe(|| text_for(id, facts, git, config, spend, models))).ok().flatten()?;
     // Every segment's text passes through here, which is why the filter lives
     // at this one point rather than in each builder.
     let text = super::sanitize(&text);
@@ -86,13 +88,23 @@ pub(crate) fn truthy(v: &Value) -> bool {
     }
 }
 
-fn text_for(id: &str, facts: &MainFacts, git: &GitFacts, config: &Config, spend: Option<&str>) -> Option<String> {
+fn text_for(
+    id: &str,
+    facts: &MainFacts,
+    git: &GitFacts,
+    config: &Config,
+    spend: Option<&str>,
+    models: Option<&str>,
+) -> Option<String> {
     let sym = |key: &str| config.symbol(key);
     match id {
         "model" => Some(model(facts, config)),
         "context" => Some(context(facts, config)),
         "rl5h" => rate_limit(&facts.five_hour, facts.now_ms, sym("win5h"), config),
         "rl7d" => rate_limit(&facts.seven_day, facts.now_ms, sym("win7d"), config),
+        // Resolved beside `spend`, from the same cache; `None` when the seat
+        // has no per-model window.
+        "rl7dm" => models.map(str::to_string),
         "session" => facts.session_name.as_ref().map(|name| format!("{} {name}", sym("session"))),
         // Never omits: an absent cost renders zero.
         "cost" => Some(format!("{} ${}", sym("cost"), to_fixed(facts.cost_usd.unwrap_or(0.0), 2))),
@@ -161,13 +173,13 @@ fn context(facts: &MainFacts, config: &Config) -> String {
     )
 }
 
-/// `{win5h} 7.0% {reset} 4h36m` — note the space *before* the reset glyph.
+/// `{win5h} 7% {reset} 4h36m` — note the space *before* the reset glyph.
 ///
 /// Omitted entirely when `used_percentage` is absent; the reset half alone is
 /// dropped when the timestamp does not parse.
 fn rate_limit(limit: &RateLimit, now_ms: i64, symbol: &str, config: &Config) -> Option<String> {
     let pct = limit.used_pct?;
-    let mut out = format!("{symbol} {}%", to_fixed(pct, 1));
+    let mut out = format!("{symbol} {}%", to_fixed(pct, 0));
 
     let resets_in = limit.resets_at.as_ref().and_then(to_epoch_ms).and_then(|ms| human_reset_in(Some(ms), now_ms));
     if let Some(resets_in) = resets_in {
@@ -226,7 +238,7 @@ mod tests {
 
     /// Renders one segment's text, or `None` if it omits.
     fn text(id: &str, facts: &MainFacts, git: &GitFacts) -> Option<String> {
-        text_for(id, facts, git, &config(), None)
+        text_for(id, facts, git, &config(), None, None)
     }
 
     /// One layout entry, as `Config` would have deserialized it.
@@ -259,7 +271,7 @@ mod tests {
             branch: Some("main\u{1b}[0m\u{1b}[41mPWNED".into()),
             ..Default::default()
         };
-        let segment = build(&entry(json!("branch")), &facts(), &git, &config(), None).unwrap();
+        let segment = build(&entry(json!("branch")), &facts(), &git, &config(), None, None).unwrap();
         assert!(!segment.text.contains('\u{1b}'), "got {:?}", segment.text);
         assert!(segment.text.contains("PWNED"), "the text survives, only the escapes go");
     }
@@ -302,7 +314,7 @@ mod tests {
     fn a_rate_limit_carries_a_space_before_the_reset_glyph() {
         let c = config();
         let out = text("rl5h", &facts(), &GitFacts::default()).unwrap();
-        assert_eq!(out, format!("{} 7.0% {} 4h36m", c.symbol("win5h"), c.symbol("reset")));
+        assert_eq!(out, format!("{} 7% {} 4h36m", c.symbol("win5h"), c.symbol("reset")));
     }
 
     #[test]
@@ -310,10 +322,10 @@ mod tests {
         let c = config();
         let mut f = facts();
         f.five_hour.resets_at = Some(json!("not a date"));
-        assert_eq!(text("rl5h", &f, &GitFacts::default()).unwrap(), format!("{} 7.0%", c.symbol("win5h")));
+        assert_eq!(text("rl5h", &f, &GitFacts::default()).unwrap(), format!("{} 7%", c.symbol("win5h")));
 
         f.five_hour.resets_at = None;
-        assert_eq!(text("rl5h", &f, &GitFacts::default()).unwrap(), format!("{} 7.0%", c.symbol("win5h")));
+        assert_eq!(text("rl5h", &f, &GitFacts::default()).unwrap(), format!("{} 7%", c.symbol("win5h")));
     }
 
     #[test]
@@ -353,7 +365,7 @@ mod tests {
         // Never the payload. A `projectName` in config wins outright.
         let named = Config::new(json!({ "symbols": { "project": "P" }, "projectName": "from-repo" }));
         let in_repo = GitFacts { root: Some("/src/some-checkout".into()), ..Default::default() };
-        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &named, None), Some("P from-repo".to_string()));
+        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &named, None, None), Some("P from-repo".to_string()));
     }
 
     #[test]
@@ -363,11 +375,11 @@ mod tests {
 
         // Unnamed, but inside a repository: the directory name stands in, so
         // the segment is drawn rather than omitted.
-        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &bare, None), Some("P my-repo".to_string()));
+        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &bare, None, None), Some("P my-repo".to_string()));
 
         // Outside a repository there is no root to name, and it omits. This is
         // the only remaining way the segment disappears.
-        assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &bare, None), None);
+        assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &bare, None, None), None);
     }
 
     #[test]
@@ -428,15 +440,24 @@ mod tests {
     fn spend_draws_what_it_was_given_and_omits_without_it() {
         assert_eq!(text("spend", &facts(), &GitFacts::default()), None, "a gated-off spend omits");
         assert_eq!(
-            text_for("spend", &facts(), &GitFacts::default(), &config(), Some("$ 1/2 (50%)")),
+            text_for("spend", &facts(), &GitFacts::default(), &config(), Some("$ 1/2 (50%)"), None),
             Some("$ 1/2 (50%)".to_string()),
             "and a resolved one is passed through verbatim",
         );
     }
 
     #[test]
+    fn rl7dm_is_the_resolved_models_text_or_omits() {
+        assert_eq!(text("rl7dm", &facts(), &GitFacts::default()), None, "no model window omits");
+        assert_eq!(
+            text_for("rl7dm", &facts(), &GitFacts::default(), &config(), None, Some("Fable 12%")),
+            Some("Fable 12%".to_string()),
+        );
+    }
+
+    #[test]
     fn an_unknown_segment_warns_and_omits() {
-        let built = build(&entry(json!("nosuchsegment")), &facts(), &GitFacts::default(), &config(), None);
+        let built = build(&entry(json!("nosuchsegment")), &facts(), &GitFacts::default(), &config(), None, None);
         assert!(built.is_none());
     }
 
@@ -447,23 +468,23 @@ mod tests {
         let g = GitFacts::default();
 
         // The shipped default for `model` is blue/bold/white.
-        let default = build(&entry(json!("model")), &f, &g, &c, None).unwrap();
+        let default = build(&entry(json!("model")), &f, &g, &c, None, None).unwrap();
         assert_eq!(default.bg, [69, 133, 136]);
         assert!(default.bold);
 
         // Inline wins.
-        let inline = build(&entry(json!({ "name": "model", "bg": "red", "bold": false })), &f, &g, &c, None).unwrap();
+        let inline = build(&entry(json!({ "name": "model", "bg": "red", "bold": false })), &f, &g, &c, None, None).unwrap();
         assert_eq!(inline.bg, [204, 36, 29]);
         assert!(!inline.bold);
 
         // An entry may be keyed by `id` instead of `name`.
-        assert_eq!(build(&entry(json!({ "id": "model", "bg": "red" })), &f, &g, &c, None).unwrap().bg, [204, 36, 29]);
+        assert_eq!(build(&entry(json!({ "id": "model", "bg": "red" })), &f, &g, &c, None, None).unwrap().bg, [204, 36, 29]);
 
         // With no `segments.<id>` entry at all, the hard fallback is blue.
         // `segments` has to be written out as empty: an absent key is the
         // shipped table now, not nothing.
         let bare = Config::new(json!({ "palette": { "blue": [69, 133, 136] }, "segments": {} }));
-        assert_eq!(build(&entry(json!("cost")), &f, &g, &bare, None).unwrap().bg, [69, 133, 136]);
+        assert_eq!(build(&entry(json!("cost")), &f, &g, &bare, None, None).unwrap().bg, [69, 133, 136]);
     }
 
     #[test]
@@ -472,10 +493,10 @@ mod tests {
         let (f, g) = (facts(), GitFacts::default());
 
         // `model` defaults to bold; an inline null must not disable it.
-        let nulled = build(&entry(json!({ "name": "model", "bold": null })), &f, &g, &c, None).unwrap();
+        let nulled = build(&entry(json!({ "name": "model", "bold": null })), &f, &g, &c, None, None).unwrap();
         assert!(nulled.bold, "a null override falls through to the config default");
 
-        let explicit = build(&entry(json!({ "name": "model", "bold": false })), &f, &g, &c, None).unwrap();
+        let explicit = build(&entry(json!({ "name": "model", "bold": false })), &f, &g, &c, None, None).unwrap();
         assert!(!explicit.bold, "false is a value, not an absence");
     }
 
@@ -483,15 +504,15 @@ mod tests {
     fn bold_is_coerced_by_truthiness() {
         let c = config();
         let (f, g) = (facts(), GitFacts::default());
-        assert!(build(&entry(json!({ "name": "cost", "bold": 1 })), &f, &g, &c, None).unwrap().bold);
-        assert!(!build(&entry(json!({ "name": "cost", "bold": 0 })), &f, &g, &c, None).unwrap().bold);
-        assert!(!build(&entry(json!({ "name": "cost", "bold": "" })), &f, &g, &c, None).unwrap().bold);
+        assert!(build(&entry(json!({ "name": "cost", "bold": 1 })), &f, &g, &c, None, None).unwrap().bold);
+        assert!(!build(&entry(json!({ "name": "cost", "bold": 0 })), &f, &g, &c, None, None).unwrap().bold);
+        assert!(!build(&entry(json!({ "name": "cost", "bold": "" })), &f, &g, &c, None, None).unwrap().bold);
     }
 
     #[test]
     fn a_line_drops_every_segment_that_omits() {
         let entries = [json!("model"), json!("session"), json!("branch"), json!("spend")].map(entry);
-        let built = build_line(&entries, &MainFacts::default(), &GitFacts::default(), &config(), None);
+        let built = build_line(&entries, &MainFacts::default(), &GitFacts::default(), &config(), None, None);
         assert_eq!(built.len(), 1, "only `model`, which never omits");
     }
 }

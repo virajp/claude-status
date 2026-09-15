@@ -11,8 +11,8 @@ layout is two rows:
 ```json
 {
   "lines": [
-    ["model", "context", "rl5h", "rl7d", "spend", "cost"],
-    ["project", "worktree", "branch"]
+    ["model", "context", "rl5h", "rl7d", "rl7dm", "spend"],
+    ["project", "worktree", "branch", "cost"]
   ]
 }
 ```
@@ -23,7 +23,7 @@ a git repository.
 
 ## The catalogue
 
-Eleven segments. `{sym.x}` below is the glyph configured under `symbols`, and
+Twelve segments. `{sym.x}` below is the glyph configured under `symbols`, and
 every `·` is one literal space — the renderer adds one more on each side of the
 whole text.
 
@@ -31,8 +31,9 @@ whole text.
 | ---------- | ---------------------------------------- | --------------------------------------- |
 | `model`    | `{sym.model}·Opus 5·[high]`              | never — falls back to `Claude`          |
 | `context`  | `{sym.context}·▰▰▰▱▱▱▱▱▱▱·259k/1M·(26%)` | never                                   |
-| `rl5h`     | `{sym.win5h}·7.0%·{sym.reset}·4h36m`     | the payload carries no percentage       |
-| `rl7d`     | `{sym.win7d}·1.0%·{sym.reset}·5d2h`      | the payload carries no percentage       |
+| `rl5h`     | `{sym.win5h}·7%·{sym.reset}·4h36m`       | the payload carries no percentage       |
+| `rl7d`     | `{sym.win7d}·1%·{sym.reset}·5d2h`        | the payload carries no percentage       |
+| `rl7dm`    | `Fable·12%`                              | the seat has no per-model 7-day window  |
 | `session`  | `{sym.session}·users-and-groups`         | the session name is absent **or empty** |
 | `cost`     | `{sym.cost}·$46.51`                      | never — an absent cost renders `$0.00`  |
 | `spend`    | `{sym.spend}·$75.93/$150·(51%)`          | any of four gates — see below           |
@@ -45,6 +46,13 @@ Three of those have a detail worth knowing:
 
 - **The rate-limit segments** show the reset half only when the reset time is
   known; the percentage alone renders otherwise.
+- **`rl7dm`** is the 7-day window broken down per model, for seats where one
+  model has its own weekly limit beside the shared one. It does not come from
+  the session payload: it is read from the same cached fetch `spend` uses, so it
+  appears on every plan, refreshes on the `spend.refreshMinutes` timer, and
+  omits until the first fetch has landed. Several models are joined with `·` — a
+  real middle dot, one space each side. No reset time is shown — it is the one
+  `rl7d` already carries.
 - **`context` always renders**, even with no data at all — as
   `{sym.context}·▱▱▱▱▱▱▱▱▱▱·?/?·(0%)`.
 - **`branch`** carries the branch glyph, then the name. Three things around it
@@ -73,7 +81,8 @@ and the segment sits out. See [Per-repo](@/repo-config.md).
 
 Four gates hide it, checked in this order:
 
-1. `spend` is not in your `lines`.
+1. `spend` is not in your `lines`. (The fetch behind it still runs if `rl7dm`
+   is.)
 2. There is no usable cached figure yet.
 3. The budget is unusable — either disabled, or a limit of zero. (A *missing*
    budget block is gate 2, not this one.)

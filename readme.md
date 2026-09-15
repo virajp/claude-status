@@ -16,10 +16,10 @@ branch you're standing on. One Rust binary, no runtime, nothing to keep up to
 date.
 
 ![The claude-status bar: two powerline lines. The first shows the model and
-effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7.0% with
-4h35m to reset, the 7-day limit at 1.0% with 5d1h to reset, and $46.51 of
-session cost. The second shows the project name and the git branch with a dirty
-marker.](assets/statusline.png)
+effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7% with
+4h35m to reset, and the 7-day limit at 1% with 5d1h to reset. The second
+shows the project name, the git branch with a dirty marker, and $46.51 of
+session cost.](assets/statusline.png)
 
 ## Install
 

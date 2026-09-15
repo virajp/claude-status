@@ -133,6 +133,7 @@ pub fn run_reported(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass
             report.status = Some(200);
             let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
             let data = extract::extract(&parsed);
+            let models = extract::extract_models(&parsed);
             let had_budget = data.is_some();
             report.body = Some(parsed);
 
@@ -143,6 +144,7 @@ pub fn run_reported(cache_path: &Path, refresh_minutes: f64, now_ms: i64, bypass
                 failures: 0,
                 backoff_until: 0,
                 data,
+                models,
             });
 
             report.outcome = if had_budget { Outcome::Updated } else { Outcome::NoBudget };
@@ -203,6 +205,7 @@ fn write_failure(
         failures: previous.map_or(0, |p| p.failures) + 1,
         backoff_until: backoff_until.unwrap_or(0),
         data: previous.and_then(|p| p.data.clone()),
+        models: previous.map(|p| p.models.clone()).unwrap_or_default(),
     });
 }
 
@@ -253,6 +256,7 @@ mod tests {
                 percent: None,
                 enabled: Some(true),
             }),
+            models: vec![],
         };
         cache::write_to(&path, &good).unwrap();
 
@@ -273,7 +277,7 @@ mod tests {
         let path = dir.path().join("spend.json");
 
         let backed_off =
-            SpendCache { ts: 1000, plan: None, failures: 1, backoff_until: 9_999_999, data: None };
+            SpendCache { ts: 1000, plan: None, failures: 1, backoff_until: 9_999_999, data: None, models: vec![] };
         cache::write_to(&path, &backed_off).unwrap();
 
         write_failure(&path, Some(&backed_off), None, 2000, None);
@@ -298,7 +302,7 @@ mod tests {
     fn a_recent_sibling_write_dedupes() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("spend.json");
-        cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None })
+        cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None, models: vec![] })
             .unwrap();
 
         // 30 seconds later: inside the window.
@@ -337,7 +341,7 @@ mod tests {
 
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("spend.json");
-        cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None })
+        cache::write_to(&path, &SpendCache { ts: 100_000, plan: None, failures: 0, backoff_until: 0, data: None, models: vec![] })
             .unwrap();
 
         // Same instant, but bypassing: it gets as far as looking for

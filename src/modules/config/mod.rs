@@ -134,7 +134,7 @@ pub struct Config {
     pub type_symbols: BTreeMap<String, String>,
     /// An open map: the keys are segment ids, and a user may style a segment
     /// this build does not know about.
-    #[cfg_attr(feature = "schema", schemars(description = "Default styling per main-bar segment id (model, context, rl5h, rl7d, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."))]
+    #[cfg_attr(feature = "schema", schemars(description = "Default styling per main-bar segment id (model, context, rl5h, rl7d, rl7dm, session, cost, spend, duration, project, worktree, branch). Overridden inline by an object entry in `lines`."))]
     #[serde(deserialize_with = "style_table")]
     pub segments: BTreeMap<String, SegmentStyle>,
     /// [`SegmentEntry`] has no [`Deserialize`] at all — it is built through
@@ -843,6 +843,7 @@ fn default_segments() -> BTreeMap<String, SegmentStyle> {
         ("context", SegmentStyle::shipped(Some("aqua"), None, false)),
         ("rl5h", SegmentStyle::shipped(Some("blue"), None, false)),
         ("rl7d", SegmentStyle::shipped(Some("purple"), None, false)),
+        ("rl7dm", SegmentStyle::shipped(Some("purple"), None, false)),
         ("session", SegmentStyle::shipped(Some("orange"), None, false)),
         ("cost", SegmentStyle::shipped(Some("green"), Some("white"), true)),
         ("spend", SegmentStyle::shipped(Some("orange"), Some("white"), true)),
@@ -857,7 +858,7 @@ fn default_segments() -> BTreeMap<String, SegmentStyle> {
 }
 
 fn default_lines() -> Vec<Vec<SegmentEntry>> {
-    [["model", "context", "rl5h", "rl7d", "spend", "cost"].as_slice(), ["project", "worktree", "branch"].as_slice()]
+    [["model", "context", "rl5h", "rl7d", "rl7dm", "spend"].as_slice(), ["project", "worktree", "branch", "cost"].as_slice()]
         .into_iter()
         .map(|row| row.iter().map(|id| SegmentEntry::Id((*id).to_string())).collect())
         .collect()

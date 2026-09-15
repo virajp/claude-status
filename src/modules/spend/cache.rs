@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use crate::json::{read_json_file, write_json_atomic};
-use crate::modules::spend::extract::Spend;
+use crate::modules::spend::extract::{ModelWindow, Spend};
 
 /// Overrides the cache location. Renamed from the `ai-plugins` spelling; the
 /// old cache is left in place and ignored, and a first run re-fetches once.
@@ -26,6 +26,9 @@ pub struct SpendCache {
     pub backoff_until: i64,
     /// `None` when the account has no budget block — a valid outcome.
     pub data: Option<Spend>,
+    /// The per-model 7-day windows, from the same fetch. Empty for a seat
+    /// that has none, and for a cache written before the field existed.
+    pub models: Vec<ModelWindow>,
 }
 
 impl SpendCache {
@@ -40,12 +43,15 @@ impl SpendCache {
                 "enabled": d.enabled,
             }),
         };
+        let models: Vec<Value> =
+            self.models.iter().map(|m| json!({ "name": m.name, "percent": m.percent })).collect();
         json!({
             "ts": self.ts,
             "plan": self.plan,
             "failures": self.failures,
             "backoffUntil": self.backoff_until,
             "data": data,
+            "models": models,
         })
     }
 
@@ -69,6 +75,15 @@ impl SpendCache {
             // a 429 erases the backoff. Faithful, and load-bearing.
             backoff_until: v.get("backoffUntil").and_then(Value::as_i64).unwrap_or(0),
             data,
+            models: v
+                .get("models")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|m| {
+                    Some(ModelWindow { name: m.get("name")?.as_str()?.to_string(), percent: m.get("percent")?.as_f64()? })
+                })
+                .collect(),
         })
     }
 }
@@ -137,7 +152,15 @@ mod tests {
                 percent: Some(50.62),
                 enabled: Some(true),
             }),
+            models: vec![ModelWindow { name: "Fable".into(), percent: 12.0 }],
         }
+    }
+
+    #[test]
+    fn a_cache_written_before_models_existed_reads_back_empty() {
+        let mut v = sample().to_json();
+        v.as_object_mut().unwrap().remove("models");
+        assert!(SpendCache::from_json(&v).unwrap().models.is_empty());
     }
 
     #[test]

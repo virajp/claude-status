@@ -99,6 +99,15 @@ pub fn spend_report(config: &Config, now_ms: i64) -> Marked {
     let verdict = spend::verdict(after.as_ref(), spend_config, &config.lines, config.symbol("spend"));
     write_gates(&mut out, after.as_ref(), spend_config, &verdict);
 
+    // The per-model windows ride on the same fetch: one line, so a user who
+    // added `rl7dm` and sees nothing learns whether the seat has any.
+    let _ = writeln!(
+        out,
+        "  rl7dm    {} — {}",
+        if spend::models_in_layout(&config.lines) { "in lines" } else { "not in lines" },
+        field(&spend::models_text(after.as_ref()).unwrap_or_else(|| "no per-model 7-day window on this seat".into())),
+    );
+
     // Filtered as one value rather than inside each branch: `verdict_of`
     // returns a single line, and its arms interpolate the cached plan tag, the
     // rendered figure and `spend.show` — all config- or credential-derived.
@@ -447,6 +456,7 @@ mod tests {
                 percent: None,
                 enabled: Some(true),
             }),
+            models: vec![],
         };
         let config = SpendConfig { refresh_minutes: 15.0, show: "auto".into() };
         let line = hidden_verdict(Gate::NotATeamPlan, Some(&cached), &config, &Config::new(serde_json::json!({})));

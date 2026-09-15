@@ -89,22 +89,28 @@ fn percent_of(spend: &crate::spend::extract::Spend) -> Option<f64> {
 /// budget needs somebody to act.
 pub fn level(usage: &Usage, caps: &Caps, now_ms: i64) -> Option<(u8, String)> {
     if let Some(pct) = usage.spend_pct
-        && pct > caps.spend as f64
+        && breached(pct, caps.spend)
     {
         return Some((4, spend_directive(pct, caps.spend)));
     }
-    if usage.seven_day_pct > caps.seven_day as f64 {
+    if breached(usage.seven_day_pct, caps.seven_day) {
         let resets = human_caps_in(usage.seven_day_resets_at.as_ref(), now_ms);
         return Some((3, seven_day_directive(usage.seven_day_pct, caps.seven_day, &resets)));
     }
-    if usage.five_hour_pct > caps.five_hour as f64 {
+    if breached(usage.five_hour_pct, caps.five_hour) {
         let resets = human_caps_in(usage.five_hour_resets_at.as_ref(), now_ms);
         return Some((2, five_hour_directive(usage.five_hour_pct, caps.five_hour, &resets)));
     }
-    if usage.ctx_pct > caps.context as f64 {
+    if breached(usage.ctx_pct, caps.context) {
         return Some((1, context_directive(usage.ctx_pct, caps.context)));
     }
     None
+}
+
+/// Strictly greater, and a cap of `-1` never breaches — that is how a cap is
+/// switched off. See `a_cap_of_minus_one_never_fires`.
+fn breached(pct: f64, cap: i32) -> bool {
+    cap >= 0 && pct > cap as f64
 }
 
 // The three directives. Their wording is injected verbatim into the agent's
@@ -117,7 +123,7 @@ pub fn level(usage: &Usage, caps: &Caps, now_ms: i64) -> Option<(u8, String)> {
 /// nothing.
 const HANDOFF_PATH: &str = "docs/memory/handoff/next.md";
 
-fn seven_day_directive(pct: f64, cap: u32, resets: &str) -> String {
+fn seven_day_directive(pct: f64, cap: i32, resets: &str) -> String {
     format!(
         "⛔ 7-DAY LIMIT CAP — weekly usage at {pct}% (cap {cap}%), resets in {resets}. \
          Finish ONLY the current step, then: (1) invoke the vwf:handoff skill with NO argument \
@@ -127,7 +133,7 @@ fn seven_day_directive(pct: f64, cap: u32, resets: &str) -> String {
     )
 }
 
-fn five_hour_directive(pct: f64, cap: u32, resets: &str) -> String {
+fn five_hour_directive(pct: f64, cap: i32, resets: &str) -> String {
     format!(
         "⚠ 5-HOUR LIMIT CAP — 5h usage at {pct}% (cap {cap}%), resets in {resets}. \
          Finish ONLY the current step, then: (1) invoke the vwf:handoff skill with NO argument \
@@ -137,7 +143,7 @@ fn five_hour_directive(pct: f64, cap: u32, resets: &str) -> String {
     )
 }
 
-fn spend_directive(pct: f64, cap: u32) -> String {
+fn spend_directive(pct: f64, cap: i32) -> String {
     let pct = crate::fmt::js_round(pct);
     format!(
         "⛔ SPEND CAP — monthly budget at {pct}% (cap {cap}%). This one does not reset on a timer. \
@@ -149,7 +155,7 @@ fn spend_directive(pct: f64, cap: u32) -> String {
     )
 }
 
-fn context_directive(pct: f64, cap: u32) -> String {
+fn context_directive(pct: f64, cap: i32) -> String {
     // The context figure is rounded where the two rate-limit ones are not —
     // it arrives as a fraction and the others as whole percentages.
     let pct = crate::fmt::js_round(pct);
@@ -237,13 +243,13 @@ mod tests {
     #[test]
     fn each_cap_fires_on_its_own() {
         assert_eq!(level(&usage(66.0, 0.0, 0.0), &caps(), NOW).unwrap().0, 1);
-        assert_eq!(level(&usage(0.0, 91.0, 0.0), &caps(), NOW).unwrap().0, 2);
-        assert_eq!(level(&usage(0.0, 0.0, 81.0), &caps(), NOW).unwrap().0, 3);
+        assert_eq!(level(&usage(0.0, 96.0, 0.0), &caps(), NOW).unwrap().0, 2);
+        assert_eq!(level(&usage(0.0, 0.0, 99.0), &caps(), NOW).unwrap().0, 3);
     }
 
     #[test]
     fn the_most_severe_of_two_simultaneous_breaches_wins() {
-        let (level_, directive) = level(&usage(99.0, 0.0, 85.0), &caps(), NOW).unwrap();
+        let (level_, directive) = level(&usage(99.0, 0.0, 99.0), &caps(), NOW).unwrap();
         assert_eq!(level_, 3);
         assert!(directive.contains("7-DAY"));
         assert!(!directive.contains("CONTEXT"), "the lesser breach is not mentioned");
@@ -252,7 +258,15 @@ mod tests {
     #[test]
     fn exactly_at_the_cap_does_not_fire() {
         // Strictly greater. 65% context with a 65% cap is not a breach.
-        assert!(level(&usage(65.0, 90.0, 80.0), &caps(), NOW).is_none());
+        assert!(level(&usage(65.0, 95.0, 98.0), &caps(), NOW).is_none());
+    }
+
+    #[test]
+    fn a_cap_of_minus_one_never_fires() {
+        let off = Caps { context: -1, five_hour: -1, seven_day: -1, spend: -1 };
+        assert!(level(&usage(100.0, 100.0, 100.0), &off, NOW).is_none());
+        let usage = Usage { spend_pct: Some(100.0), ..usage(100.0, 100.0, 100.0) };
+        assert!(level(&usage, &off, NOW).is_none());
     }
 
     #[test]
@@ -272,21 +286,21 @@ mod tests {
     fn every_directive_names_its_cap_the_reset_and_the_handoff() {
         let mirror = json!({
             "ctxPct": 70,
-            "fiveHourPct": 95,
-            "sevenDayPct": 85,
+            "fiveHourPct": 97,
+            "sevenDayPct": 99,
             "fiveHourResetsAt": (NOW + 3_600_000) / 1000,
             "sevenDayResetsAt": (NOW + 2 * 86_400_000) / 1000,
         });
         let usage = Usage::from_mirror(&mirror);
 
         let (_, seven) = level(&usage, &caps(), NOW).unwrap();
-        assert!(seven.contains("85%") && seven.contains("cap 80%"), "{seven}");
+        assert!(seven.contains("99%") && seven.contains("cap 98%"), "{seven}");
         assert!(seven.contains("resets in 2d0h"), "{seven}");
         assert!(seven.contains("vwf:handoff") && seven.contains("/vwf:recall next"));
 
         let five_only = Usage { seven_day_pct: 0.0, ..usage.clone() };
         let (_, five) = level(&five_only, &caps(), NOW).unwrap();
-        assert!(five.contains("95%") && five.contains("cap 90%"), "{five}");
+        assert!(five.contains("97%") && five.contains("cap 95%"), "{five}");
         assert!(five.contains("resets in 1h0m"), "{five}");
 
         let ctx_only = Usage { seven_day_pct: 0.0, five_hour_pct: 0.0, ..usage };
@@ -299,7 +313,7 @@ mod tests {
     fn no_directive_points_at_the_stale_handoff_path() {
         // The reference says `docs/handoffs/next.md`; the skill writes
         // `docs/memory/handoff/next.md`.
-        for level_ in [level(&usage(0.0, 0.0, 85.0), &caps(), NOW), level(&usage(70.0, 0.0, 0.0), &caps(), NOW)] {
+        for level_ in [level(&usage(0.0, 0.0, 99.0), &caps(), NOW), level(&usage(70.0, 0.0, 0.0), &caps(), NOW)] {
             let directive = level_.unwrap().1;
             assert!(!directive.contains("docs/handoffs/"), "stale path: {directive}");
             assert!(directive.contains(HANDOFF_PATH) || !directive.contains("handoff to mempalace"));
