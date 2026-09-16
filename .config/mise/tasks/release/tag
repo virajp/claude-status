@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#MISE description="Cut and push the release tags preflight cleared, from main"
+# `release:preflight` says a release can be cut and prints the command by
+# hand — this is that command, plus the site tag preflight does not check.
+# Nothing here is a second gate: `verify` and `site.yml`'s `gate` still refuse
+# a tag whose commit is not on `main`, so a wrong run here fails loudly there
+# rather than shipping.
+set -e
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+readonly RELEASE_BRANCH="main"
+
+mise run release:preflight
+
+BRANCH=$(git symbolic-ref --quiet --short HEAD || echo "<detached>")
+if [ "${BRANCH}" != "${RELEASE_BRANCH}" ]; then
+  print_error "  not on ${RELEASE_BRANCH} — preflight should have caught this"
+  exit 1
+fi
+
+CARGO_VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "${MISE_PROJECT_ROOT}/Cargo.toml" | head -1)
+TAG="v${CARGO_VERSION}"
+
+print_header "Tagging ${TAG}"
+git tag -a "${TAG}" -m "${TAG}"
+git push origin "${TAG}"
+
+# `site-v*` is a plain counter — nothing in the number is derived from the
+# binary's version, so the next one is simply one past the highest that
+# exists. Cut only when `site/` changed since that tag: a site deploy nothing
+# asked for is a production deploy nobody reviewed.
+LAST_SITE_TAG=$(git tag -l 'site-v*' | sed 's/^site-v//' | sort -n | tail -1)
+LAST_SITE_TAG=${LAST_SITE_TAG:-0}
+NEXT_SITE_TAG="site-v$((LAST_SITE_TAG + 1))"
+
+if [ "${LAST_SITE_TAG}" = "0" ] || ! git diff --quiet "site-v${LAST_SITE_TAG}" HEAD -- site/ assets/statusline.png 2>/dev/null; then
+  print_header "Tagging ${NEXT_SITE_TAG}"
+  git tag -a "${NEXT_SITE_TAG}" -m "${NEXT_SITE_TAG}"
+  git push origin "${NEXT_SITE_TAG}"
+else
+  print_header "site/ unchanged since site-v${LAST_SITE_TAG} — no site tag cut"
+fi
+
+git checkout develop >/dev/null 2>&1 || true
+print_ok
