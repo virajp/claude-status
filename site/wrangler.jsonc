@@ -1,0 +1,28 @@
+{
+  // The website on Cloudflare Workers Static Assets: a purely static site, so
+  // there is no `main` (no Worker script) and no bindings. `wrangler deploy`
+  // uploads public/ — zola's output, built by `site:build` — and serves it
+  // directly. `_headers` at the root of public/ is honoured exactly as it was
+  // on Pages.
+  //
+  // Credentials never live here. The deploy job in .github/workflows/site.yml
+  // passes the API token and the account id from the repository secrets
+  // CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+  //
+  // No `$schema`: it would point into node_modules/, and this tree has no JS
+  // toolchain (`tests/site.rs` guards that). wrangler-action validates it.
+  "name": "claude-status-virajp-dev",
+  "compatibility_date": "2026-09-18",
+  "assets": {
+    "directory": "./public",
+    // Unmatched requests get public/404.html (zola builds it from
+    // templates/404.html) with a 404 status.
+    "not_found_handling": "404-page",
+  },
+  "routes": [
+    {
+      "pattern": "claude-status.virajp.dev",
+      "custom_domain": true,
+    },
+  ],
+}

@@ -46,7 +46,7 @@ status.missing_tools = "always"
 # forward. It is recorded in `03-release`'s Risks so nobody rediscovers it
 # mid-tag.
 #
-# `npm:wrangler` is a deploy-time tool for Cloudflare Pages and does not enter
+# `npm:wrangler` is a deploy-time tool for Cloudflare Workers and does not enter
 # the binary, the release path, or any tracked manifest — the no-JS-toolchain
 # guard (`tests/site.rs`) still passes, because it scans tracked lockfiles,
 # manifests and `node_modules`, none of which this adds.

@@ -1,15 +1,16 @@
 name: Site
 
-# Builds claude-status.virajp.dev and deploys it to Cloudflare Pages.
+# Builds claude-status.virajp.dev and deploys it to Cloudflare Workers Static
+# Assets — the same shape as claude-plugins.virajp.dev: `site/wrangler.jsonc`
+# names the Worker and its custom domain, and `wrangler deploy` uploads the
+# built tree. It was a Cloudflare Pages project until 2026-09-18; see
+# "WHY WORKERS AND NOT PAGES" below.
 #
-# The `website/01-site` cycle authored this in full and deliberately stopped
-# short of deploying: at the time no Cloudflare project existed, no repository
-# secret was set (`gh api repos/virajp/claude-status/actions/secrets` reported
-# `total_count: 0`), and `claude-status.virajp.dev` did not resolve. **All
-# three are now done** — see "BEFORE THE FIRST TAG" at the bottom, which tracks
-# each. `site-v1` is the first tag to exercise the deploy job; until it runs,
-# the deploy half of this file is still the intended shape rather than a
-# description of something that has happened.
+# What Cloudflare has to hold before a tag can deploy — the Worker, the
+# domain, the token scope — is listed under "WHAT CLOUDFLARE HOLDS" at the
+# bottom. The first `site-v*` tag after the move is the first to exercise the
+# Workers deploy; until it runs, the deploy half of this file is the intended
+# shape rather than a description of something that has happened.
 #
 # Triggered two ways, and they do different things:
 #   1. a pushed `site-v*` tag   — build AND deploy
@@ -43,12 +44,24 @@ name: Site
 # release.yml and this workflow stays asleep, which is acceptance criterion 3.
 #
 # ---------------------------------------------------------------------------
+# WHY WORKERS AND NOT PAGES
+# ---------------------------------------------------------------------------
+#
+# The site shipped on Cloudflare Pages first (direct upload, `wrangler pages
+# deploy --project-name=claude-status-virajp-dev`, no config file). It moved to
+# Workers Static Assets so the two `*.virajp.dev` sites deploy the same way:
+# one `wrangler.jsonc` beside the site naming the Worker and its custom domain,
+# one `wrangler deploy`. Pages and Workers serve a static tree identically —
+# `_headers` at the root of the output, `404.html` for the miss, the same
+# trailing-slash handling — so nothing `site:build` emits changed.
+#
+# ---------------------------------------------------------------------------
 # WHY NOT CLOUDFLARE'S GIT INTEGRATION
 # ---------------------------------------------------------------------------
 #
 # Because it deploys on a branch push and cannot be gated on a tag. Wiring the
-# Pages project to the repository would make every merge to main a production
-# deploy and delete the whole point of the tag line.
+# Worker to the repository would make every merge to main a production deploy
+# and delete the whole point of the tag line.
 #
 # ---------------------------------------------------------------------------
 # WHY `wrangler-action` AND NOT A PINNED wrangler
@@ -65,33 +78,26 @@ name: Site
 # deploy step is not.
 #
 # ---------------------------------------------------------------------------
-# BEFORE THE FIRST TAG
+# WHAT CLOUDFLARE HOLDS
 # ---------------------------------------------------------------------------
 #
-#   1. DONE. The Cloudflare Pages project exists, direct upload, NOT connected
-#      to this git repository (see above). It is named
-#      `claude-status-virajp-dev` — after the domain, so the two are
-#      identifiable as a pair. It is NOT named `claude-status`, which is what
-#      the deploy step below said until 2026-08-26; nothing tests the project
-#      name, so that would have failed at the first tag and nowhere earlier.
-#   2. DONE. `claude-status.virajp.dev` is attached and resolves, alongside the
-#      project's own `claude-status-site.pages.dev`. Both serve.
-#   3. DONE. Both repository secrets are set —
-#      `gh api repos/virajp/claude-status/actions/secrets` lists
-#      CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN alongside APP_ID and
-#      APP_KEY. The token should be scoped to "Cloudflare Pages: Edit" on this
-#      project ALONE — an account-wide token is a far larger thing to leak than
-#      what this needs. That scoping is not checkable from here; the secret's
+#   1. The Worker `claude-status-virajp-dev` — named after the domain, so the
+#      two are identifiable as a pair. `site/wrangler.jsonc` is the one place
+#      that name is written; the first `wrangler deploy` creates the Worker.
+#   2. `claude-status.virajp.dev`, declared as a custom-domain route in that
+#      file, so the deploy attaches it. The hostname has to be free — released
+#      from the retired Pages project — before the first Workers deploy can
+#      claim it.
+#   3. Both repository secrets — `gh api
+#      repos/virajp/claude-status/actions/secrets` lists CLOUDFLARE_ACCOUNT_ID
+#      and CLOUDFLARE_API_TOKEN. The token needs "Workers Scripts: Edit" on the
+#      account and, for the custom domain, "Workers Routes: Edit" on the
+#      virajp.dev zone — the Pages-only token the site launched with cannot
+#      create a Worker. That scoping is not checkable from here; the secret's
 #      value is write-only to the API.
-#   4. Push `site-v1`.
 #
-#   Preview deploys, meanwhile, are being made from a workstation with
-#   `wrangler pages deploy site/public --project-name=claude-status-virajp-dev
-#   --branch=<branch>`. Any branch but the production one is a preview, and
-#   they sit behind Cloudflare Access.
-#
-# Until step 3 is done the deploy job will fail on an empty token rather than
-# doing something surprising, which is the failure mode to want.
+# Until step 3 is done the deploy job will fail on an unauthorised token rather
+# than doing something surprising, which is the failure mode to want.
 
 on:
   push:
@@ -201,24 +207,26 @@ jobs:
       name: production
       url: https://claude-status.virajp.dev
     steps:
+      - uses: actions/checkout@v7
+
+      # Lands where `site:build` writes and `site/wrangler.jsonc` points.
       - uses: actions/download-artifact@v8
         with:
           name: site
-          path: public
+          path: site/public
 
       # `wrangler-action` installs wrangler on the runner for the length of the
-      # step. Nothing about it is committed to this repository.
-      #
-      # `--project-name` must match the Pages project created by hand; there is
-      # no wrangler.toml, because a direct-upload Pages deploy needs none and a
-      # config file would be a second place for the project name to be wrong.
-      - name: Deploy to Cloudflare Pages
+      # step. Nothing about it is committed to this repository except
+      # `site/wrangler.jsonc`, which is what `deploy` reads: the Worker name,
+      # the assets directory and the custom domain all come from there, so the
+      # workflow names none of them.
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=claude-status-virajp-dev
-            --branch=main
+          workingDirectory: site
+          command: deploy
 
       - name: Where it went
         run: echo "Deployed ${GITHUB_REF_NAME} to

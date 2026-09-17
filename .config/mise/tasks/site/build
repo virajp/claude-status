@@ -319,7 +319,7 @@ for asset in style.css copy-code.js config-generator.js statusline.png og-card.p
 done
 
 # ---------------------------------------------------------------------------
-# `_headers` -- Cloudflare Pages reads this from the root of the output.
+# `_headers` -- Cloudflare Workers Static Assets reads this from the root of the output.
 # ---------------------------------------------------------------------------
 #
 # It is generated rather than committed under `static/` so it cannot drift from
