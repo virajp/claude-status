@@ -1,0 +1,25 @@
+/code-review high — loop U5, round 1 — range 4ea824e..3967adf — 2026-09-19
+
+All 15 files of the diff were read; the full suite passes (cargo test, 0 failures); each finding below was reproduced against the built binary with real git layouts.
+
+## Findings
+
+1. src/modules/git.rs:228 — Medium — the popular `.bare` + `.git`-pointer worktree layout draws `widget/.bare` on the bar.
+`identity_root` takes the common dir as the identity unless it is literally named `.git`. In the common layout `proj/widget/{.bare, .git → "gitdir: ./.bare", main/, feature/}` a session in `proj/widget/main` resolves `commondir` to `proj/widget/.bare`, so the identity root is `.bare` and, for a non-GitHub/GitLab (or no) origin, the segment reads `widget/.bare`. Reproduced: `--statusline` printed ` widget/.bare  main` and `--doctor` printed `project: remote widget/.bare (…/proj/widget/.bare)`. The identity should be the directory whose `.git` (dir or pointer) resolves to the common dir — here `proj/widget`.
+
+2. src/modules/git.rs:236 — Medium — a submodule inside a linked worktree names itself, not the superproject.
+Git places such a submodule's gitdir at `<main>/.git/worktrees/<wt>/modules/<sub>`. That directory has no `commondir`, and the scan only matches `.git` immediately followed by `modules`, so it falls through to "own identity" and reads the submodule's config. Reproduced: in `wt/lib` (worktree `wt` of `acme/widget`, origin on GitHub) doctor printed `project: remote wt/lib` instead of `github acme/widget`. This is the layout this very repo uses (`.claude/worktrees/<name>`), so any submodule added in a worktree here would misfire. Fix: also accept `.git`/`worktrees`/`<x>`/`modules` in the component scan (identity = components before `.git`, common = through `.git`).
+
+3. src/modules/git.rs:228 — Low — a linked worktree of a submodule gets a git-internal path as its name.
+`commondir` resolves to `<sup>/.git/modules/<sub>`; its file name is `<sub>` not `.git`, so identity becomes that internal path and the name is `modules/<sub>`. Reproduced: doctor printed `project: remote modules/lib2 (…/acme/widget/.git/modules/lib2)`. The `.git/modules` scan should also be applied to the resolved common dir, not only to the pointer's gitdir.
+
+4. src/modules/git.rs:254 / :261 — Low — config header and key matching is case-sensitive and ignores value quoting; git's is not.
+`[Remote "origin"]` / `URL = "git@github.com:hand/repo.git"` is a valid config that `git config --get remote.origin.url` reads, but `origin_url` returns `None` → kind `Git`, and the bar loses the GitHub glyph and the `owner/repo` name. Reproduced. Only affects hand-edited configs, hence low.
+
+5. src/modules/git.rs:263 — Low — a trailing `# …` / `; …` comment on the `url` line becomes part of the URL.
+`url = https://github.com/a/b.git # mirror` → path `a/b.git # mirror` is drawn verbatim (the `.git` strip also misses). Reproduced with a non-GitHub host (kind was right, name came from the directory); with a GitHub host the comment text would be on the bar.
+
+6. src/modules/git.rs:247 — Low — an origin declared via `[include] path = …` is invisible.
+Reproduced: `git config --get remote.origin.url` returns the GitHub URL, doctor prints `project: git inc/repo`. Probably acceptable to declare out of scope alongside `insteadOf`, but it is not listed there.
+
+Not findings (checked and clean): struct-field evaluation order in `resolve` (`project` computed before `root` is moved); every drawn string (`name`, doctor row) passes through `sanitize`; `projectName` no longer drawing outside a repository matches what `site/content/segments.md:41` and `repo-config.md:88` already document (plan gap G5 confirmed); stale `symbols.project` prose in `site/content/*` and `write.rs:92` is owned by the pending wave-4 unit U6; `.config/claude-status.json` deletion has no task/test consumer.
