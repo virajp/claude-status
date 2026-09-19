@@ -38,7 +38,7 @@ whole text.
 | `cost`     | `{sym.cost}·$46.51`                      | never — an absent cost renders `$0.00`  |
 | `spend`    | `{sym.spend}·$75.93/$150·(51%)`          | any of four gates — see below           |
 | `duration` | `{sym.duration}·9hr 19m`                 | the duration is **absent**; `0` renders |
-| `project`  | `{sym.project}·my-repo`                  | you are not inside a git repository     |
+| `project`  | `{sym.projectGithub}·acme/widget`        | you are not inside a git repository     |
 | `worktree` | `{sym.worktree}·{sym.folder}·sub/path`   | you are not inside a worktree           |
 | `branch`   | `{sym.branch}·main·↑·±`                  | no branch could be resolved             |
 
@@ -65,17 +65,44 @@ Three of those have a detail worth knowing:
 
 ## Where `project` comes from
 
-Never from the session payload. The name is the first of these that exists:
+Never from the session payload. The segment names the repository by **where it
+lives**, and the glyph says how it found out:
 
-1. `projectName` in the repository's own
-   `<repo-root>/.config/claude-status.json`.
-2. `projectName` in your user config — which is **not** inert, and names every
-   repository that has not named itself.
-3. The git root's directory name.
+| You are in                                | Glyph                   | Name                                              |
+| ----------------------------------------- | ----------------------- | ------------------------------------------------- |
+| no git repository                         | —                       | segment omitted                                   |
+| a repository with no `origin` remote      | `symbols.projectGit`    | `parent/base` of the identity root, `src/my-repo` |
+| one whose `origin` host contains `github` | `symbols.projectGithub` | the URL's path, `acme/widget`                     |
+| one whose `origin` host contains `gitlab` | `symbols.projectGitlab` | the URL's path, subgroups kept, `group/sub/repo`  |
+| one whose `origin` is on any other host   | `symbols.projectRemote` | `parent/base` of the identity root                |
 
-So the segment draws by default, and naming a repository is only how you call it
-something other than its directory. Outside a git repository there is no root,
-and the segment sits out. See [Per-repo](@/repo-config.md).
+The **identity root** is the checkout itself in an ordinary repository, the
+**main checkout** when you are in a linked worktree, and the **outermost
+superproject** when you are in a submodule — so a worktree and a submodule are
+named for the repository they belong to, while `branch`, the dirty and ahead
+markers and the `worktree` segment still describe the checkout you are standing
+in.
+
+The remote is `origin` and only `origin`, read from the repository's own git
+config the way git reads it — no other remote, no `insteadOf` rewrite, no
+`[include]`. Host matching is by substring, so `github.example.com` counts as
+GitHub. Two shapes are named differently from what you might expect: a linked
+worktree of a hidden bare store that no `.git` pointer names (the dotfiles
+pattern, `~/.cfg`) or of a `--separate-git-dir` store still gets the right glyph
+from that store's `origin`, but when there is no `origin`, or it is on some
+other host, the `parent/base` name is the store's (`user/.cfg`, `store/repo`)
+rather than the checkout's. And an ssh alias in place of the host
+(`gh:acme/widget`) is not a GitHub host, so it draws `projectRemote` and
+`parent/base`.
+
+`projectName` — repo layer first, then user layer — replaces the **name** and
+only the name; the glyph stays with how the repository was identified. Set
+nowhere, the name above is what draws. See [Per-repo](@/repo-config.md).
+
+The behaviour is pinned by three end-to-end tests in `tests/e2e.rs`:
+`a_repository_is_named_by_its_origin_from_the_checkout_a_worktree_and_a_submodule`,
+`a_repository_without_an_origin_is_named_parent_slash_base` and
+`doctor_names_how_the_project_was_identified`.
 
 ## Why `spend` is missing
 

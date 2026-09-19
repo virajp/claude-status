@@ -89,9 +89,9 @@ use crate::json::write_json_atomic_pretty;
 /// **Other copies of this literal exist and nothing checks them against this
 /// constant.** They all agree today, verified by grep:
 /// `assets/claude-status.defaults.json` (shipped), `src/_runtime/cli.rs`,
-/// `.config/claude-status.json`, `readme.md`, and two test fixtures —
-/// `tests/defaults_integrity.rs` and `tests/e2e.rs`. The schema's own `$id` is
-/// the one copy that is not a copy: it is generated from here.
+/// `readme.md`, and two test fixtures — `tests/defaults_integrity.rs` and
+/// `tests/e2e.rs`. The schema's own `$id` is the one copy that is not a copy:
+/// it is generated from here.
 ///
 /// There used to be two more — the installer's TypeScript twin and the `npm/`
 /// mirror of the defaults asset — and `distribution/01` deleted both with the

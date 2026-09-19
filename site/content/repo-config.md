@@ -7,15 +7,17 @@ weight = 4
 ## You probably do not need this file
 
 The `project` segment names your repository whether or not this file exists.
-With no configuration anywhere, it draws the **git root's own directory name** —
-work in `~/src/my-repo` and the bar reads `my-repo`.
+With no configuration anywhere, it draws the repository's **`owner/repo` from
+its `origin` remote** on a GitHub or GitLab host, and without one the
+**`parent/base` of its directory** — a clone of `acme/widget` reads
+`acme/widget`; an unpushed repository in `~/src/my-repo` reads `src/my-repo`.
 
 So this file exists for one purpose: calling a repository something **other**
-than its directory name. If the directory is already called the right thing,
-there is nothing to write.
+than that. If the derived name is already the right thing, there is nothing to
+write.
 
 The segment is omitted in exactly one case — you are not inside a git
-repository, so there is no root to take a name from.
+repository, so there is nothing to identify.
 
 ## The file
 
@@ -25,7 +27,10 @@ repository, so there is no root to take a name from.
 
 `<repo-root>` is the git root of the repository you are working in — the
 directory that contains `.git`, not the directory you happen to have `cd`'d
-into. Below it, `.config/claude-status.json`.
+into. Below it, `.config/claude-status.json`. In a linked worktree that is the
+worktree itself, while the name the bar derives comes from the main checkout —
+the two differ on purpose: the file describes the checkout you are in, the name
+describes the repository it belongs to.
 
 **Nothing creates this file.** Not `--configure`, not the render, not a first
 run. If you want one, you write it:
@@ -42,9 +47,11 @@ completion; `projectName` is the only key that does anything.
 
 ## What it does
 
-`projectName` is the name the `project` segment draws — with the
-`symbols.project` glyph in front of it — for that repository and no other. It
-overrides the directory name; that is all it does.
+`projectName` is the name the `project` segment draws, for that repository and
+no other. It replaces the derived name and nothing else — the glyph in front of
+it is chosen by how the repository was identified (`symbols.projectGit`,
+`projectRemote`, `projectGithub` or `projectGitlab`), and the name does not
+change that.
 
 The name is resolved in this order, first match winning:
 
@@ -53,7 +60,8 @@ The name is resolved in this order, first match winning:
    merged whole, so a name set there applies to every repository that has not
    named itself. Setting it there is almost never what you want, and
    [Configure](@/configure.md) says so.
-3. The **git root's directory name**.
+3. The **derived identity** — `owner/repo` from `origin`, or `parent/base` of
+   the identity root. The table in [Segments](@/segments.md) has every case.
 
 It is the only key this file may set. It is not in the shipped defaults, because
 a default name would be a name that was never about your repository.

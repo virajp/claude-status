@@ -21,12 +21,13 @@ cd "$MISE_PROJECT_ROOT"
 # The instinct is to read the defaults out of the schema's `default` keys. The
 # schema has exactly FOUR of them — the `caps` thresholds — against a tree of
 # roughly a hundred leaves, and that is deliberate: `config::schema::strip`
-# removes every other one so the palette, the twenty symbols and the two layout
-# rows (which carry Nerd Font private-use codepoints) stay out of a file dprint
-# formats. `tests/schema.rs::the_only_defaults_in_the_schema_are_the_four_caps`
-# pins it. A generator built on the schema's defaults would therefore show the
-# user a config that is empty everywhere except `caps`, and would emit every
-# key they touched as a change against nothing.
+# removes every other one so the palette, the twenty-two symbols and the two
+# layout rows (which carry Nerd Font private-use codepoints) stay out of a file
+# dprint formats.
+# `tests/schema.rs::the_only_defaults_in_the_schema_are_the_four_caps` pins it.
+# A generator built on the schema's defaults would therefore show the user a
+# config that is empty everywhere except `caps`, and would emit every key they
+# touched as a change against nothing.
 #
 # ---------------------------------------------------------------------------
 # WHY COPIED HERE RATHER THAN COMMITTED UNDER site/static/
