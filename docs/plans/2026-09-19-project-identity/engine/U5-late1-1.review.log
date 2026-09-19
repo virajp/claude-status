@@ -1,0 +1,15 @@
+/code-review high — loop U5-late1, round 1 — range 2de65e6..6e9037a (engine is branch-scoped) — 2026-09-19
+
+Scope read: src/modules/git.rs (+625), render/segments.rs, _runtime/app.rs, _shared/text.rs, config/mod.rs, schema, defaults asset, site CSS/template, all test changes. Unit suite 453 green plus e2e, defaults_integrity, schema suites green; traced every layout the resolver claims. Core logic sound; GitFacts.project populated on all three construction sites; segment text goes through sanitize at the single choke point.
+
+Findings (all low; none block the branch):
+
+1. src/modules/git.rs:194 — `store_identity` ignores `core.worktree`. A repo cloned with `--separate-git-dir=/some/store` (store name not hidden, not `*.git`) and a linked worktree of it: the worktree's `commondir` resolves to `/some/store`; `superproject` finds nothing; `checkout_of` returns None, so the identity becomes the store itself and the segment reads `some/store`. Only bites without a GitHub/GitLab origin. The main checkout of that layout is handled correctly.
+
+2. src/modules/git.rs:214 — `superproject` accepts any ancestor whose name ends in `.git` followed by `modules` as a bare store with no vouching, unlike hidden stores. Improbable layout.
+
+3. site/content/repo-config.md:46 — still says `projectName` is drawn with "the `symbols.project` glyph in front of it". U6 (wave 4) is queued to fix this.
+
+Cleared: `config.symbol()` falls back to `""` and `deep_merge` keeps defaults per key; `.config/claude-status.json` deletion safe; `probe`/`identity_root` agree on symlinked/broken `.git`; `origin_url` rejects `[remote "Origin"]`, comments, `pushurl`, cuts unquoted `#`/`;`; `classify` handles ports, userinfo, trailing `/`, `.git` suffix, host-less URLs.
+
+Orchestrator filter (range 2de65e6..6e9037a, file list: src/modules/git.rs → U1): finding 2 duplicates U5 round 4 engine finding 1 (dropped by the reviewer as residual) — dropped, "1 engine finding already reported by U5 dropped"; finding 1 duplicates U5 round 4's note on a `--separate-git-dir` store's linked worktree (accepted residual) — dropped, same clause; finding 3 is outside the range, already G2/U6 and noted in every earlier log — dropped. Nothing new handed to the reviewers beyond the verbatim text.
