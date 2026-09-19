@@ -82,7 +82,7 @@
  * generator most of all, drew tofu where the glyph should be.
  *
  * Subset from Hack Nerd Font Mono (Nerd Fonts 3.5.1) down to exactly the
- * codepoints `assets/claude-status.defaults.json` uses: 25 glyphs, 3.2KB,
+ * codepoints `assets/claude-status.defaults.json` uses: 28 glyphs, 4.2KB,
  * against the 2.8MB font they came out of. The glyphs taken are the icon sets
  * Nerd Fonts patches in, not Hack's letterforms; Hack itself is MIT.
  *
@@ -107,6 +107,7 @@
     U+E0A0,
     U+E0B0-E0B1,
     U+E0B6,
+    U+E702,
     U+F007,
     U+F00C-F00D,
     U+F013,
@@ -116,6 +117,7 @@
     U+F06E,
     U+F073,
     U+F07B,
+    U+F09B,
     U+F09D,
     U+F0AE,
     U+F0C2-F0C3,
@@ -125,7 +127,8 @@
     U+F1E6,
     U+F252,
     U+F401,
-    U+F51E;
+    U+F51E,
+    U+F0BA0;
 }
 
 /* ---- palette ----------------------------------------------------------- */

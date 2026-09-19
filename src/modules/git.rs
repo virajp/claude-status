@@ -2,7 +2,9 @@
 //!
 //! Root and branch are read from the filesystem — never from `git` — because
 //! this is a hot path and a `git rev-parse` is a whole process to learn
-//! something a file already says.
+//! something a file already says. The project identity is the same: it is read
+//! from `.git`, a worktree's `commondir`, a submodule's `modules/` path and the
+//! common `config` — still never from `git`.
 //!
 //! **The budget is one deadline, not one per call.** The original design said
 //! "two subprocesses, 250 ms each"; there are up to *four*, and they run on
@@ -20,6 +22,34 @@ pub const BUDGET_MS: u64 = 250;
 /// How far up the tree to look for a `.git`.
 const MAX_WALK: usize = 40;
 
+/// Where a repository lives, which is what picks the `project` segment's glyph.
+///
+/// `Github` and `Gitlab` match the `origin` host by **substring**, so a
+/// self-hosted instance counts (`a_self_hosted_gitlab_matches_by_substring`).
+/// Any other host is `Remote`
+/// (`an_origin_on_another_host_is_kind_remote_named_parent_slash_base`); no
+/// `origin` at all is `Git` (`a_config_without_origin_is_kind_git`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectKind {
+    Git,
+    Remote,
+    Github,
+    Gitlab,
+}
+
+/// The repository's identity: its kind, the name the `project` segment draws
+/// without a `projectName` override, and the identity root the name came from.
+///
+/// The name is the `origin` URL's full path for `Github`/`Gitlab`
+/// (`an_origin_on_gitlab_keeps_every_path_segment`) and `parent/base` of the
+/// identity root otherwise (`a_plain_repo_is_kind_git_and_named_parent_slash_base`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Project {
+    pub kind: ProjectKind,
+    pub name: String,
+    pub root: PathBuf,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GitFacts {
     pub root: Option<PathBuf>,
@@ -28,6 +58,10 @@ pub struct GitFacts {
     pub additions: u64,
     pub deletions: u64,
     pub worktree_subpath: Option<String>,
+    /// The repository's identity — main checkout in a linked worktree,
+    /// outermost superproject in a submodule — for the `project` segment; every
+    /// other field describes the checkout `cwd` is in.
+    pub project: Option<Project>,
 }
 
 /// Resolves everything the `branch` and `worktree` segments need.
@@ -40,7 +74,13 @@ pub fn resolve(cwd: Option<&Path>, worktree: &Matcher) -> GitFacts {
         return GitFacts::default();
     };
     let (root, branch) = find_root_and_branch(cwd);
-    let mut facts = GitFacts { worktree_subpath: worktree_subpath(cwd, worktree), root, branch, ..Default::default() };
+    let mut facts = GitFacts {
+        worktree_subpath: worktree_subpath(cwd, worktree),
+        project: root.as_deref().and_then(project),
+        root,
+        branch,
+        ..Default::default()
+    };
     resolve_markers(&mut facts);
     facts
 }
@@ -119,11 +159,8 @@ fn probe(dir: &Path) -> Probe {
         let Ok(pointer) = std::fs::read_to_string(&dot_git) else {
             return Probe::Continue;
         };
-        match pointer.trim().strip_prefix("gitdir:").map(str::trim).filter(|t| !t.is_empty()) {
-            // A relative gitdir is relative to the directory *containing*
-            // `.git`, and is normalised lexically — the filesystem is never
-            // consulted, so a symlinked worktree still reports what git wrote.
-            Some(target) => normalise(&dir.join(target)),
+        match gitdir_pointer(dir, &pointer) {
+            Some(target) => target,
             None => return Probe::RootOnly,
         }
     };
@@ -131,6 +168,237 @@ fn probe(dir: &Path) -> Probe {
     match std::fs::read_to_string(git_dir.join("HEAD")) {
         Ok(head) => Probe::Resolved(parse_head(&head)),
         Err(_) => Probe::Continue,
+    }
+}
+
+/// Parses a `.git` pointer file's `gitdir: <path>` line into the git dir it
+/// names.
+///
+/// A relative gitdir is relative to `dir` — the directory *containing* `.git` —
+/// and is normalised lexically: the filesystem is never consulted, so a
+/// symlinked worktree still reports what git wrote. Shared by [`probe`],
+/// [`identity_root`] and [`checkout_of`] so the three cannot drift.
+fn gitdir_pointer(dir: &Path, pointer: &str) -> Option<PathBuf> {
+    let target = pointer.trim().strip_prefix("gitdir:").map(str::trim).filter(|t| !t.is_empty())?;
+    Some(normalise(&dir.join(target)))
+}
+
+/// The repository's identity for the `project` segment, from the root
+/// [`find_root_and_branch`] returned. Filesystem only — no subprocess.
+///
+/// `None` when a path component the name is built from is not UTF-8: a name we
+/// cannot draw honestly is better omitted than drawn with U+FFFD.
+pub fn project(root: &Path) -> Option<Project> {
+    let (identity, common) = identity_root(root);
+    let (kind, path) = origin_url(&common).map(|url| classify(&url)).unwrap_or((ProjectKind::Git, None));
+    let name = match (kind, path) {
+        (ProjectKind::Github | ProjectKind::Gitlab, Some(path)) => path,
+        _ => parent_base(&identity)?,
+    };
+    Some(Project { kind, name, root: identity })
+}
+
+/// The identity root and the common git dir whose `config` names the remote.
+///
+/// A `.git` **directory** is its own identity. A pointer file names a gitdir;
+/// a `commondir` there (a linked worktree) redirects to the common git dir
+/// first. That dir is then read two ways, in order:
+///
+/// - Under a superproject's `<store>/modules/` — or a linked worktree's
+///   `<store>/worktrees/<x>/modules/`, where the store is one [`checkout_of`]
+///   vouches for or a bare `*.git` — the identity is that store's checkout, or
+///   the store itself, taking the **topmost** accepted store
+///   ([`superproject`]); so a submodule, however nested and from wherever it
+///   was added, names the outermost superproject
+///   (`a_nested_submodule_names_the_outermost_superproject`,
+///   `a_submodule_inside_a_linked_worktree_names_the_superproject`,
+///   `a_linked_worktree_of_a_submodule_names_the_superproject`).
+/// - Otherwise the common dir is a *store* and [`store_identity`] says which
+///   checkout, if any, it belongs to
+///   (`a_linked_worktree_names_its_main_checkout`,
+///   `a_linked_worktree_of_a_dot_bare_main_names_the_directory_holding_it`,
+///   `a_linked_worktree_of_a_bare_main_strips_the_dot_git_suffix`,
+///   `a_hidden_store_outside_a_checkout_is_its_own_identity`).
+///
+/// A pointer with neither `commondir` nor a `modules` ancestor is its own
+/// identity
+/// (`a_pointer_with_neither_commondir_nor_modules_is_its_own_project`).
+///
+/// Lexical throughout, like [`normalise`] — no `canonicalize`.
+fn identity_root(root: &Path) -> (PathBuf, PathBuf) {
+    let dot_git = root.join(".git");
+    let own = || (root.to_path_buf(), dot_git.clone());
+    if dot_git.is_dir() {
+        return own();
+    }
+    let Some(git_dir) = std::fs::read_to_string(&dot_git).ok().and_then(|p| gitdir_pointer(root, &p)) else {
+        return own();
+    };
+
+    let commondir = std::fs::read_to_string(git_dir.join("commondir")).ok();
+    let common = match &commondir {
+        Some(rel) => normalise(&git_dir.join(rel.trim())),
+        None => git_dir,
+    };
+    if let Some(found) = superproject(&common) {
+        return found;
+    }
+    if commondir.is_none() {
+        return (root.to_path_buf(), common);
+    }
+    (store_identity(&common), common)
+}
+
+/// The checkout a store sits inside, if any.
+///
+/// `.git` is always inside its checkout. A hidden store is inside one only when
+/// `<parent>/.git` is a pointer file naming it — the `.bare` layout
+/// (`a_submodule_under_a_dot_bare_store_names_the_directory_holding_it`); a
+/// hidden store with no such pointer, like `~/.cfg`, is inside nothing
+/// (`a_hidden_store_outside_a_checkout_is_its_own_identity`), and a visible
+/// `repo.git` never is. The one read here is lexical: the pointer's `gitdir:`
+/// is normalised, never resolved.
+fn checkout_of(store: &Path) -> Option<PathBuf> {
+    let name = store.file_name()?.to_str()?;
+    let parent = store.parent()?;
+    let inside = name == ".git"
+        || (name.starts_with('.')
+            && std::fs::read_to_string(parent.join(".git")).ok().and_then(|p| gitdir_pointer(parent, &p)).as_deref()
+                == Some(store));
+    inside.then(|| parent.to_path_buf())
+}
+
+/// The checkout a store belongs to, or the store itself when it has none —
+/// [`parent_base`] then drops a bare `repo.git`'s suffix from the name.
+fn store_identity(store: &Path) -> PathBuf {
+    checkout_of(store).unwrap_or_else(|| store.to_path_buf())
+}
+
+/// The outermost superproject a git dir sits under, as `(identity, store)`.
+///
+/// A candidate is a component followed by `modules`, or by
+/// `worktrees/<x>/modules`, and it counts as a store only when it is a bare
+/// `*.git` or [`checkout_of`] vouches for it — a hidden directory that merely
+/// has a `modules/` child, like `~/.emacs.d`, is skipped and the scan goes on
+/// to the real `.git` further down
+/// (`a_hidden_ancestor_named_before_modules_is_not_a_store`). The topmost
+/// accepted candidate wins.
+fn superproject(git_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    let parts: Vec<Component> = git_dir.components().collect();
+    let at = |i: usize, name: &str| parts.get(i).is_some_and(|c| c.as_os_str() == name);
+    (0..parts.len())
+        .filter(|&i| at(i + 1, "modules") || (at(i + 1, "worktrees") && at(i + 3, "modules")))
+        .find_map(|i| {
+            let store: PathBuf = parts[..=i].iter().collect();
+            let bare = parts[i].as_os_str().to_str().is_some_and(|n| n.ends_with(".git"));
+            match checkout_of(&store) {
+                Some(identity) => Some((identity, store)),
+                None if bare => Some((store.clone(), store)),
+                None => None,
+            }
+        })
+}
+
+/// The first `url` under `[remote "origin"]` in `<common_git_dir>/config`.
+///
+/// A minimal INI walk the way git reads it: the section name and the key are
+/// case-insensitive, the `"origin"` subsection is not; the header opens the
+/// section, any other `[` line closes it; a value loses a trailing `#`/`;`
+/// comment and a pair of surrounding double quotes
+/// (`origin_url_reads_the_config_the_way_git_does`). Every other remote,
+/// `pushurl`, and `insteadOf` rewriting are ignored on purpose
+/// (`a_config_without_origin_is_kind_git`), and an origin declared through
+/// `[include]`/`[includeIf]` is not followed.
+fn origin_url(common_git_dir: &Path) -> Option<String> {
+    let config = std::fs::read_to_string(common_git_dir.join("config")).ok()?;
+    let mut in_origin = false;
+    for line in config.lines() {
+        let line = line.trim();
+        if let Some(header) = line.strip_prefix('[').and_then(|l| l.split_once(']')).map(|(h, _)| h) {
+            let (section, sub) = header.trim().split_once(char::is_whitespace).unwrap_or((header, ""));
+            in_origin = section.eq_ignore_ascii_case("remote") && sub.trim() == "\"origin\"";
+            continue;
+        }
+        if line.starts_with('[') {
+            in_origin = false;
+            continue;
+        }
+        if !in_origin {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=')
+            && key.trim().eq_ignore_ascii_case("url")
+        {
+            return Some(config_value(value));
+        }
+    }
+    None
+}
+
+/// One config value: a quoted value is taken verbatim up to its closing quote;
+/// otherwise the value is cut at the first `#` or `;` anywhere, as git does.
+fn config_value(raw: &str) -> String {
+    let value = raw.trim();
+    if let Some(inner) = value.strip_prefix('"')
+        && let Some((quoted, _)) = inner.split_once('"')
+    {
+        return quoted.to_string();
+    }
+    let end = value.find(['#', ';']).unwrap_or(value.len());
+    value[..end].trim_end().to_string()
+}
+
+/// Splits a remote URL into its kind and its path, per
+/// `classify_handles_every_accepted_url_shape`.
+///
+/// `scheme://[user@]host[:port]/path` and scp-like `[user@]host:path` yield a
+/// host; the host, lower-cased, is matched by substring. `file://`, a bare
+/// path, or anything with no host or an empty path is `Remote` with no path.
+/// The path loses a leading `/`, a trailing `/` and a trailing `.git`.
+fn classify(url: &str) -> (ProjectKind, Option<String>) {
+    let no_host = (ProjectKind::Remote, None);
+    let (host_port, path) = if let Some((scheme, rest)) = url.split_once("://") {
+        if scheme.eq_ignore_ascii_case("file") {
+            return no_host;
+        }
+        let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+        (authority, path)
+    } else if let Some((before, after)) = url.split_once(':') {
+        if before.contains('/') {
+            return no_host;
+        }
+        (before, after)
+    } else {
+        return no_host;
+    };
+
+    let host = host_port.rsplit_once('@').map_or(host_port, |(_, h)| h);
+    let host = host.split_once(':').map_or(host, |(h, _)| h).to_ascii_lowercase();
+    let path = path.trim_start_matches('/').trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    if host.is_empty() || path.is_empty() {
+        return no_host;
+    }
+
+    let kind = if host.contains("github") {
+        ProjectKind::Github
+    } else if host.contains("gitlab") {
+        ProjectKind::Gitlab
+    } else {
+        ProjectKind::Remote
+    };
+    (kind, Some(path.to_string()))
+}
+
+/// `parent/base` of the identity root, or `base` alone when there is no parent
+/// component. A trailing `.git` on the base is dropped, so a bare `repo.git`
+/// reads as `repo`. `None` when a component is not UTF-8.
+fn parent_base(identity_root: &Path) -> Option<String> {
+    let base = identity_root.file_name()?.to_str()?;
+    let base = base.strip_suffix(".git").unwrap_or(base);
+    match identity_root.parent().and_then(Path::file_name) {
+        Some(parent) => Some(format!("{}/{base}", parent.to_str()?)),
+        None => Some(base.to_string()),
     }
 }
 
@@ -492,5 +760,348 @@ mod tests {
     fn with_no_cwd_there_are_no_git_facts() {
         let facts = resolve(None, &matcher());
         assert!(facts.root.is_none() && facts.branch.is_none() && !facts.ahead);
+    }
+
+    /// Builds `<base>/.git/HEAD` plus a `.git/config` holding one remote.
+    fn repo_with_remote(base: &Path, remote: &str, url: &str) {
+        repo(base, "ref: refs/heads/main\n");
+        fs::write(base.join(".git").join("config"), format!("[remote \"{remote}\"]\n\turl = {url}\n\tfetch = +refs/heads/*:refs/remotes/{remote}/*\n")).unwrap();
+    }
+
+    /// Writes `<checkout>/.git` as a `gitdir:` pointer to `target`.
+    fn pointer(checkout: &Path, target: &str) {
+        fs::create_dir_all(checkout).unwrap();
+        fs::write(checkout.join(".git"), format!("gitdir: {target}\n")).unwrap();
+    }
+
+    #[test]
+    fn a_plain_repo_is_kind_git_and_named_parent_slash_base() {
+        // The control: no config at all, so nothing but the path names it.
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().join("acme").join("widget");
+        repo(&root, "ref: refs/heads/main\n");
+
+        let p = project(&root).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Git, name: "acme/widget".into(), root: root.clone() });
+    }
+
+    #[test]
+    fn an_origin_on_github_names_the_url_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().join("elsewhere");
+        repo_with_remote(&root, "origin", "git@github.com:acme/widget.git");
+
+        let p = project(&root).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Github, "acme/widget"));
+    }
+
+    #[test]
+    fn an_origin_on_gitlab_keeps_every_path_segment() {
+        let dir = tempfile::TempDir::new().unwrap();
+        repo_with_remote(dir.path(), "origin", "https://gitlab.com/group/sub/repo.git");
+
+        let p = project(dir.path()).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Gitlab, "group/sub/repo"));
+    }
+
+    #[test]
+    fn a_self_hosted_gitlab_matches_by_substring() {
+        let dir = tempfile::TempDir::new().unwrap();
+        repo_with_remote(dir.path(), "origin", "ssh://git@gitlab.example.com:2222/team/repo");
+
+        let p = project(dir.path()).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Gitlab, "team/repo"));
+    }
+
+    #[test]
+    fn an_origin_on_another_host_is_kind_remote_named_parent_slash_base() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().join("src").join("thing");
+        repo_with_remote(&root, "origin", "https://codeberg.org/someone/thing.git");
+
+        let p = project(&root).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Remote, "src/thing"));
+    }
+
+    #[test]
+    fn a_config_without_origin_is_kind_git() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().join("acme").join("fork");
+        repo_with_remote(&root, "upstream", "git@github.com:acme/widget.git");
+
+        let p = project(&root).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Git, "acme/fork"));
+    }
+
+    #[test]
+    fn a_linked_worktree_names_its_main_checkout() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let main = dir.path().join("main");
+        repo_with_remote(&main, "origin", "git@github.com:acme/widget.git");
+        let wt_gitdir = main.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(&wt_gitdir).unwrap();
+        fs::write(wt_gitdir.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
+        fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+        let wt = dir.path().join("wt");
+        pointer(&wt, &wt_gitdir.display().to_string());
+
+        let p = project(&wt).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Github, name: "acme/widget".into(), root: main });
+        // The checkout itself is unchanged: root and branch are the worktree's.
+        let (root, branch) = find_root_and_branch(&wt);
+        assert_eq!(root.as_deref(), Some(wt.as_path()));
+        assert_eq!(branch.as_deref(), Some("feature"));
+    }
+
+    #[test]
+    fn a_linked_worktree_of_a_bare_main_strips_the_dot_git_suffix() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let bare = dir.path().join("src").join("repo.git");
+        fs::create_dir_all(bare.join("worktrees").join("wt")).unwrap();
+        fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(bare.join("config"), "[core]\n\tbare = true\n").unwrap();
+        fs::write(bare.join("worktrees").join("wt").join("HEAD"), "ref: refs/heads/wt\n").unwrap();
+        fs::write(bare.join("worktrees").join("wt").join("commondir"), "../..\n").unwrap();
+        let wt = dir.path().join("wt");
+        pointer(&wt, &bare.join("worktrees").join("wt").display().to_string());
+
+        let p = project(&wt).unwrap();
+        assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Git, "src/repo"));
+        assert_eq!(p.root, bare, "the suffix comes off the name, never the path");
+    }
+
+    #[test]
+    fn a_linked_worktree_of_a_dot_bare_main_names_the_directory_holding_it() {
+        // The `.bare` layout: `widget/{.bare, .git -> .bare, main/}`. The common
+        // dir is hidden, so the checkout is the directory holding it.
+        let dir = tempfile::TempDir::new().unwrap();
+        let widget = dir.path().join("proj").join("widget");
+        let bare = widget.join(".bare");
+        fs::create_dir_all(bare.join("worktrees").join("main")).unwrap();
+        fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(bare.join("config"), "[core]\n\tbare = true\n").unwrap();
+        fs::write(bare.join("worktrees").join("main").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(bare.join("worktrees").join("main").join("commondir"), "../..\n").unwrap();
+        fs::write(widget.join(".git"), "gitdir: ./.bare\n").unwrap();
+        let main = widget.join("main");
+        pointer(&main, "../.bare/worktrees/main");
+
+        let p = project(&main).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Git, name: "proj/widget".into(), root: widget });
+    }
+
+    #[test]
+    fn a_submodule_under_a_dot_bare_store_names_the_directory_holding_it() {
+        // A submodule added from the `main` worktree of a `.bare` layout: its
+        // gitdir is `widget/.bare/worktrees/main/modules/lib`, with no `.git`
+        // component anywhere and no `commondir` of its own.
+        let dir = tempfile::TempDir::new().unwrap();
+        let widget = dir.path().join("proj").join("widget");
+        let bare = widget.join(".bare");
+        let lib_gitdir = bare.join("worktrees").join("main").join("modules").join("lib");
+        fs::create_dir_all(&lib_gitdir).unwrap();
+        fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(bare.join("config"), "[remote \"origin\"]\n\turl = https://codeberg.org/proj/widget.git\n").unwrap();
+        fs::write(lib_gitdir.join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        fs::write(widget.join(".git"), "gitdir: ./.bare\n").unwrap();
+        let lib = widget.join("main").join("lib");
+        pointer(&lib, "../../.bare/worktrees/main/modules/lib");
+
+        let p = project(&lib).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Remote, name: "proj/widget".into(), root: widget });
+    }
+
+    #[test]
+    fn a_hidden_store_outside_a_checkout_is_its_own_identity() {
+        // `git init --bare ~/.cfg` then `git worktree add ~/proj/x`: the store
+        // is hidden but nothing at `~/.git` points to it, so it is not inside
+        // `$HOME` — it stands alone, named `<user>/.cfg`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path().join("user");
+        let cfg = home.join(".cfg");
+        fs::create_dir_all(cfg.join("worktrees").join("x")).unwrap();
+        fs::write(cfg.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(cfg.join("config"), "[core]\n\tbare = true\n").unwrap();
+        fs::write(cfg.join("worktrees").join("x").join("HEAD"), "ref: refs/heads/x\n").unwrap();
+        fs::write(cfg.join("worktrees").join("x").join("commondir"), "../..\n").unwrap();
+        let x = home.join("proj").join("x");
+        pointer(&x, &cfg.join("worktrees").join("x").display().to_string());
+
+        let p = project(&x).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Git, name: "user/.cfg".into(), root: cfg });
+    }
+
+    #[test]
+    fn a_hidden_ancestor_named_before_modules_is_not_a_store() {
+        // `~/.emacs.d/modules/foo` is a repo whose path happens to carry a
+        // hidden directory followed by `modules`. Nothing vouches for
+        // `.emacs.d` as a store, so the scan must go on to foo's real `.git`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let foo = dir.path().join(".emacs.d").join("modules").join("foo");
+        repo_with_remote(&foo, "origin", "git@github.com:me/foo.git");
+        let expected = Project { kind: ProjectKind::Github, name: "me/foo".into(), root: foo.clone() };
+
+        let lib_gitdir = foo.join(".git").join("modules").join("lib");
+        fs::create_dir_all(&lib_gitdir).unwrap();
+        fs::write(lib_gitdir.join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        let lib = foo.join("lib");
+        pointer(&lib, "../.git/modules/lib");
+        assert_eq!(project(&lib).unwrap(), expected, "from the submodule");
+
+        let wt_gitdir = foo.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(&wt_gitdir).unwrap();
+        fs::write(wt_gitdir.join("HEAD"), "ref: refs/heads/wt\n").unwrap();
+        fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+        let wt = dir.path().join("wt");
+        pointer(&wt, &wt_gitdir.display().to_string());
+        assert_eq!(project(&wt).unwrap(), expected, "from a linked worktree");
+    }
+
+    #[test]
+    fn a_submodule_inside_a_linked_worktree_names_the_superproject() {
+        // A submodule added from a linked worktree has its gitdir under
+        // `.git/worktrees/<wt>/modules/`, with no `commondir` of its own.
+        let dir = tempfile::TempDir::new().unwrap();
+        let sup = dir.path().join("acme").join("super");
+        repo_with_remote(&sup, "origin", "git@github.com:acme/super.git");
+        let wt_gitdir = sup.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(wt_gitdir.join("modules").join("lib")).unwrap();
+        fs::write(wt_gitdir.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
+        fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+        fs::write(wt_gitdir.join("modules").join("lib").join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        let wt = dir.path().join("wt");
+        pointer(&wt, &wt_gitdir.display().to_string());
+        let lib = wt.join("lib");
+        pointer(&lib, &wt_gitdir.join("modules").join("lib").display().to_string());
+
+        let p = project(&lib).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Github, name: "acme/super".into(), root: sup });
+    }
+
+    #[test]
+    fn a_linked_worktree_of_a_submodule_names_the_superproject() {
+        // `git worktree add` run inside a submodule: the worktree's `commondir`
+        // resolves to `<sup>/.git/modules/<sub>`, which is still under the
+        // superproject's `.git`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let sup = dir.path().join("acme").join("super");
+        repo_with_remote(&sup, "origin", "git@github.com:acme/super.git");
+        let lib_gitdir = sup.join(".git").join("modules").join("lib");
+        fs::create_dir_all(lib_gitdir.join("worktrees").join("wt")).unwrap();
+        fs::write(lib_gitdir.join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        fs::write(lib_gitdir.join("config"), "[remote \"origin\"]\n\turl = git@github.com:vendor/lib.git\n").unwrap();
+        fs::write(lib_gitdir.join("worktrees").join("wt").join("HEAD"), "ref: refs/heads/wt\n").unwrap();
+        fs::write(lib_gitdir.join("worktrees").join("wt").join("commondir"), "../..\n").unwrap();
+        let wt = dir.path().join("lib-wt");
+        pointer(&wt, &lib_gitdir.join("worktrees").join("wt").display().to_string());
+
+        let p = project(&wt).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Github, name: "acme/super".into(), root: sup }, "the superproject's origin, not the submodule's");
+    }
+
+    #[test]
+    fn origin_url_reads_the_config_the_way_git_does() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let check = |config: &str, expected: Option<&str>| {
+            fs::write(dir.path().join("config"), config).unwrap();
+            assert_eq!(origin_url(dir.path()).as_deref(), expected, "config {config:?}");
+        };
+
+        check("[Remote \"origin\"]\n\tURL = git@github.com:acme/widget.git\n", Some("git@github.com:acme/widget.git"));
+        check("[remote \"origin\"]\n\turl = \"https://github.com/acme/widget.git\"\n", Some("https://github.com/acme/widget.git"));
+        check("[remote \"origin\"]\n\turl = git@github.com:acme/widget.git # mirror\n", Some("git@github.com:acme/widget.git"));
+        check("[remote \"origin\"]\n\turl = git@github.com:acme/widget.git ; mirror\n", Some("git@github.com:acme/widget.git"));
+        check("[remote \"origin\"]\n\turl = git@github.com:acme/widget#1.git\n", Some("git@github.com:acme/widget"));
+        check("[remote \"origin\"]\n\turl = \"git@github.com:acme/widget#1.git\"\n", Some("git@github.com:acme/widget#1.git"));
+        check("[remote \"origin\"] ; the remote\n\turl = git@github.com:acme/widget.git\n", Some("git@github.com:acme/widget.git"));
+        check("[remote \"Origin\"]\n\turl = git@github.com:acme/widget.git\n", None);
+        check("[remote \"origin\"]\n\tpushurl = x\n\turl = first\n\turl = second\n", Some("first"));
+    }
+
+    #[test]
+    fn a_submodule_names_its_superproject() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sup = dir.path().join("acme").join("super");
+        repo_with_remote(&sup, "origin", "git@github.com:acme/super.git");
+        let lib_gitdir = sup.join(".git").join("modules").join("lib");
+        fs::create_dir_all(&lib_gitdir).unwrap();
+        fs::write(lib_gitdir.join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        fs::write(lib_gitdir.join("config"), "[remote \"origin\"]\n\turl = git@github.com:vendor/lib.git\n").unwrap();
+        let lib = sup.join("lib");
+        pointer(&lib, "../.git/modules/lib");
+
+        let p = project(&lib).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Github, name: "acme/super".into(), root: sup }, "the superproject's origin, not the submodule's");
+        let (root, branch) = find_root_and_branch(&lib);
+        assert_eq!(root.as_deref(), Some(lib.as_path()));
+        assert_eq!(branch.as_deref(), Some("lib"));
+    }
+
+    #[test]
+    fn a_nested_submodule_names_the_outermost_superproject() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sup = dir.path().join("acme").join("outer");
+        repo_with_remote(&sup, "origin", "https://github.com/acme/outer");
+        let b_gitdir = sup.join(".git").join("modules").join("a").join("modules").join("b");
+        fs::create_dir_all(&b_gitdir).unwrap();
+        fs::write(b_gitdir.join("HEAD"), "ref: refs/heads/b\n").unwrap();
+        let b = sup.join("a").join("b");
+        pointer(&b, "../../.git/modules/a/modules/b");
+
+        let p = project(&b).unwrap();
+        assert_eq!(p, Project { kind: ProjectKind::Github, name: "acme/outer".into(), root: sup });
+    }
+
+    #[test]
+    fn a_pointer_with_neither_commondir_nor_modules_is_its_own_project() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let real = dir.path().join("store").join("gitdir");
+        fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("HEAD"), "ref: refs/heads/rel\n").unwrap();
+        let wt = dir.path().join("checkout");
+        pointer(&wt, "../store/gitdir");
+
+        let p = project(&wt).unwrap();
+        let parent = dir.path().file_name().unwrap().to_str().unwrap();
+        assert_eq!((p.kind, p.name), (ProjectKind::Git, format!("{parent}/checkout")));
+        assert_eq!(p.root, wt);
+    }
+
+    #[test]
+    fn a_url_with_no_host_is_kind_remote() {
+        for url in ["/srv/git/thing.git", "file:///srv/git/thing.git"] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let root = dir.path().join("mirrors").join("thing");
+            repo_with_remote(&root, "origin", url);
+
+            let p = project(&root).unwrap();
+            assert_eq!((p.kind, p.name.as_str()), (ProjectKind::Remote, "mirrors/thing"), "url {url}");
+        }
+    }
+
+    #[test]
+    fn classify_handles_every_accepted_url_shape() {
+        use ProjectKind::*;
+        let path = |p: &str| Some(p.to_string());
+        let cases = [
+            ("git@github.com:acme/widget.git", (Github, path("acme/widget"))),
+            ("github.com:acme/widget", (Github, path("acme/widget"))),
+            ("ssh://git@github.com/acme/widget.git", (Github, path("acme/widget"))),
+            ("ssh://git@gitlab.example.com:2222/team/repo", (Gitlab, path("team/repo"))),
+            ("https://gitlab.com/group/sub/repo.git", (Gitlab, path("group/sub/repo"))),
+            ("http://user@GitHub.com:8080/acme/widget/", (Github, path("acme/widget"))),
+            ("git://codeberg.org/someone/thing.git", (Remote, path("someone/thing"))),
+            ("https://codeberg.org/someone/thing", (Remote, path("someone/thing"))),
+            ("file:///srv/git/thing.git", (Remote, None)),
+            ("/srv/git/thing.git", (Remote, None)),
+            ("../sibling/thing", (Remote, None)),
+            ("https://github.com", (Remote, None)),
+            ("https://github.com/", (Remote, None)),
+            ("git@github.com:", (Remote, None)),
+            ("", (Remote, None)),
+        ];
+        for (url, expected) in cases {
+            assert_eq!(classify(url), expected, "url {url:?}");
+        }
     }
 }

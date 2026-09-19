@@ -212,7 +212,7 @@ pub fn generate() -> Value {
 ///
 /// - **`default`** — every container carries `#[serde(default)]`, so schemars
 ///   inlines each field's shipped value. That would re-embed the whole palette,
-///   all twenty symbols and both layout rows into the schema, including the
+///   all twenty-two symbols and both layout rows into the schema, including the
 ///   Nerd Font private-use codepoints `assets/claude-status.defaults.json` is
 ///   marked `-text -diff` to protect. The four `caps` defaults are the only
 ///   ones the published schema has ever had, and they are put back by

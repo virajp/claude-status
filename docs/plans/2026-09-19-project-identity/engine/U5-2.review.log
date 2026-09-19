@@ -1,0 +1,19 @@
+/code-review high — loop U5, round 2 — range 4ea824e..ac15e99 — 2026-09-19
+
+Full suite is green (cargo test: all test binaries pass); findings below come from reading the diff plus hand-built fixture probes against the debug binary.
+
+## Findings
+
+1. src/modules/git.rs:258 — `superproject()` only recognises a literal `.git` component, so a submodule under a `.bare` store or a visible bare `repo.git` names itself, not the superproject. Severity: medium.
+The commit ac15e99 and the `identity_root` doc claim a submodule "however nested and from wherever it was added, names the outermost superproject", and the same commit adds `.bare` support. But the two do not compose: in the `.bare` layout the submodule's gitdir is `widget/.bare/worktrees/main/modules/lib` — no `.git` component — so `superproject()` returns `None`, the pointer has no `commondir`, and `identity_root` falls to "its own project". Probed with a hand-built fixture: from `widget/main` the bar shows `H acme/widget`; from `widget/main/lib` it shows `H vendor/lib` (the submodule's own origin). Same for a visible bare store: `src/repo.git/worktrees/wt/modules/lib` renders `G wt/lib`. A linked worktree of such a submodule is worse: `common` = `.../.bare/worktrees/main/modules/lib`, `file_name` is `lib` (not dot-prefixed), so identity = the gitdir itself and the name is `modules/lib`. The matcher should key on a `modules` (or `worktrees/<x>/modules`) component whose preceding component is a git dir (has `HEAD`), not on the name `.git`.
+
+2. src/modules/git.rs:314 — `config_value` cuts `#`/`;` comments only after whitespace; git cuts them anywhere outside quotes. Severity: low.
+git's `parse_value` starts a comment at any unquoted `;`/`#` regardless of the preceding character. For an unquoted `url = https://github.com/acme/widget#frag` git reads `https://github.com/acme/widget`; this parser yields `acme/widget#frag` on the bar (probed). The unit test at :919 pins the divergent behaviour under a name that claims "the way git does". Impact is limited because `git remote add` writes such values quoted, so only hand-edited configs hit it.
+
+3. src/modules/git.rs:286 — a section header with a trailing comment closes the origin section instead of opening it. Severity: low.
+`[remote "origin"] ; the remote` fails `strip_suffix(']')`, falls into the `starts_with('[')` branch, sets `in_origin = false`, and the `url` beneath is never read. Probed: kind degrades to `Git` with a `parent/base` name even though `origin` is on GitHub. git accepts comments after headers.
+
+4. src/modules/git.rs:248 — the "hidden common dir means the checkout is its parent" heuristic misfires when the bare store is hidden but not inside a checkout. Severity: low.
+A bare store at `~/.cfg` (the common dotfiles-bare pattern) with `git worktree add ~/proj/x` gives `common = ~/.cfg`, dot-prefixed, so identity = `$HOME` and the segment reads `Users/<user>` under the git glyph. The heuristic is right for `widget/.bare` and `main/.git` but has no check that the parent actually holds a checkout (e.g. a `.git` pointer file naming that store, as the `.bare` convention writes).
+
+No other correctness issues found in `segments.rs`, `app.rs`, `config/mod.rs`, the schema, the e2e tests, or the site CSS/font changes. Note for the orchestrator (not a code finding): `site/content/repo-config.md:46` and `segments.md` still describe `symbols.project`; that is U6 (wave 4, `06-docs.md`), which has not run yet.

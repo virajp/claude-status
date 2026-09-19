@@ -53,8 +53,10 @@ const GLYPHS: &[(&str, &str)] = &[
     ("symbols.duration", "\u{f017}"),
     ("symbols.folder", "\u{f07b}"),
     ("symbols.model", "\u{26a1}"),
-    ("symbols.project", "\u{f401}"),
-    ("symbols.repo", "\u{f401}"),
+    ("symbols.projectGit", "\u{e702}"),
+    ("symbols.projectGithub", "\u{f09b}"),
+    ("symbols.projectGitlab", "\u{f0ba0}"),
+    ("symbols.projectRemote", "\u{f401}"),
     ("symbols.reset", "\u{21bb}"),
     ("symbols.session", "\u{f02b}"),
     ("symbols.spend", "\u{f09d}"),
@@ -100,7 +102,7 @@ fn every_glyph_matches_its_codepoint() {
             expected.escape_debug().to_string(),
         );
     }
-    assert_eq!(GLYPHS.len(), 39, "the codepoint table has 39 rows");
+    assert_eq!(GLYPHS.len(), 41, "the codepoint table has 41 rows");
 }
 
 #[test]

@@ -1,0 +1,20 @@
+/code-review high — loop U5, round 4 — range 4ea824e..2de65e6 — 2026-09-19
+
+Scope reviewed: src/modules/git.rs (+623: Project/ProjectKind, identity_root, superproject, checkout_of, origin_url, classify, parent_base), render/segments.rs, _runtime/app.rs, config/mod.rs, schema, defaults asset, glyph font/CSS, tests/{e2e,schema,defaults_integrity,site}.rs, deletion of .config/claude-status.json.
+
+Verified beyond reading: cargo test --lib, --test schema, --test defaults_integrity, and the five touched e2e tests all pass (472 tests). --doctor from this worktree resolves `github virajp/claude-status (<main checkout>)`. Inspected claude-status-glyphs.woff2 with fontTools: 28 glyphs, exactly matches the CSS unicode-range, all three new codepoints present. Traced resolution through bare-clone worktrees, .bare layouts, --separate-git-dir, nested/worktree submodules, and the ~/.emacs.d/modules and ~/.terraform/modules false-positive shapes — the vouching in checkout_of handles these correctly. No high/medium correctness bugs found.
+
+### Findings
+
+1. src/modules/git.rs:291 — low — `superproject`'s bare fallback accepts a path component as a store on its `.git` suffix alone, with no check that it is a git dir. Scenario: a non-bare checkout cloned as `foo.git` (`git clone url foo.git`) that has a `modules/` tree (Puppet/Drupal/Terraform style); any nested repo's submodule or linked worktree under `foo.git/modules/<x>/.git/...` resolves to `foo.git` as identity and reads `foo.git/config` (nonexistent), yielding kind `Git` and name `<parent>/foo` instead of the real superproject. A `store.join("HEAD").is_file()` guard on the `None if bare` arm would disambiguate at the cost of one stat.
+
+2. src/modules/config/mod.rs:806 — low — `symbols.project` and `symbols.repo` are retired without a migration or diagnostic. `symbols` is an open map, so a user who had overridden `symbols.project` on 1.x silently loses the override after upgrade and `--doctor` says nothing. Consider a doctor hint for the two dead keys.
+
+3. tests/e2e.rs:1902 — low — `real_git` passes identity via `-c` but still inherits the developer's global git config. With `commit.gpgsign = true` (or a global `core.hooksPath`), `github_fixture`'s `git commit` blocks on a passphrase prompt or fails. Add `-c commit.gpgsign=false` (and optionally `-c core.hooksPath=/dev/null`).
+
+4. src/modules/config/write.rs:92 — low — the `SCHEMA_URL` comment enumerates `.config/claude-status.json` as one of the "verified by grep" copies; this diff deletes that file, so the enumeration is now false. Comment-only.
+
+### Notes (not findings)
+- Site docs still describe `{sym.project}` — deferred to plan unit 06-docs.
+- `projectName` from the user layer no longer draws outside a repo — pinned by test, matches intent.
+- A `.bare` store without a `widget/.git` pointer file, a `--separate-git-dir` store's linked worktree, and ssh-alias hosts (`gh:acme/widget`) all fall to own identity/`Remote` — consistent with the `~/.cfg` rule; these are the shapes users will report as "wrong glyph".

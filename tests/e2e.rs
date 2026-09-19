@@ -134,7 +134,12 @@ fn the_fixture_renders_a_bar_on_stdout_and_nothing_on_stderr() {
     assert!(out.status.success(), "exit code {:?}", out.status.code());
     let bar = stdout(&out);
     assert!(bar.contains("Opus 4.8"), "got: {}", bar.escape_debug());
-    assert!(bar.contains("e2e-fixture"), "the seeded config layer applied");
+    // `/tmp/demo` is no repository, so `project` omits there and cannot show
+    // the layer applied; point the same payload at one to see `projectName`.
+    let repo = fake_repo("{}");
+    let in_repo = FIXTURE.replace("/tmp/demo", repo.path().to_str().unwrap());
+    let named = stdout(&run(&home, &["--statusline"], &in_repo, &[]));
+    assert!(named.contains("e2e-fixture"), "the seeded config layer applied: {}", named.escape_debug());
     assert!(bar.contains('\u{1b}'), "the bar carries ANSI colour");
     assert!(!bar.ends_with('\n'), "no trailing newline");
     assert_eq!(stderr(&out), "", "a clean render says nothing");
@@ -1671,7 +1676,10 @@ fn a_scalar_where_a_block_belongs_costs_that_block_and_nothing_else() {
     // turns a hard error into a discarded config: this layer's name, its
     // layout and a user's whole theme, gone over one bad key.
     let home = Home::new(r#"{ "projectName": "e2e-fixture", "gauge": 5, "lines": [["project", "context"]] }"#);
-    let out = run(&home, &["--statusline"], FIXTURE, &[]);
+    // Inside a repository, so the `project` segment the layout names can draw.
+    let repo = fake_repo("{}");
+    let payload = FIXTURE.replace("/tmp/demo", repo.path().to_str().unwrap());
+    let out = run(&home, &["--statusline"], &payload, &[]);
 
     assert!(out.status.success(), "exit code {:?}", out.status.code());
     let bar = stdout(&out);
@@ -1886,6 +1894,139 @@ fn a_dirty_linked_worktree_renders_its_own_dirty_marker() {
         "the clean checkout picked up the worktree's change: {}",
         in_checkout.escape_debug()
     );
+}
+
+/// Runs a real `git` for a fixture, with an identity passed per-invocation —
+/// `run_in` clears the environment for the binary, but this is the *test*
+/// calling git, and a machine with no `user.email` cannot commit.
+fn real_git(cwd: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid"])
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("git runs in the test environment");
+    assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// Whether the tests that need a real `git` can run at all.
+fn git_on_path() -> bool {
+    Command::new("git").arg("--version").output().is_ok_and(|out| out.status.success())
+}
+
+/// A user layer that names no repository and stands ASCII in for the project
+/// glyphs, so a derived name can be asserted on. Never `safe_config()` here:
+/// its `projectName` would replace the very text under test.
+fn unnamed_config() -> String {
+    r#"{ "symbols": { "projectGit": "G", "projectGithub": "H" }, "spend": { "refreshMinutes": 0, "show": "never" } }"#
+        .to_string()
+}
+
+fn payload_in(dir: &Path) -> String {
+    serde_json::json!({
+        "model": { "display_name": "Opus 4.8" },
+        "workspace": { "current_dir": dir },
+        "context_window": { "used_percentage": 26, "context_window_size": 1_000_000 },
+    })
+    .to_string()
+}
+
+/// A repository on GitHub, laid out by git itself: `<tmp>/acme/widget` with an
+/// `origin`, a linked worktree at `<tmp>/wt`, and `<tmp>/lib` added as the
+/// submodule `widget/lib`.
+///
+/// Returns `(tmp, widget, wt)`. The submodule add needs
+/// `protocol.file.allow=always` on git ≥ 2.38.3; without it the add is refused
+/// for a reason unrelated to what is being measured.
+fn github_fixture() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let tmp = TempDir::new().unwrap();
+    let widget = tmp.path().join("acme").join("widget");
+    std::fs::create_dir_all(&widget).unwrap();
+    real_git(&widget, &["init", "-q", "-b", "main"]);
+    std::fs::write(widget.join("readme.txt"), "widget\n").unwrap();
+    real_git(&widget, &["add", "-A"]);
+    real_git(&widget, &["commit", "-qm", "one"]);
+    real_git(&widget, &["remote", "add", "origin", "git@github.com:acme/widget.git"]);
+
+    let wt = tmp.path().join("wt");
+    real_git(&widget, &["worktree", "add", "-q", "-b", "wt", wt.to_str().unwrap()]);
+
+    let lib = tmp.path().join("lib");
+    std::fs::create_dir_all(&lib).unwrap();
+    real_git(&lib, &["init", "-q", "-b", "main"]);
+    std::fs::write(lib.join("lib.txt"), "lib\n").unwrap();
+    real_git(&lib, &["add", "-A"]);
+    real_git(&lib, &["commit", "-qm", "one"]);
+    real_git(&widget, &["-c", "protocol.file.allow=always", "submodule", "add", "-q", lib.to_str().unwrap(), "lib"]);
+
+    (tmp, widget, wt)
+}
+
+/// The `project` segment names the repository by its `origin`, from the main
+/// checkout, from a linked worktree and from a submodule alike — while the
+/// `branch` segment still describes the checkout the session is in. The
+/// worktree's and the submodule's branches are the proof that only the identity
+/// moved.
+#[test]
+fn a_repository_is_named_by_its_origin_from_the_checkout_a_worktree_and_a_submodule() {
+    if !git_on_path() {
+        eprintln!("skipped: git is not on PATH");
+        return;
+    }
+    let home = Home::new(&unnamed_config());
+    let (_tmp, widget, wt) = github_fixture();
+
+    let in_checkout = stdout(&run(&home, &["--statusline"], &payload_in(&widget), &[]));
+    assert!(in_checkout.contains("H acme/widget"), "the checkout: {}", in_checkout.escape_debug());
+    assert!(in_checkout.contains("main"), "the checkout's branch: {}", in_checkout.escape_debug());
+
+    let in_worktree = stdout(&run(&home, &["--statusline"], &payload_in(&wt), &[]));
+    assert!(in_worktree.contains("H acme/widget"), "the worktree: {}", in_worktree.escape_debug());
+    assert!(in_worktree.contains("wt"), "the worktree's own branch: {}", in_worktree.escape_debug());
+    assert!(!in_worktree.contains("main"), "the worktree took the checkout's branch: {}", in_worktree.escape_debug());
+
+    let in_submodule = stdout(&run(&home, &["--statusline"], &payload_in(&widget.join("lib")), &[]));
+    assert!(in_submodule.contains("H acme/widget"), "the submodule: {}", in_submodule.escape_debug());
+    assert!(in_submodule.contains("main"), "the submodule's own branch: {}", in_submodule.escape_debug());
+}
+
+/// With no `origin`, the repository is named `parent/base` of its root under
+/// the git glyph — never the bare directory name.
+#[test]
+fn a_repository_without_an_origin_is_named_parent_slash_base() {
+    if !git_on_path() {
+        eprintln!("skipped: git is not on PATH");
+        return;
+    }
+    let home = Home::new(&unnamed_config());
+    let tmp = TempDir::new().unwrap();
+    let plain = tmp.path().join("acme").join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    real_git(&plain, &["init", "-q", "-b", "main"]);
+
+    let bar = stdout(&run(&home, &["--statusline"], &payload_in(&plain), &[]));
+    assert!(bar.contains("G acme/plain"), "got {}", bar.escape_debug());
+}
+
+/// `--doctor`'s GIT section says how the project was identified: the kind and
+/// the name, on a `project:` row. Only the row's presence and its kind are
+/// pinned, not the whole line.
+#[test]
+fn doctor_names_how_the_project_was_identified() {
+    if !git_on_path() {
+        eprintln!("skipped: git is not on PATH");
+        return;
+    }
+    let home = Home::new(&unnamed_config());
+    let (_tmp, widget, _wt) = github_fixture();
+
+    let report = stdout(&run_in(&["--doctor"], "", Some(home.path()), Some(&widget), &[]));
+    let row = report
+        .lines()
+        .find(|l| l.trim_start().starts_with("project:"))
+        .unwrap_or_else(|| panic!("no project: row in the GIT section: {report}"));
+    assert!(row.contains("github"), "the row does not name the kind: {row}");
+    assert!(row.contains("acme/widget"), "the row does not name the repository: {row}");
 }
 
 #[test]

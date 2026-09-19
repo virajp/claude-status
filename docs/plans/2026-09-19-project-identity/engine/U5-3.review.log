@@ -1,0 +1,17 @@
+/code-review high — loop U5, round 3 — range 4ea824e..f3f5fdf — 2026-09-19
+
+Reviewed every hunk of origin/develop...HEAD, read the surrounding git.rs, segments.rs, app.rs, config/validate.rs, the e2e helpers and the site content, and ran the full suite (all green: 452 unit + all integration binaries).
+
+## Findings
+
+1. src/modules/git.rs:262 (`is_store` / `superproject`) — Low — any hidden ancestor directory followed by a `modules` component is taken as a submodule store, with no check that it is a git dir.
+`superproject` picks the topmost component for which `is_store` holds (`starts_with('.')` or `ends_with(".git")`) and whose next component is `modules` (or `worktrees/<x>/modules`). The candidate is never verified to be a git store (no `HEAD`/`config` probe), so an ordinary hidden directory in the path wins over the real `.git` further down.
+Concrete scenario: a superproject checked out at `~/.config/modules` (or a repo living under `~/.emacs.d/modules/foo`, `~/.terraform.d/modules/…`) with a submodule `lib`. The submodule's gitdir is `/Users/x/.config/modules/.git/modules/lib`; components are `[…, x, .config, modules, .git, modules, lib]`, and `i=3` (`.config` + `modules`) matches before `.git`. `store_identity` reads `/Users/x/.git`, finds nothing, returns the store itself, so `identity_root` yields `(/Users/x/.config, /Users/x/.config)`. `origin_url` then reads `/Users/x/.config/config` (absent), the kind becomes `Git` even though the real superproject has a GitHub origin, and the segment draws `x/.config`. The same misfire happens for a linked worktree whose common dir path has such an ancestor. Tightening `superproject` to accept a candidate only if `store.join("HEAD")` exists (or restricting the hidden-name rule to `.git` plus a pointer-verified `.bare`) would remove the false positive without touching the tested layouts.
+
+## Checked and found sound
+- `identity_root`'s three branches agree with `probe`, both via the shared `gitdir_pointer`; struct-literal field order in `resolve()` is fine.
+- `origin_url` header/comment/quote handling matches git for the shapes it claims.
+- `classify` handles scp-like vs `scheme://` vs local-path the way git does; host lowercased, port and userinfo stripped, `.git`/slash trimming correct.
+- Every new attacker-controllable string goes through `sanitize`.
+- Symbol key rename: `deep_merge` supplies the four new defaults; `validate.rs:263` now flags a hand-set `symbols.project`/`symbols.repo` as unread, consistent with intent.
+- Stale site pages are U6's (wave 4).

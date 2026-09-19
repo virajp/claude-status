@@ -18,7 +18,8 @@ date.
 ![The claude-status bar: two powerline lines. The first shows the model and
 effort, a context gauge at 259k/1M (26%), the 5-hour rate limit at 7% with
 4h35m to reset, the 7-day limit at 1% with 5d1h to reset, and Fable's own
-7-day window at 70%. The second shows the project name, the git branch, and
+7-day window at 70%. The second shows the repository (owner/repo from its
+origin), the git branch, and
 $46.51 of session cost.](assets/statusline.png)
 
 ## Install
