@@ -272,7 +272,8 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
         Some(cwd) => git::find_root_and_branch(cwd),
         None => (None, None),
     };
-    narrate(&format!("repo root: {root:?}, branch: {branch:?}"));
+    let project = root.as_deref().and_then(git::project);
+    narrate(&format!("repo root: {root:?}, branch: {branch:?}, project: {project:?}"));
 
     // Read, and only read. `--statusline` used to be able to *create* the repo
     // layer it did not find, which made the one surface that redraws every four
@@ -291,6 +292,7 @@ fn build_bar(narrate: &dyn Fn(&str)) -> String {
         worktree_subpath: cwd_path.as_deref().and_then(|c| git::worktree_subpath(c, &layers.config.worktree_matcher())),
         root,
         branch,
+        project,
         ..Default::default()
     };
     git::resolve_markers(&mut git_facts);
@@ -510,12 +512,21 @@ fn doctor_report_with(spend_section: &dyn Fn(&Config) -> Marked) -> String {
     let _ = writeln!(out, "\nGIT");
     let _ = writeln!(out, "  cwd:      {}", field(&cwd.as_ref().map_or("<unknown>".into(), |c| c.display().to_string())));
     let _ = writeln!(out, "  root:     {}", field(&root.as_ref().map_or("<none>".into(), |r| r.display().to_string())));
+    // How the `project` segment identified the repository: kind, the name it
+    // draws without a `projectName`, and the identity root the name came from.
+    let project = root.as_deref().and_then(git::project);
+    let identity = project.as_ref().map_or("<none>".into(), |p| {
+        let kind = format!("{:?}", p.kind).to_lowercase();
+        format!("{kind} {} ({})", p.name, p.root.display())
+    });
+    let _ = writeln!(out, "  project:  {}", field(&identity));
     let _ = writeln!(out, "  branch:   {}", field(branch.as_deref().unwrap_or("<none>")));
 
     let mut git_facts = GitFacts {
         worktree_subpath: cwd.as_deref().and_then(|c| git::worktree_subpath(c, &config.worktree_matcher())),
         root,
         branch,
+        project,
         ..Default::default()
     };
     git::resolve_markers(&mut git_facts);

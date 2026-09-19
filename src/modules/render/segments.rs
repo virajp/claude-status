@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{Config, FALLBACK_BG, SegmentEntry};
 use crate::fmt::{gauge, human_duration, human_reset_in, human_tokens, to_fixed};
-use crate::git::GitFacts;
+use crate::git::{GitFacts, ProjectKind};
 use crate::payload::{MainFacts, RateLimit};
 use crate::render::powerline::Segment;
 use crate::time::to_epoch_ms;
@@ -124,28 +124,40 @@ fn text_for(
     }
 }
 
-/// `{project} my-repo`.
+/// `{projectGithub} acme/widget`.
 ///
-/// `projectName` from the repo layer wins. With none set, the git root's own
-/// directory name stands in — so a repository nobody has named still draws the
-/// segment, and the key is only needed to call it something else.
+/// The glyph is picked by the identity's kind — `projectGit` for a repository
+/// with no `origin`, `projectGithub`/`projectGitlab` for an `origin` on such a
+/// host, `projectRemote` for any other — and the name is the one `git::project`
+/// resolved: the `origin` URL's path for GitHub/GitLab, `parent/base` of the
+/// identity root otherwise (`project_draws_one_glyph_per_kind`).
 ///
-/// **Outside a git repository there is no root, and the segment omits.** That
-/// is the only remaining way it disappears.
+/// `projectName` replaces the **name only**; the glyph stays kind-driven
+/// (`project_name_replaces_the_text_but_not_the_glyph`).
 ///
-/// The directory name is attacker-nameable exactly as `projectName` is — a
-/// clone lands in a directory the cloner chose — but it reaches the bar through
-/// the same `sanitize` every segment's text passes through, which
-/// `_shared::text` already names "a worktree directory" among its inputs.
+/// **Outside a git repository there is no identity, and the segment omits.** A
+/// root alone no longer draws anything (`project_omits_without_an_identity`).
+///
+/// Both the URL path and the directory name are attacker-nameable exactly as
+/// `projectName` is — a clone lands in a directory the cloner chose, with the
+/// `origin` the clone wrote — but they reach the bar through the same
+/// `sanitize` every segment's text passes through, which `_shared::text` names
+/// among its inputs.
 fn project(git: &GitFacts, config: &Config) -> Option<String> {
-    let name = match config.project_name.clone() {
-        Some(name) => name,
-        // `to_str` rather than `to_string_lossy`: a name that is not UTF-8 is
-        // one we cannot draw honestly, and U+FFFD in the bar would look like a
-        // rendering bug rather than an unnameable directory.
-        None => git.root.as_ref()?.file_name()?.to_str()?.to_string(),
-    };
-    Some(format!("{} {name}", config.symbol("project")))
+    let project = git.project.as_ref()?;
+    let name = config.project_name.clone().unwrap_or_else(|| project.name.clone());
+    Some(format!("{} {name}", config.symbol(glyph_key(project.kind))))
+}
+
+/// The one mapping from kind to `symbols` key, so no second caller can pick
+/// a different one.
+fn glyph_key(kind: ProjectKind) -> &'static str {
+    match kind {
+        ProjectKind::Git => "projectGit",
+        ProjectKind::Remote => "projectRemote",
+        ProjectKind::Github => "projectGithub",
+        ProjectKind::Gitlab => "projectGitlab",
+    }
 }
 
 /// `{model} Opus 5 [high]`. Falls back to `Claude`, including when the
@@ -230,6 +242,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::git::Project;
     use crate::config::layers;
 
     fn config() -> Config {
@@ -360,26 +373,44 @@ mod tests {
         assert_eq!(text("session", &MainFacts::default(), &GitFacts::default()), None);
     }
 
-    #[test]
-    fn project_reads_the_config_not_the_payload() {
-        // Never the payload. A `projectName` in config wins outright.
-        let named = Config::new(json!({ "symbols": { "project": "P" }, "projectName": "from-repo" }));
-        let in_repo = GitFacts { root: Some("/src/some-checkout".into()), ..Default::default() };
-        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &named, None, None), Some("P from-repo".to_string()));
+    /// ASCII stand-ins for the four project glyphs.
+    fn project_symbols() -> Value {
+        json!({ "projectGit": "G", "projectRemote": "R", "projectGithub": "H", "projectGitlab": "L" })
+    }
+
+    fn identified(kind: ProjectKind) -> GitFacts {
+        GitFacts { project: Some(Project { kind, name: "acme/widget".into(), root: "/x".into() }), ..Default::default() }
     }
 
     #[test]
-    fn project_falls_back_to_the_repo_directory_name() {
-        let bare = Config::new(json!({ "symbols": { "project": "P" } }));
-        let in_repo = GitFacts { root: Some("/src/my-repo".into()), ..Default::default() };
+    fn project_draws_one_glyph_per_kind() {
+        let c = Config::new(json!({ "symbols": project_symbols() }));
+        for (kind, expected) in [
+            (ProjectKind::Git, "G acme/widget"),
+            (ProjectKind::Remote, "R acme/widget"),
+            (ProjectKind::Github, "H acme/widget"),
+            (ProjectKind::Gitlab, "L acme/widget"),
+        ] {
+            let out = text_for("project", &MainFacts::default(), &identified(kind), &c, None, None);
+            assert_eq!(out, Some(expected.to_string()), "{kind:?}");
+        }
+    }
 
-        // Unnamed, but inside a repository: the directory name stands in, so
-        // the segment is drawn rather than omitted.
-        assert_eq!(text_for("project", &MainFacts::default(), &in_repo, &bare, None, None), Some("P my-repo".to_string()));
+    #[test]
+    fn project_name_replaces_the_text_but_not_the_glyph() {
+        let named = Config::new(json!({ "symbols": project_symbols(), "projectName": "renamed" }));
+        let out = text_for("project", &MainFacts::default(), &identified(ProjectKind::Github), &named, None, None);
+        assert_eq!(out, Some("H renamed".to_string()));
+    }
 
-        // Outside a repository there is no root to name, and it omits. This is
-        // the only remaining way the segment disappears.
-        assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &bare, None, None), None);
+    #[test]
+    fn project_omits_without_an_identity() {
+        let c = Config::new(json!({ "symbols": project_symbols() }));
+        // Outside a repository there is nothing to identify.
+        assert_eq!(text_for("project", &MainFacts::default(), &GitFacts::default(), &c, None, None), None);
+        // A root alone no longer draws anything.
+        let root_only = GitFacts { root: Some("/x".into()), project: None, ..Default::default() };
+        assert_eq!(text_for("project", &MainFacts::default(), &root_only, &c, None, None), None);
     }
 
     #[test]
