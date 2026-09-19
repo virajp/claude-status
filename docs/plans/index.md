@@ -17,6 +17,12 @@ cycle split it by what each part is *for* — the site describes the product,
 pinned by the suite — because a single document restating what the tests already
 held is the thing that drifted.
 
+## Plans
+
+| Folder                                        | Kind   | Plan                                                                 | Target repo | Priority | Status   | Requires | Backlog |
+| --------------------------------------------- | ------ | -------------------------------------------------------------------- | ----------- | -------- | -------- | -------- | ------- |
+| `docs/plans/2026-09-19-worktree-project-name` | change | The project segment names the main worktree from inside a linked one | —           | 10       | APPROVED | —        | —       |
+
 ## Active
 
 **None.** `npm-installer` landed on 2026-08-27 and was archived the same day —
