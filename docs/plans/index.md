@@ -19,9 +19,9 @@ held is the thing that drifted.
 
 ## Plans
 
-| Folder                                   | Kind   | Plan                                                       | Target repo | Priority | Status  | Requires | Backlog |
-| ---------------------------------------- | ------ | ---------------------------------------------------------- | ----------- | -------- | ------- | -------- | ------- |
-| `docs/plans/2026-09-19-project-identity` | change | The project segment names the repository by where it lives | —           | 10       | RUNNING | —        | —       |
+| Folder                                   | Kind   | Plan                                                       | Target repo | Priority | Status   | Requires | Backlog |
+| ---------------------------------------- | ------ | ---------------------------------------------------------- | ----------- | -------- | -------- | -------- | ------- |
+| `docs/plans/2026-09-19-project-identity` | change | The project segment names the repository by where it lives | —           | 10       | COMPLETE | —        | —       |
 
 ## Active
 
