@@ -19,9 +19,9 @@ held is the thing that drifted.
 
 ## Plans
 
-| Folder                                        | Kind   | Plan                                                                 | Target repo | Priority | Status  | Requires | Backlog |
-| --------------------------------------------- | ------ | -------------------------------------------------------------------- | ----------- | -------- | ------- | -------- | ------- |
-| `docs/plans/2026-09-19-worktree-project-name` | change | The project segment names the main worktree from inside a linked one | —           | 10       | RUNNING | —        | —       |
+| Folder                                        | Kind   | Plan                                                                 | Target repo | Priority | Status   | Requires | Backlog |
+| --------------------------------------------- | ------ | -------------------------------------------------------------------- | ----------- | -------- | -------- | -------- | ------- |
+| `docs/plans/2026-09-19-worktree-project-name` | change | The project segment names the main worktree from inside a linked one | —           | 10       | APPROVED | —        | —       |
 
 ## Active
 
