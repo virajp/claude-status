@@ -63,14 +63,24 @@ const DESCRIPTION_COUNT: usize = 49;
 /// for the ten added descriptions [`DESCRIPTION_COUNT`] records. Only
 /// additions: every one of the 39 existing strings is byte-identical, which is
 /// what makes the count and the digest moving together the expected result
-/// rather than a swap hiding inside a rewrite.
-const DESCRIPTION_DIGEST: u64 = 0xd2cc_8890_f890_7b7f;
+/// rather than a swap hiding inside a rewrite — for that move.
+///
+/// Moved again from `0xd2cc_8890_f890_7b7f` by `project-identity`
+/// (2026-09-19). The count held at 49: two existing strings were rewritten,
+/// not added. `projectName` stopped naming `symbols.project` and claiming the
+/// segment is omitted when unset — the name is now derived from the
+/// repository's `origin` or its `parent/base` directory — and `symbols`'
+/// consumed-keys list replaced `project` with `projectGit`, `projectGithub`,
+/// `projectGitlab`, `projectRemote`. A digest move with a still count is
+/// exactly the rewrite the paragraph above says the pair guards against; here
+/// it was the intent.
+const DESCRIPTION_DIGEST: u64 = 0x4bbc_8140_5600_681d;
 
 /// The only four `default` values the published schema has ever carried.
 ///
 /// Every config container is `#[serde(default)]`, so a generator left to
 /// itself inlines the shipped value of every field — the whole palette, all
-/// twenty symbols, both layout rows. That would re-embed the Nerd Font
+/// twenty-two symbols, both layout rows. That would re-embed the Nerd Font
 /// private-use codepoints `assets/claude-status.defaults.json` is marked
 /// `-text -diff` to keep out of ordinary editors, into a file dprint *does*
 /// format.

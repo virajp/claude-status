@@ -96,7 +96,7 @@ pub struct Config {
     /// `["string", "null"]` would additionally invite an explicit `null`,
     /// which `project_name` reads as absent rather than as a name.
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    #[cfg_attr(feature = "schema", schemars(description = "Project display name shown in the `project` segment (with the `symbols.project` glyph before it). **Repo-level only** — it belongs in `<repo-root>/.config/claude-status.json` and is deliberately absent from the shipped defaults, so a repo that has not set one omits the segment rather than inheriting a name from the user layer. When unset, the segment is omitted."))]
+    #[cfg_attr(feature = "schema", schemars(description = "The name the `project` segment draws in place of the derived one — the repository's `owner/repo` from its `origin`, or its `parent/base` directory. **Repo-level only** — it belongs in `<repo-root>/.config/claude-status.json` and ships in neither the embedded defaults nor a seeded user config. The glyph is chosen by how the repository was identified, never by this key."))]
     #[serde(deserialize_with = "project_name")]
     pub project_name: Option<String>,
     #[cfg_attr(feature = "schema", schemars(with = "std::collections::BTreeMap<String, schema::RgbTriple>"))]
@@ -120,7 +120,7 @@ pub struct Config {
     #[serde(deserialize_with = "worktree_pattern")]
     pub worktree_pattern: String,
     /// An open map: the keys are the glyph names the segment builders ask for.
-    #[cfg_attr(feature = "schema", schemars(description = "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, project, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens."))]
+    #[cfg_attr(feature = "schema", schemars(description = "Glyph per data type. Keys consumed by the script: model, context, win5h, win7d, reset, session, cost, spend, duration, projectGit, projectGithub, projectGitlab, projectRemote, worktree, folder, branch, ahead, dirtyAdd, dirtyDel, dirtyMix, agent, tokens."))]
     #[serde(deserialize_with = "glyph_table")]
     pub symbols: BTreeMap<String, String>,
     /// Owned by [`crate::spend`], for the same reason `caps` is owned by
@@ -803,8 +803,10 @@ fn default_symbols() -> BTreeMap<String, String> {
         ("cost", "\u{23f1}\u{fe0f}"),
         ("spend", "\u{f09d}"),
         ("duration", "\u{f017}"),
-        ("project", "\u{f401}"),
-        ("repo", "\u{f401}"),
+        ("projectGit", "\u{e702}"),
+        ("projectGithub", "\u{f09b}"),
+        ("projectGitlab", "\u{f0ba0}"),
+        ("projectRemote", "\u{f401}"),
         ("worktree", "\u{1f332}"),
         ("folder", "\u{f07b}"),
         ("branch", "\u{e0a0}"),
