@@ -176,8 +176,8 @@ fn probe(dir: &Path) -> Probe {
 ///
 /// A relative gitdir is relative to `dir` — the directory *containing* `.git` —
 /// and is normalised lexically: the filesystem is never consulted, so a
-/// symlinked worktree still reports what git wrote. Shared by [`probe`] and
-/// [`identity_root`] so the two cannot drift.
+/// symlinked worktree still reports what git wrote. Shared by [`probe`],
+/// [`identity_root`] and [`checkout_of`] so the three cannot drift.
 fn gitdir_pointer(dir: &Path, pointer: &str) -> Option<PathBuf> {
     let target = pointer.trim().strip_prefix("gitdir:").map(str::trim).filter(|t| !t.is_empty())?;
     Some(normalise(&dir.join(target)))
@@ -204,10 +204,12 @@ pub fn project(root: &Path) -> Option<Project> {
 /// a `commondir` there (a linked worktree) redirects to the common git dir
 /// first. That dir is then read two ways, in order:
 ///
-/// - Under a superproject's `.git/modules/` — or a linked worktree's
-///   `.git/worktrees/<x>/modules/` — the identity is the directory holding the
-///   **topmost** such `.git`, so a submodule, however nested and from wherever
-///   it was added, names the outermost superproject
+/// - Under a superproject's `<store>/modules/` — or a linked worktree's
+///   `<store>/worktrees/<x>/modules/`, where the store is one [`checkout_of`]
+///   vouches for or a bare `*.git` — the identity is that store's checkout, or
+///   the store itself, taking the **topmost** accepted store
+///   ([`superproject`]); so a submodule, however nested and from wherever it
+///   was added, names the outermost superproject
 ///   (`a_nested_submodule_names_the_outermost_superproject`,
 ///   `a_submodule_inside_a_linked_worktree_names_the_superproject`,
 ///   `a_linked_worktree_of_a_submodule_names_the_superproject`).
