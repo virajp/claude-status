@@ -1,0 +1,384 @@
+---
+type: vwf-change-plan
+title: The project segment names the repository by where it lives
+requires: []
+backlog: []
+---
+
+# Plan — The project segment names the repository by where it lives (2026-09-19)
+
+## Status
+
+**APPROVED**
+
+APPROVED 2026-09-19 by the user
+
+## Consent
+
+| Action                                                   | Granted                                                                                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Merge to the integration branch and push on green        | yes                                                                                                                                              |
+| After landing: retake `assets/statusline.png` on develop | ask                                                                                                                                              |
+| After landing: `mise run code:merge:main`                | ask                                                                                                                                              |
+| After landing: `mise run release:tag`                    | ask                                                                                                                                              |
+| Release claude-status publicly                           | minor — 1.2.0 → 1.3.0, by hand-editing `Cargo.toml`, refreshing `Cargo.lock` (`cargo update -p claude-status`), and `npm/package.json` alongside |
+
+**The mode recorded here is the consent.** A `run` step runs on a green landing
+without a prompt; an `ask` step stops the run once before it, reports what it
+would do, and waits. Every after-landing step is `ask`, so the release row is
+intent, not authorisation — the executor stops once before each step.
+
+## Goal
+
+After this lands, the `project` segment identifies a repository by **where it
+lives**, not by the folder the session happens to be in:
+
+| Situation                              | Glyph key               | Name                                                            |
+| -------------------------------------- | ----------------------- | --------------------------------------------------------------- |
+| not inside a git repository            | —                       | segment omitted                                                 |
+| git, no `origin` remote                | `symbols.projectGit`    | `parent/base` of the identity root, e.g. `virajp/claude-status` |
+| `origin` on a host containing `github` | `symbols.projectGithub` | the URL path, e.g. `virajp/claude-plugins`                      |
+| `origin` on a host containing `gitlab` | `symbols.projectGitlab` | the URL path, subgroups kept, e.g. `group/sub/repo`             |
+| `origin` on any other host             | `symbols.projectRemote` | `parent/base` of the identity root                              |
+
+The **identity root** is the main checkout when the session is in a linked
+worktree, the outermost superproject when it is in a submodule, and the checkout
+itself otherwise. `projectName` — repo layer, then user layer — still wins, but
+it replaces the **name text only**; the glyph stays kind-driven. Branch,
+dirty/ahead markers, the `worktree` segment and the repo-config lookup are
+unchanged: they still describe the checkout the session is in.
+
+This **amends** three standing decisions in `docs/decisions.md`, both halves
+kept and dated:
+
+- `:693` "`project` falls back to the git root's directory name" — the third
+  rung is now the identity described above, never a bare directory name.
+- `:729-749` "Treat every dynamic value as hostile" — a remote URL read from
+  `.git/config` is a **second** clone-controlled string that reaches the bar; it
+  passes the same `sanitize`.
+- `:1222-1231` "The broken-`.git` asymmetry is deliberate" — the walk is
+  untouched; a submodule's *identity* is now resolved separately from its root.
+
+And it **retires** `symbols.project` (the glyph) and the never-read
+`symbols.repo`.
+
+The user's words: "Use the current logic for main worktree. Use the folder name
+from main worktree when the context switches to another worktree. This doesn't
+change the overall logic of first giving priority to statusline config in the
+repo." and, on the redesign: "A. Repo is a normal folder (no git) … B. git
+folder but without remote … C. git folder with remote (github/gitlab) … D.
+currently in a worktree — always use main worktree to detect as B or C."
+
+## Facts the survey established
+
+- **Root resolution is filesystem-only.** `find_root_and_branch()` at
+  `src/modules/git.rs:94-108` walks up from `cwd` (`MAX_WALK` = 40, `:21`) via
+  `probe()` at `:110-135`: a `.git` *directory* is the root and `HEAD` is read
+  there; a `.git` *file* is parsed for `gitdir:` (`:122`), the target is
+  normalised lexically against the directory holding `.git` (`:126`,
+  `normalise()` `:166-181`), and `HEAD` is read at the target (`:131`). The
+  returned root is **the directory holding the `.git` entry** — in a linked
+  worktree, the worktree; in a submodule, the submodule. `parse_head()`
+  `:147-157`. The module doc (`:1-10`) says root and branch are "never from
+  `git`". Subprocesses today: `git rev-list`, `git diff --numstat`,
+  `git ls-files` (`:202`, `:214-215`, `:222`), under one 250 ms deadline.
+- **Nothing in `src/` reads `.git/config`, `commondir`, or a remote URL.**
+  Control: `grep -rni 'commondir\|remote' src/` hit exactly one line,
+  `src/modules/config/mod.rs:827` (`remote_agent`, a `typeSymbols` default). No
+  git crate: `Cargo.toml` deps are `regex-lite`, `serde`, `serde_json`, `ureq`,
+  optional `schemars`; dev-deps `boon`, `tempfile`.
+- **`GitFacts`** `git.rs:23-31`: `root`, `branch`, `ahead`, `additions`,
+  `deletions`, `worktree_subpath`; derives `Default`. Constructed with
+  `..Default::default()` at `src/_runtime/app.rs:290-295` (`build_bar`, then
+  `resolve_markers` `:296`) and `:515-520` (`doctor_report_with`, `:521`);
+  `git::resolve()` `git.rs:38-46`. Root-only callers: `app.rs:193` (caps hook),
+  `:250` (`build_panel`). `find_root_and_branch` call sites: `:193`, `:250`,
+  `:272`, `:395`.
+- **git.rs tests** `:266-496`: helper `repo(base, head)` `:277-280` writes only
+  `<base>/.git/HEAD`. Worktree-shaped tests hand-write the `.git` file:
+  `a_worktree_pointer_file_is_followed` `:318` (absolute gitdir, `:326`),
+  `a_relative_gitdir_resolves_against_the_directory_holding_dot_git` `:334`
+  (`gitdir: ../store/gitdir`, `:342`). Others:
+  `a_plain_repo_reports_its_root_and_branch` `:283`,
+  `a_broken_head_does_not_stop_the_walk` `:348`,
+  `an_unparseable_gitdir_pointer_stops_the_walk_with_a_root_but_no_branch`
+  `:378`, `markers_do_not_run_without_a_branch` `:398` (a `GitFacts` literal at
+  `:400`), `normalise_resolves_dot_and_dotdot_lexically` `:484`.
+- **The segment.** `project()` at `src/modules/render/segments.rs:140-149`,
+  dispatched from `text_for` `:117`; doc comment `:127-139`; fallback
+  `git.root.file_name()` `:146`; glyph `config.symbol("project")` `:148`. Tests
+  `project_reads_the_config_not_the_payload` `:364-369` and
+  `project_falls_back_to_the_repo_directory_name` `:372-382` build
+  `Config::new(json!({ "symbols": { "project": "P" }, … }))` and a bare
+  `PathBuf` root. Other `GitFacts` literals in that test module: `:270`, `:388`,
+  `:398-408`, `:425`.
+- **Symbols are an open map.** `Config.symbols: BTreeMap<String, String>`
+  `src/modules/config/mod.rs:122-125` (`glyph_table` deserializer `:720-725`);
+  `Config::symbol` `:189-191` returns `""` for a missing key. Schemars
+  description listing the consumed keys at `mod.rs:123`; `projectName`'s at
+  `:99` (names `symbols.project` and is already stale on omission). Code
+  defaults `default_symbols()` `:795-819` (`("project", "\u{f401}")` `:806`,
+  `("repo", "\u{f401}")` `:807`); `Config::default` `:221` (symbols `:239`). The
+  pinned twin is `assets/claude-status.defaults.json` `symbols` block `:186-207`
+  (`project` `:198`, `repo` `:199`), embedded by `include_str!` at
+  `src/modules/config/defaults.rs:20`, marked `-text -diff` in
+  `.gitattributes:5` and excluded from dprint (`dprint.json:16`) — **never edit
+  it through a formatter**. Agreement is pinned by
+  `the_embedded_defaults_deserialize_to_the_default_config` `mod.rs:903-919`.
+  Twenty keys today: agent, ahead, branch, context, cost, dirtyAdd, dirtyDel,
+  dirtyMix, duration, folder, model, project, repo, reset, session, spend,
+  tokens, win5h, win7d, worktree. `symbols.repo` is **read by nothing**
+  (`grep symbol("repo")` → nothing).
+- **Glyph integrity.** `tests/defaults_integrity.rs` `GLYPHS` table `:33-74`
+  (`symbols.project` `:56`, `symbols.repo` `:57`), asserts `GLYPHS.len() == 39`
+  (`~:103`), and `the_asset_carries_no_symbol_the_table_does_not_cover`
+  (`~:107`) walks every `symbols`/`typeSymbols` key. Nerd Fonts guidance:
+  `docs/decisions.md:607-617` "Do not retype the glyphs" — byte-copy codepoints,
+  never retype.
+- **Schema.** Generated by `schemars` behind `--features schema`
+  (`Cargo.toml:92,98`; bin `schema` `:20-22` → `src/bin/schema.rs`, output path
+  `:19-21`) into `schemas/claude-status.schema.json` (`projectName` `:47-49`,
+  `symbols` `:117-122`). Task `mise run code:schema` (`--check` in the gate).
+  Guards in `tests/schema.rs`: `DESCRIPTION_COUNT = 49` (`:46`),
+  `DESCRIPTION_DIGEST` (`:67`),
+  `the_committed_schema_is_what_the_config_types_generate` `:153`.
+  `site/static/config-generator.js` is schema-driven (only a `projectName`
+  special-case at `:145`).
+- **Config layers.** `layers.rs`: `REPO_LAYER_KEY = "projectName"` `:58`,
+  `repo_config_path` `:175-177` (`<root>/.config/claude-status.json`), `load`
+  `:187-233` (embedded → user whole → repo narrowed by `narrow` `:268-281`).
+  `project_name` deserializer `mod.rs:745-749` (empty → `None`). Untouched by
+  this plan.
+- **`sanitize`** doc at `src/_shared/text.rs:10-56`; the attacker-nameable list
+  `:13-17`; the `projectName` paragraph `:19-29` ("a cloned repository now
+  reaches exactly one string on the bar").
+- **`--doctor` GIT section** `app.rs:510-524`: `cwd`, `root:` `:512`, `branch:`
+  `:513`, `worktree:` `:522`, `ahead:` `:523`, `dirty:` `:524`; values through
+  `field()` `:363-365` = `render::sanitize`. Narration `repo root: …` `:275`. No
+  test pins the exact line text: `app.rs:952-961` and `tests/e2e.rs:1390` assert
+  section names; `e2e.rs:1768` asserts stderr contains `repo root:` under
+  `--doctor` (`:1783`).
+- **e2e.** `fake_repo(layer)` `tests/e2e.rs:107-115` writes
+  `.config/claude-status.json` and a bare `.git/HEAD` — no `git init`, no
+  config, no remote. `safe_config()` `:117-119` puts
+  `projectName:
+  "e2e-fixture"` in the **user** layer, so most bars show
+  `e2e-fixture`. The one real-git test:
+  `a_dirty_linked_worktree_renders_its_own_dirty_marker` `:1824` (inner `git()`
+  helper `:1826-1836`, `git init -q -b main` `:1845`, `worktree add` `:1856`).
+  Tests asserting the project text: `:130` (`:137`), `:439` (`:453`), `:909`
+  (`:922`), `:1666` (`:1679`), `:2310`, `:2416` (`:2451`, `:2462-2466`),
+  `:2583`, `:2669` — every one asserts the **name substring**, none the glyph.
+  `:2136` runs with an empty `PATH` and no repo. `tests/golden.rs`: `config()`
+  `:25-27` = `layers::load(None, None)`, every `GitFacts` literal leaves
+  `root: None` (`:87`, `:101-108`), no golden file contains a project segment.
+- **Site glyph font.** `site/static/fonts/claude-status-glyphs.woff2` is a
+  `pyftsubset` cut of Hack Nerd Font Mono (Nerd Fonts 3.5.1) down to exactly the
+  codepoints the defaults asset uses — "25 glyphs, 3.2KB" —
+  `site/static/style.css:84-93` (recipe comment), `unicode-range` list
+  `:106-128` (`U+F401` at `:127`); `tests/site.rs:1017` repeats the count in a
+  comment and checks the woff2 header's declared length. **No task cuts it.**
+  `pyftsubset` is not on PATH; `uvx` 0.12.16 is (mise `uv`);
+  `~/Library/Fonts/HackNerdFontMono-Regular.ttf` exists.
+- **This repo's own repo layer** `.config/claude-status.json:3` sets
+  `projectName: "virajp/claude-status"` — what the GitHub rule now derives.
+- **Screenshot.** `assets/statusline.png` (2204×138, retaken at `26efec0`)
+  renders the old bare-name segment with U+F401; shown by `readme.md:18-22`,
+  `npm/readme.md:20-24`, `site/templates/index.html:41-44`.
+- **Gates.** `mise run code:all` = format (dprint), lint
+  (`cargo clippy --all-targets -D warnings`, with and without
+  `--features schema`), test (`cargo test --features schema`, depends on
+  `site:assets`), sec (grype + gitleaks), schema check. Pre-commit and `ci.yml`
+  run it on push to `develop`. `mise run site:build` = `zola build` + link
+  check. No `harness:` stamp in `.config/vwf.yaml`.
+- **Release.** `Cargo.toml:4` `version = "1.2.0"`; `Cargo.lock:100-101` and
+  `npm/package.json:3` carry the same string. No bump task: `0fb6ce4`
+  hand-edited all three. `mise run release:tag` runs preflight, requires `main`,
+  tags `v<Cargo version>`, pushes; `release.yml` publishes. No CHANGELOG;
+  `site/` has no release-notes page.
+- **Commit convention** (`.config/git-conventional-commits.yaml`): types
+  `feat fix perf refactor test docs ops blueprint merge wip`; scopes
+  `cli config render subagent spend git usage caps installer plans site spec
+  decisions`.
+- **Docs the change falsifies** (every hit has an owner below):
+  `site/content/segments.md:41` (catalogue row `{sym.project}·my-repo`),
+  `:66-78` ("Where `project` comes from", three rungs);
+  `site/content/repo-config.md:9-15`, `:26-28` (`<repo-root>` = "the directory
+  that contains `.git`"), `:45-56` (`symbols.project`, three rungs);
+  `site/content/diagnosing.md:73-77` (GIT block sample), `:136` (already stale
+  "No project name" row); `site/content/_index.md:25-26` (feature list omits
+  remote parsing — optional); `readme.md:18-22`, `npm/readme.md:20-24`,
+  `site/templates/index.html:44` (alt text); `docs/decisions.md:619-637` ("other
+  24 codepoints" count), `:693-719`, `:729-749`, `:1205-1215`, `:1222-1231`;
+  `schemas/claude-status.schema.json:47-49`, `:122` (generated — fix the source
+  strings in `mod.rs`). Not falsified (still true):
+  `repo-config.md:17-18,83-95`, `configure.md:74,80`, `generate.md:124-137`,
+  `diagnosing.md:116-126`, `tests/fixtures/README.md:19-22`,
+  `docs/decisions.md:323-334,484-515`, `docs/usage-mirror-contract.md`.
+- **Superseded plan.** `docs/plans/2026-09-19-worktree-project-name/` (index row
+  `docs/plans/index.md:24`, APPROVED, never run — its worktree was removed and
+  its three commits discarded on 2026-09-19). Its decision 4 said a submodule
+  keeps its own name; this plan says the opposite. The folder is deleted by the
+  hand-off and its index row removed by `plan-management`.
+- **Backlog:** unreadable — no GitHub Project titled `claude-status` exists
+  under `virajp`. Nothing recalled; `backlog:` is empty.
+- **Glyph codepoints** (from the user, verified 2026-09-19): git U+E702
+  (`nf-dev-git`), remote U+F401 (`nf-oct-repo`, already in the subset), GitHub
+  U+F09B (`nf-fa-github`), GitLab U+F0BA0 (`nf-md-gitlab`). Net change to the
+  subset: +3 codepoints (E702, F09B, F0BA0); F401 stays.
+
+## Assumed decisions — confirm or override at review
+
+| #  | Decision                 | Ruling                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Rejected                                                                                                                           | Unit   |
+| -- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1  | Where the identity lives | New `GitFacts.project: Option<Project>` where `pub struct Project { pub kind: ProjectKind, pub name: String, pub root: PathBuf }` and `pub enum ProjectKind { Git, Remote, Github, Gitlab }`, computed by a new `pub fn project(root: &Path) -> Option<Project>` in `git.rs` from the root `find_root_and_branch` returned. `root`, `branch`, the markers, `worktree_subpath` and the repo-config lookup are **unchanged** — they describe the checkout the session is in                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Redefine `root` as the main/superproject; resolve branch and markers there too                                                     | U1     |
+| 2  | The identity root        | `<root>/.git` is a directory → `root`. It is a file with `gitdir: <p>` (parsed as `probe()` does, normalised against `root`): if `<p>/commondir` reads, the identity root is the **parent** of `normalise(<p>/<commondir contents, trimmed>)`, and a parent whose file name ends in `.git` has that suffix stripped for naming (bare main); else if the normalised `<p>` has a `.git` path component followed by `modules`, the identity root is the directory holding the **topmost** such `.git` component (outermost superproject); else `root`. Lexical only — no subprocess, no symlink resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `git rev-parse --git-common-dir` / `--show-superproject-working-tree`; immediate superproject; treat any `.git` file as a worktree | U1     |
+| 3  | Where the remote is read | The git-common config file: `<identity root>/.git/config` for a directory `.git`, or `<p>/<commondir>/config` for a linked worktree, `<topmost .git dir>/config` for a submodule (the superproject's). Parse **`[remote "origin"]`** only; take the first `url =` in that section; ignore every other remote, `pushurl`, and `url.<x>.insteadOf`. No file, no section, no url → kind `Git`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | First remote in file order; the branch's upstream remote; `git remote get-url`                                                     | U1     |
+| 4  | URL parsing and kind     | Accept `scp-like` (`[user@]host:path`), `ssh://[user@]host[:port]/path`, `https?://[user@]host[:port]/path`, `git://host/path`, `file://` and bare paths (→ kind `Remote`, no path use). Strip a leading `/`, a trailing `/`, and a trailing `.git`. Host lower-cased: contains `github` → `Github`; contains `gitlab` → `Gitlab`; else `Remote`. A URL that yields no host or an empty path → `Remote`. `Github`/`Gitlab` name = the **full** path (every segment, subgroups kept). `Git`/`Remote` name = `parent/base` of the identity root; a root with no parent component → `base` alone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Exact-host match; last two path segments; `Option` on unparseable                                                                  | U1     |
+| 5  | Symbol keys              | Flat keys in `symbols`: `projectGit` `\u{e702}`, `projectRemote` `\u{f401}`, `projectGithub` `\u{f09b}`, `projectGitlab` `\u{f0ba0}`. Remove `project` and `repo` from `default_symbols()`, the defaults asset, and the `GLYPHS` table (39 → 41 rows). Update the schemars strings at `mod.rs:99` (drop the `symbols.project` mention and the "omitted when unset" claim) and `:123` (drop `project`, add the four). Regenerate the schema; update `DESCRIPTION_COUNT`/`DESCRIPTION_DIGEST` in `tests/schema.rs` to what the regenerated file yields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | A `projectSymbols` map mirroring `typeSymbols`; keep `symbols.repo`                                                                | U2     |
+| 6  | The render               | `project()` returns `None` when `git.project` is `None`; else `format!("{} {name}", config.symbol(key))` with key `projectGit`/`projectRemote`/`projectGithub`/`projectGitlab` by kind and `name = config.project_name.clone().unwrap_or(project.name)`. Same `sanitize` path as today                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `projectName` also picking the glyph                                                                                               | U3     |
+| 7  | `--doctor`               | GIT section gains one row after `root:`: `project: <kind lower-cased> <name> (<identity root>)`, or `project: <none>` outside git; both values through `field()`. `build_bar` narration gains `project: …` beside `repo root:`. e2e asserts the row is present and names the kind, not the whole line                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | No row (the previous plan's ruling 8)                                                                                              | U3     |
+| 8  | Tests                    | git.rs: one unit per rule with hand-written layouts under `tempfile` — plain repo (control: kind `Git`, `parent/base`); `.git/config` with an `origin` on `github.com` (scp-like), `gitlab.com` (https, three-segment path), `codeberg.org` (→ `Remote`, `parent/base`); no `origin` but an `upstream` (→ `Git`); linked worktree via `gitdir:` + `commondir` `../..` (→ main's name, and `find_root_and_branch` still returns the worktree); bare main (`repo.git`, suffix stripped); submodule via `gitdir: ../.git/modules/lib` (→ superproject name and superproject's origin); nested submodule (`modules/a/modules/b` → outermost). segments.rs: one render per kind plus `projectName` replacing the name under a `Github` glyph, plus `None` → omit. e2e: real `git init`, `git remote add origin git@github.com:acme/widget.git`, `git worktree add`, and `git -c protocol.file.allow=always submodule add <local path>`, rendering the bar from the main checkout, the worktree and the submodule and asserting glyph + `acme/widget`; the existing `:1824` worktree test is left as-is | Unit tests only                                                                                                                    | U1, U3 |
+| 9  | Font subset              | U4 re-cuts `site/static/fonts/claude-status-glyphs.woff2` with `uvx --from fonttools pyftsubset ~/Library/Fonts/HackNerdFontMono-Regular.ttf --unicodes=<comma-joined U+XXXX list of every distinct codepoint under symbols and typeSymbols in the defaults asset> --flavor=woff2 --output-file=…`, updates `unicode-range` in `style.css` to the same list, and rewrites the "25 glyphs, 3.2KB" figures in `style.css:84-93` and `tests/site.rs:1017` to the new count and size                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | A `site:glyphs` mise task; a manual after-landing step                                                                             | U4     |
+| 10 | This repo's repo layer   | Remove `projectName` from `.config/claude-status.json`; if only `$schema` remains, `rm` the file — the GitHub rule derives `virajp/claude-status`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Leave it                                                                                                                           | U2     |
+| 11 | Review row               | Present (U5) — the change lands binary source, which executes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | None                                                                                                                               | U5     |
+| 12 | Wave 1 concurrency       | U1 (`git.rs`, `text.rs`) and U2 (config, asset, schema, integrity) run together. After wave 1, `config.symbol("project")` returns `""` until U3 lands, so the bar reads `e2e-fixture` with a leading space; every e2e assertion is on the name substring and no golden carries the segment, so the gate stays green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Serial waves                                                                                                                       | —      |
+| 13 | Version bump             | minor, 1.2.0 → 1.3.0, all three files as `0fb6ce4` did                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | patch; none                                                                                                                        | U7     |
+| 14 | Decision record          | The three amendments and the retirement go into `docs/decisions.md`, each under the section it amends with today's date and both halves kept — this repo records decisions there, not under `docs/memory/decisions/` (CLAUDE.md, "Where a fact belongs")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | A `docs/memory/decisions/` doc                                                                                                     | U6     |
+| 15 | After-landing order      | Screenshot first, then merge to `main`, then tag — the retaken PNG must be on `develop` before the merge or it needs a second one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Merge first                                                                                                                        | —      |
+
+## New dependencies
+
+none. U4 runs `fonttools` through `uvx` at run time — nothing is added to any
+manifest — and reads `~/Library/Fonts/HackNerdFontMono-Regular.ttf` from this
+machine.
+
+## Units
+
+| Id | Wave | Unit file                                    | Kind   | Owns                                                                                                                                                                                   | Depends on     | Status  | Commit |
+| -- | ---- | -------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------- | ------ |
+| U1 | 1    | [01-resolution.md](01-resolution.md)         | edit   | `src/modules/git.rs`, `src/_shared/text.rs`                                                                                                                                            | —              | pending |        |
+| U2 | 1    | [02-symbols.md](02-symbols.md)               | edit   | `src/modules/config/mod.rs`, `assets/claude-status.defaults.json`, `tests/defaults_integrity.rs`, `schemas/claude-status.schema.json`, `tests/schema.rs`, `.config/claude-status.json` | —              | pending |        |
+| U3 | 2    | [03-segment.md](03-segment.md)               | edit   | `src/modules/render/segments.rs`, `src/_runtime/app.rs`, `tests/e2e.rs`, `tests/golden.rs`                                                                                             | U1, U2         | pending |        |
+| U4 | 2    | [04-font.md](04-font.md)                     | edit   | `site/static/fonts/claude-status-glyphs.woff2`, `site/static/style.css`, `tests/site.rs`                                                                                               | U2             | pending |        |
+| U5 | 3    | [05-review.md](05-review.md)                 | review | —                                                                                                                                                                                      | U1, U2, U3, U4 | pending |        |
+| U6 | 4    | [06-docs.md](06-docs.md)                     | edit   | `site/content/**`, `site/templates/index.html`, `docs/decisions.md`, `readme.md`, `npm/readme.md`                                                                                      | U5             | pending |        |
+| U7 | 5    | [07-gates-and-bump.md](07-gates-and-bump.md) | edit   | `Cargo.toml`, `Cargo.lock`, `npm/package.json`                                                                                                                                         | U6             | pending |        |
+
+## Shared-file rule
+
+| File                                                                 | Why it collides                       | Owner   |
+| -------------------------------------------------------------------- | ------------------------------------- | ------- |
+| `Cargo.toml`, `Cargo.lock`, `npm/package.json`                       | version files                         | U7 only |
+| `schemas/claude-status.schema.json`                                  | generated; U2 regenerates it once     | U2 only |
+| `site/content/**`, `docs/decisions.md`, `readme.md`, `npm/readme.md` | human-facing docs                     | U6 only |
+| `src/_runtime/app.rs`                                                | the two `GitFacts` construction sites | U3 only |
+| `src/modules/config/mod.rs`                                          | symbol defaults and schemars strings  | U2 only |
+| `tests/site.rs`                                                      | the glyph-count comment               | U4 only |
+
+## Waves
+
+- Wave 1: U1 and U2 together — disjoint paths, no shared ruling; decision 12
+  says why the gate stays green between them.
+- Wave 2: U3 and U4 together — U3 is binary source and tests, U4 is site static
+  assets; disjoint.
+- Wave 3: U5 alone — reviews the delta since the branch base.
+- Wave 4: U6 alone.
+- Wave 5: U7 alone.
+
+## Wave gate
+
+```
+mise run code:all
+mise run site:build
+```
+
+plus the wave review, plus every report read for `UNRESOLVED:`. Every line must
+be green before wave 1.
+
+## After landing
+
+| Step                                                    | Mode | Notes                                                                                                                                                                                              |
+| ------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retake `assets/statusline.png` and commit it on develop | ask  | Manual: the run reports that the hero screenshot (2204×138, `readme.md`, `npm/readme.md`, `site/templates/index.html`) shows the old segment, and waits for the user to retake, commit and push it |
+| `mise run code:merge:main`                              | ask  | lands `develop` on `main` `--no-ff` and pushes; refuses a dirty or unpushed branch                                                                                                                 |
+| `mise run release:tag`                                  | ask  | from `main`: runs `release:preflight`, tags `v1.3.0` from `Cargo.toml`, pushes the tag; `release.yml` builds and publishes                                                                         |
+
+## Gates the orchestrator keeps
+
+- **Scratch run**, after wave 2 is green: `cargo build --release`, then under
+  `/tmp/cs-scratch/`:
+  1. `plain/` — `git init -q -b main`, one commit. Render with `cwd` =
+     `/tmp/cs-scratch/plain` → segment reads `<E702> cs-scratch/plain`.
+  2. `widget/` — `git init -q -b main`, one commit,
+     `git remote add origin git@github.com:acme/widget.git`. Render →
+     `<F09B> acme/widget`.
+  3. `git -C widget worktree add ../widget-wt -b wt`. Render with `cwd` =
+     `/tmp/cs-scratch/widget-wt` → `<F09B> acme/widget`; the `branch` segment
+     reads `wt`.
+  4. `git -C widget -c protocol.file.allow=always submodule add
+     /tmp/cs-scratch/plain lib`.
+     Render with `cwd` = `/tmp/cs-scratch/widget/lib` → `<F09B> acme/widget`;
+     the `branch` segment reads `lib`'s branch (`main`).
+  5. A payload with `cwd` = `/tmp` → no project segment. Feed the binary the
+     payload shape `tests/e2e.rs` uses. Pass = all five. Then
+     `rm -rf /tmp/cs-scratch`.
+- **Site glyphs**, after wave 2: `mise run site:build`, then confirm
+  `site/static/fonts/claude-status-glyphs.woff2` declares its own length
+  (`tests/site.rs` does this) and that `pyftsubset --unicodes` covered E702,
+  F09B and F0BA0 — `uvx --from fonttools ttx -l <woff2>` lists the glyph count;
+  it must equal the count U4 wrote into `style.css`.
+
+## Unit contract
+
+Every unit prompt carries, in order: its ruling quoted from this file, its owned
+paths plus "touch nothing outside this list", the facts section, the shared-file
+rule, and the return block below. A unit never bumps a version, never runs a
+generator it is not told to, never edits a doc, never adds a dependency this
+file does not list, never commits. A unit deletes with plain `rm`, never
+`git rm` — it stages nothing.
+
+A unit returns exactly this block and nothing else — no file contents, no diff:
+
+    CHANGED: <path> — <one line>            (one per file)
+    DECIDED: <what> — <why>                 (choices made inside scope, or none)
+    DOCS FALSIFIED: <path> — <passage>      (reported, never edited; or none)
+    GAP: <what the plan left unspecified and the assumption taken>   (or none)
+    UNRESOLVED: <the ruling needed>         (or none)
+
+A `GAP:` is a hole in the plan the unit could proceed past on a stated
+assumption; it is recorded and the run continues. An `UNRESOLVED:` is a ruling
+the unit could not proceed without; it blocks the unit and its dependents.
+
+## Out of scope
+
+- **Repo-layer config from the main worktree.** `layers.rs:175` reads
+  `<root>/.config/claude-status.json` from the checkout the session is in; a
+  worktree is a full checkout. Declined by the user 2026-09-19 (twice).
+- **`url.<x>.insteadOf` rewrites and non-`origin` remotes.** `origin` only, read
+  literally. Declined 2026-09-19.
+- **Resolving branch, markers or the `worktree` segment to the main checkout or
+  superproject.** Only the project identity resolves there. Declined 2026-09-19.
+- **A `site/` release-notes page.** None exists; not asked for.
+
+## Parked
+
+none
+
+## Run log
+
+| Wave | Unit | Model | Round | Outcome | Detail | Commit |
+| ---- | ---- | ----- | ----- | ------- | ------ | ------ |
+
+## Launch
+
+This folder is already committed and pushed on the branch it was planned on, so
+the fresh session's worktree — cut from the integration branch — can see it.
+
+Run in a fresh session:
+
+/vwf:execute docs/plans/2026-09-19-project-identity
+
+or let the queue pick it, by priority:
+
+/vwf:execute next
