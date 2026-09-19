@@ -247,45 +247,54 @@ fn identity_root(root: &Path) -> (PathBuf, PathBuf) {
     (store_identity(&common), common)
 }
 
-/// A path component that can be a git store: `.git`, a hidden name such as
-/// `.bare`, or a visible bare `repo.git`.
-fn is_store(component: &Component) -> bool {
-    component.as_os_str().to_str().is_some_and(|n| n.starts_with('.') || n.ends_with(".git"))
-}
-
-/// The checkout a store belongs to, or the store itself when it has none.
+/// The checkout a store sits inside, if any.
 ///
 /// `.git` is always inside its checkout. A hidden store is inside one only when
 /// `<parent>/.git` is a pointer file naming it — the `.bare` layout
 /// (`a_submodule_under_a_dot_bare_store_names_the_directory_holding_it`); a
-/// hidden store with no such pointer, like `~/.cfg`, stands alone rather than
-/// claiming `$HOME` (`a_hidden_store_outside_a_checkout_is_its_own_identity`).
-/// A visible `repo.git` stands alone too, [`parent_base`] dropping the suffix
-/// from its name. The one read here is lexical: the pointer's `gitdir:` is
-/// normalised, never resolved.
-fn store_identity(store: &Path) -> PathBuf {
-    let (Some(name), Some(parent)) = (store.file_name().and_then(|n| n.to_str()), store.parent()) else {
-        return store.to_path_buf();
-    };
-    let inside_checkout = name == ".git"
+/// hidden store with no such pointer, like `~/.cfg`, is inside nothing
+/// (`a_hidden_store_outside_a_checkout_is_its_own_identity`), and a visible
+/// `repo.git` never is. The one read here is lexical: the pointer's `gitdir:`
+/// is normalised, never resolved.
+fn checkout_of(store: &Path) -> Option<PathBuf> {
+    let name = store.file_name()?.to_str()?;
+    let parent = store.parent()?;
+    let inside = name == ".git"
         || (name.starts_with('.')
             && std::fs::read_to_string(parent.join(".git")).ok().and_then(|p| gitdir_pointer(parent, &p)).as_deref()
                 == Some(store));
-    if inside_checkout { parent.to_path_buf() } else { store.to_path_buf() }
+    inside.then(|| parent.to_path_buf())
+}
+
+/// The checkout a store belongs to, or the store itself when it has none —
+/// [`parent_base`] then drops a bare `repo.git`'s suffix from the name.
+fn store_identity(store: &Path) -> PathBuf {
+    checkout_of(store).unwrap_or_else(|| store.to_path_buf())
 }
 
 /// The outermost superproject a git dir sits under, as `(identity, store)`.
 ///
-/// Matches a store component followed by `modules`, or by
-/// `worktrees/<x>/modules`; the topmost match wins, and [`store_identity`]
-/// names the checkout.
+/// A candidate is a component followed by `modules`, or by
+/// `worktrees/<x>/modules`, and it counts as a store only when it is a bare
+/// `*.git` or [`checkout_of`] vouches for it — a hidden directory that merely
+/// has a `modules/` child, like `~/.emacs.d`, is skipped and the scan goes on
+/// to the real `.git` further down
+/// (`a_hidden_ancestor_named_before_modules_is_not_a_store`). The topmost
+/// accepted candidate wins.
 fn superproject(git_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     let parts: Vec<Component> = git_dir.components().collect();
     let at = |i: usize, name: &str| parts.get(i).is_some_and(|c| c.as_os_str() == name);
-    let i = (0..parts.len())
-        .find(|&i| is_store(&parts[i]) && (at(i + 1, "modules") || (at(i + 1, "worktrees") && at(i + 3, "modules"))))?;
-    let store: PathBuf = parts[..=i].iter().collect();
-    Some((store_identity(&store), store))
+    (0..parts.len())
+        .filter(|&i| at(i + 1, "modules") || (at(i + 1, "worktrees") && at(i + 3, "modules")))
+        .find_map(|i| {
+            let store: PathBuf = parts[..=i].iter().collect();
+            let bare = parts[i].as_os_str().to_str().is_some_and(|n| n.ends_with(".git"));
+            match checkout_of(&store) {
+                Some(identity) => Some((identity, store)),
+                None if bare => Some((store.clone(), store)),
+                None => None,
+            }
+        })
 }
 
 /// The first `url` under `[remote "origin"]` in `<common_git_dir>/config`.
@@ -918,6 +927,32 @@ mod tests {
 
         let p = project(&x).unwrap();
         assert_eq!(p, Project { kind: ProjectKind::Git, name: "user/.cfg".into(), root: cfg });
+    }
+
+    #[test]
+    fn a_hidden_ancestor_named_before_modules_is_not_a_store() {
+        // `~/.emacs.d/modules/foo` is a repo whose path happens to carry a
+        // hidden directory followed by `modules`. Nothing vouches for
+        // `.emacs.d` as a store, so the scan must go on to foo's real `.git`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let foo = dir.path().join(".emacs.d").join("modules").join("foo");
+        repo_with_remote(&foo, "origin", "git@github.com:me/foo.git");
+        let expected = Project { kind: ProjectKind::Github, name: "me/foo".into(), root: foo.clone() };
+
+        let lib_gitdir = foo.join(".git").join("modules").join("lib");
+        fs::create_dir_all(&lib_gitdir).unwrap();
+        fs::write(lib_gitdir.join("HEAD"), "ref: refs/heads/lib\n").unwrap();
+        let lib = foo.join("lib");
+        pointer(&lib, "../.git/modules/lib");
+        assert_eq!(project(&lib).unwrap(), expected, "from the submodule");
+
+        let wt_gitdir = foo.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(&wt_gitdir).unwrap();
+        fs::write(wt_gitdir.join("HEAD"), "ref: refs/heads/wt\n").unwrap();
+        fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+        let wt = dir.path().join("wt");
+        pointer(&wt, &wt_gitdir.display().to_string());
+        assert_eq!(project(&wt).unwrap(), expected, "from a linked worktree");
     }
 
     #[test]
