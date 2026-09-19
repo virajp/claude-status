@@ -1,0 +1,11 @@
+/security-review — loop U5, round 4 — range 4ea824e..2de65e6 — 2026-09-19
+
+NO FINDINGS on 4ea824e..2de65e6 (round 4). Nothing in 2de65e6 (only src/modules/git.rs) meets the >80%-exploitable bar.
+
+(1) Extra `checkout_of` reads in `superproject` (git.rs:283-297): the filter at 287 keeps only indices whose next component is `modules` (or `worktrees/<x>/modules`), and `checkout_of` (260-268) reads `<parent>/.git` only when the candidate's name starts with `.` and is not exactly `.git` (263-266; `.git` short-circuits, non-dot names never read). Every read lands at `parts[..i]/.git` — a strict prefix of `common`, which the attacker's pointer/commondir already named — so no directory becomes reachable that rounds 1-3 did not already cover. The bytes read go only through `gitdir_pointer` and `== Some(store)` (266-267); the result is one bool choosing `parent` (264) — a path the attacker supplied — as identity. `RootDir`/`Prefix` candidates return `None` at `file_name()?` (261). The new `bare` arm (293-294) accepts a `*.git` component without reading anything. Reach is narrower than f3f5fdf, which accepted any dot-name before `modules` unvouched.
+
+(2) Nothing new reaches the bar or `--doctor`: `project()` (192-200) is unchanged; the identity is still a prefix of an attacker-known path shown through `parent_base` or `field()`/`sanitize_report` in app.rs.
+
+(3) Panics: `parts[..=i]` at 290 and `parts[i]` at 291 with `i` from `0..parts.len()`; `checkout_of` uses `?` on `file_name`/`to_str`/`parent` (261-262); `read_to_string` on a `.git` directory or unreadable file is `.ok()` → `None`. No new `unwrap`/`expect`/indexing outside tests.
+
+(4) No subprocess or `canonicalize` added; `run_bounded` callers remain `ahead_count`/`dirty_counts` (468-488), fixed argv; `canonicalize` appears only in doc comments (225, 426).

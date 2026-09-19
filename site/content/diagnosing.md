@@ -72,6 +72,7 @@ EFFECTIVE LAYOUT
 GIT
   cwd:      /path/to/repo
   root:     /path/to/repo
+  project:  github acme/widget (/path/to/repo)
   branch:   main
   worktree: <none>
   ahead:    false
@@ -127,15 +128,15 @@ the project name in it are real, because those come from where you are standing.
 
 ## Common answers
 
-| Symptom                          | Usually                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| No bar at all                    | `--configure` has not been run, or the binary is not on your `PATH` by name |
-| Tofu boxes instead of separators | the terminal font is not a Nerd Font                                        |
-| Flat colours, no gradient        | the terminal is not in 24-bit colour mode                                   |
-| Second row missing               | you are not inside a git repository                                         |
-| No project name                  | that repository has no `projectName` — see [Per-repo](@/repo-config.md)     |
-| No `spend` segment               | gate 4 on a Pro or Max seat, which is intended                              |
-| A segment silently absent        | typo in its id — the note is on stderr                                      |
+| Symptom                          | Usually                                                                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| No bar at all                    | `--configure` has not been run, or the binary is not on your `PATH` by name                                                              |
+| Tofu boxes instead of separators | the terminal font is not a Nerd Font                                                                                                     |
+| Flat colours, no gradient        | the terminal is not in 24-bit colour mode                                                                                                |
+| Second row missing               | you are not inside a git repository                                                                                                      |
+| Wrong project name or glyph      | `projectName` is set somewhere — see [Per-repo](@/repo-config.md) — or `origin` is not where you expect; GIT's `project:` row says which |
+| No `spend` segment               | gate 4 on a Pro or Max seat, which is intended                                                                                           |
+| A segment silently absent        | typo in its id — the note is on stderr                                                                                                   |
 
 ## Reporting something
 

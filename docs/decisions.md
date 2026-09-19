@@ -626,7 +626,9 @@ to `U+F0001`–`U+F1AF0` and left `U+F534`–`U+F560` **unpopulated**, so the
 fallback glyph for an unrecognised subagent `type` rendered as tofu in every
 Nerd Font 3.x — verified against Hack, FiraCode, Iosevka and Meslo at Nerd Fonts
 3.5.1, all four missing it and all four carrying the other 24 codepoints this
-product uses.
+product uses. (Since 2026-09-19, `project-identity`, the product uses 28 — the
+three new project glyphs U+E702, U+F09B and U+F0BA0 joined the set, and the
+site's subset font was re-cut to 28 glyphs, 4.2KB.)
 
 Replaced with `U+F1B2` (cube): present in v3, and **deliberately generic**, so
 it does not read as any of the specific types beside it.
@@ -718,6 +720,43 @@ surface.**
 Requested by the owner, whose expectation was that the segment already behaved
 this way.
 
+**Amended 2026-09-19** (`project-identity`). The third rung is no longer a
+directory name. It is the repository's **identity**: `owner/repo` from the
+`origin` remote when its host contains `github` or `gitlab`, else `parent/base`
+of the **identity root** — the checkout itself in an ordinary repository, the
+**main checkout** in a linked worktree, the **outermost superproject** in a
+submodule. A bare directory name is never drawn. `projectName` still replaces
+the name, and only the name; the glyph is chosen by the kind.
+
+**Why:** the directory-name rung answered "which folder am I in", which the
+`worktree` segment already answers. The question `project` exists for is "which
+repository" — and a linked worktree or a submodule is part of the repository it
+was cut from, not a repository of its own. The identity root is that repository.
+Only `origin` is read, literally — no other remote, no `insteadOf`, no
+`[include]` — so an ssh-alias host (`gh:acme/widget`) is kind `Remote` and draws
+`parent/base`. The kind always comes from the common dir's `config`, so a linked
+worktree of a hidden store no `.git` pointer names (`~/.cfg`) or of a
+`--separate-git-dir` store gets the right glyph; its residual is the **name**
+when there is no `origin` or a non-GitHub/GitLab host — `parent/base` of the
+store (`user/.cfg`, `store/repo`), not of the checkout. Those residuals were
+weighed and accepted rather than parse a second file or probe `HEAD`.
+
+Pinned by `tests/e2e.rs`:
+`a_repository_is_named_by_its_origin_from_the_checkout_a_worktree_and_a_submodule`,
+`a_repository_without_an_origin_is_named_parent_slash_base` and
+`doctor_names_how_the_project_was_identified`; the per-layout rules by the
+`project` tests in `src/modules/git.rs`.
+
+### `symbols.project` and `symbols.repo` retired
+
+**Decided 2026-09-19** (`project-identity`). The one `project` glyph became four
+per-kind keys — `projectGit` (U+E702), `projectRemote` (U+F401), `projectGithub`
+(U+F09B), `projectGitlab` (U+F0BA0) — because the glyph now carries information
+the name does not: how the repository was identified. `symbols.repo` had been
+read by nothing since it shipped. Both keys are gone from the defaults, the
+schema description and the integrity table; a user config still naming either is
+an unread `symbols` key, which `--doctor` already notes — nothing is migrated.
+
 ---
 
 ## 6. Escapes and untrusted input
@@ -747,6 +786,16 @@ through a config layer at all. The repo layer also gained a *new* surface in the
 same cycle: `--doctor` reports the keys it ignored **by name**, and a JSON key
 may contain a newline, so the report's row filter covers key names as well as
 values.
+
+**Amended 2026-09-19** (`project-identity`). A cloned repository now reaches the
+bar through **two** strings it controls: `projectName`, and the path of the
+`origin` URL read from its git config. Both pass the same `sanitize`; the URL's
+user, host and port are discarded before anything is drawn, and the host decides
+only which glyph. The resolver reads `HEAD`, the `.git` pointer, `commondir` and
+`config` under the git dir it resolved, plus one `<parent>/.git` pointer probe
+per candidate store at the common dir's ancestors — compared lexically to vouch
+for the store, never displayed. All lexical, no symlink resolution, no
+subprocess — and nothing else.
 
 ### Two filters, not three
 
@@ -1207,7 +1256,10 @@ on the `ignored` row above it.
 ### Filesystem first, subprocess only where unavoidable
 
 **Decided** at the outset, because this is a hot path. Root and branch are read
-from the filesystem, never from `git`.
+from the filesystem, never from `git`. Since 2026-09-19 (`project-identity`) so
+are the project identity and the `origin` URL — pointer, `commondir` and
+`config` read lexically, still no `git` for anything the filesystem already
+says.
 
 Rust's `std::process::Command` has no built-in timeout, and the shape that works
 was recorded because the obvious one does not: spawn, move the pipe into a
@@ -1229,6 +1281,14 @@ but no branch.
 
 **That asymmetry is faithful to the original's try-block scoping and is
 load-bearing for submodules.**
+
+**Amended 2026-09-19** (`project-identity`). The walk is unchanged. A
+submodule's *root* is still the submodule, so its branch and markers are its
+own; its *identity* is resolved separately, from the `gitdir:` pointer's path —
+a store before `modules/` (or `worktrees/<x>/modules/`) that a checkout vouches
+for names the outermost superproject. The two answer different questions —
+"where am I standing" and "which repository is this" — and were kept apart on
+purpose, so neither resolution can break the other.
 
 ### A change touching only binaries renders clean
 

@@ -22,8 +22,9 @@ lede = "A powerline bar under Claude Code carrying what you actually keep checki
   monthly budget rather than the rolling windows, that budget beside it.
 - **Your subagents.** A second panel, a row per subagent, with its name, model,
   what it is working on, tokens, elapsed time and a status glyph.
-- **Git, from the filesystem.** Branch, worktree and dirty markers, resolved by
-  reading the repository rather than shelling out for everything.
+- **Git, from the filesystem.** Branch, worktree and dirty markers, and the
+  repository's own name from its `origin`, resolved by reading the repository
+  rather than shelling out for everything.
 
 It is one Rust binary. No runtime, no Node, nothing to keep up to date — Claude
 Code invokes it directly, and it starts in about a millisecond. Most of a render

@@ -1014,7 +1014,7 @@ fn every_self_hosted_font_face_resolves_to_a_real_woff2() {
         //
         // This replaced a `len() > 4096` floor, which was a stand-in for "not
         // truncated" and stopped being usable once a face could legitimately
-        // be small: `claude-status-glyphs.woff2` is 25 glyphs and 3.2KB, and a
+        // be small: `claude-status-glyphs.woff2` is 28 glyphs and 4.2KB, and a
         // threshold tuned to text faces would have rejected it. Raising a
         // number until the real file passes is how a guard becomes a formality.
         //
