@@ -53,3 +53,6 @@ docs/plans/archived/
 # makes the *main* checkout read dirty, so the bar's own dirty marker stops
 # meaning what it says while any cycle is in flight.
 .worktrees/
+
+# npm installs anywhere in the tree — brag-output/work/ pulls playwright-core.
+node_modules/

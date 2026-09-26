@@ -72,6 +72,7 @@ repos:
       - id: check-added-large-files
         name: Check for added large files (>1MB)
         args: [ "--maxkb=1024" ]
+        exclude: \.(mp4|wav|m4a)$
         stages: [ pre-commit ]
       - id: check-symlinks
         name: Check for broken symlinks
