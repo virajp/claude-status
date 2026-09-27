@@ -2443,6 +2443,25 @@ The keychain half of this hazard is invariant 5's; see
 a stub HTTP server, not the real endpoint.** Then one real `--doctor` to confirm
 the credential path works on a live machine.
 
+### A JavaScript manifest or lockfile is no longer refused
+
+**Was** (`website/01-site`, narrowed by `npm-installer` on 2026-08-27):
+`tests/site.rs` refused any tracked JavaScript lockfile, and any `package.json`
+except `npm/package.json`. The argument was that a manifest invites a
+dependency, a dependency brings a lockfile, and a lockfile puts a second package
+manager and a second `test` command in a tree that ships one Rust binary.
+
+**Reversed 2026-09-27.** The test failed CI when the brag launch video's
+sources, a throwaway Playwright capture script, were committed with their
+`package.json` and `package-lock.json`. **Nobody intends to move the project off
+Rust, so the test was guarding against a risk nobody was taking, and the only
+thing it caught was tooling that has nothing to do with the product.** The Rust
+core stays Rust by choice, and a test isn't needed to hold that.
+
+**The `node_modules` ban stays**, now as `no_node_modules_is_tracked`: an
+installed dependency tree is machine-local output in any repository, whatever
+the project is written in.
+
 ---
 
 ## 13. Scope

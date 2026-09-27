@@ -23,9 +23,8 @@
  * `chooseInstallDir` takes an `isUsable` predicate instead of calling `stat`.
  *
  * NO DEPENDENCIES, EVER — Node 20 built-ins, plus `tar`, which Node does not
- * have. A lockfile here is the npm ecosystem coming back, which is exactly
- * what `tests/site.rs::no_javascript_lockfile_or_node_modules_is_tracked`
- * exists to refuse; it permits this one manifest, by path, and nothing else.
+ * have. The package carries no binary and installs nothing, so there is
+ * nothing for a lockfile to lock.
  *
  * Every line printed goes to STDERR. Nothing here has a stdout product except
  * `--help`, which is what the user asked for rather than a diagnostic.

@@ -29,7 +29,7 @@
 # `site/static/config-generator.js` is vanilla ES modules with no bundler, no
 # dependency, no package.json and no lockfile, formatted by dprint's pinned
 # wasm plugin with no npm anywhere. `tests/site.rs` holds three things in its
-# place: no JS lockfile or `node_modules` is tracked; the nav is still plain
+# place: no `node_modules` is tracked; the nav is still plain
 # anchors with no script inside it; and exactly ONE tracked path under `site/`
 # may carry a `<script>`, so a second one anywhere fails.
 #
