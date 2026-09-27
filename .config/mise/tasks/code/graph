@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+#MISE description="Refresh the graphify knowledge graph after a commit (code only, no LLM)"
+
+set -euo pipefail
+# shellcheck source=/dev/null
+source "${MISE_PROJECT_ROOT}/.config/mise/tasks/_scripts/_helpers"
+
+# Runs from the pre-commit framework's post-commit stage (see
+# .config/pre-commit-config.yaml), replacing graphify's own raw git hook. The
+# raw hook pinned a Python interpreter path at install time and broke on every
+# graphify upgrade; here mise resolves the CLI, so nothing is pinned.
+#
+# `--force` rebuilds whatever HEAD changed; `GRAPHIFY_SKIP_HOOK=1` skips.
+
+FORCE=false
+[ "${1:-}" = "--force" ] && FORCE=true
+
+if [ "${GRAPHIFY_SKIP_HOOK:-0}" = "1" ]; then
+  exit 0
+fi
+
+if ! command -v graphify >/dev/null 2>&1; then
+  print_warn "graphify is not on PATH — graph not refreshed (mise use -g pipx:graphifyy@latest)"
+  exit 0
+fi
+
+# Only the main checkout holds a graph; a linked worktree never rebuilds one.
+GIT_DIR_ABS="$(cd "$(git rev-parse --git-dir)" && pwd -P)"
+GIT_COMMON_ABS="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+if [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
+  exit 0
+fi
+
+# Never during a rebase, merge or cherry-pick: the rebuild would race the
+# working tree the operation is still writing.
+for marker in rebase-merge rebase-apply; do
+  [ -d "$GIT_DIR_ABS/$marker" ] && exit 0
+done
+for marker in MERGE_HEAD CHERRY_PICK_HEAD; do
+  [ -f "$GIT_DIR_ABS/$marker" ] && exit 0
+done
+
+if [ "$FORCE" = false ]; then
+  CHANGED="$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null || true)"
+  # A commit that only touched graphify-out/ is the previous rebuild landing;
+  # rebuilding again would loop.
+  if [ -z "$(printf '%s\n' "$CHANGED" | grep -v '^graphify-out/' || true)" ]; then
+    exit 0
+  fi
+fi
+
+# Deterministic clustering: louvain iterates string-keyed sets whose order
+# follows PYTHONHASHSEED, so an unpinned seed churns community ids per run.
+export PYTHONHASHSEED=0
+
+LOG="${HOME}/.cache/graphify-rebuild.log"
+mkdir -p "$(dirname "$LOG")"
+
+FORCE_FLAG=""
+[ "$FORCE" = true ] && FORCE_FLAG="--force"
+
+print_yellow "graphify: refreshing the graph in the background (log: ${LOG})"
+# Detached so the commit returns at once; a full rebuild can take minutes.
+nohup graphify update . $FORCE_FLAG >>"$LOG" 2>&1 </dev/null &
+disown
+exit 0

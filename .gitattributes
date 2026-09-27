@@ -1,5 +1,3 @@
-graphify-out/graph.json merge=graphify
-
 # Nerd Font private-use codepoints: never EOL-normalise, never show as a diff.
 # A lost glyph here is unrecoverable — verify by rendering, not by reading.
 assets/claude-status.defaults.json -text -diff
