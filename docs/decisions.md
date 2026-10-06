@@ -255,6 +255,30 @@ Neither `model` nor `effort` is a documented per-task field. A per-task value is
 read if present — a future build may add one — else the panel-wide value, else
 the segment omits.
 
+### Teammate rows are documented around, not worked around
+
+**Recorded 2026-10-06** (`docs-agent-teams-note`). Users saw some subagent rows
+in Claude Code's own rendering instead of the panel's. A logged session of
+`subagentStatusLine`'s stdin and stdout showed `claude-status` drawing every row
+it was given — 72 of 72 across five agents. The missing rows were never sent.
+
+Claude Code 2.1.290 hands the command only `local_agent` tasks — its filter is
+`type === "local_agent"`, not the main session, not a fork worker. Teammates
+(`in_process_teammate`) sit in the same panel and are skipped. With agent teams
+on (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, or `--agent-teams`), an Agent call
+that passes a `name` spawns a teammate; with them off, the same call spawns a
+`local_agent` that keeps its `name` and is drawn normally. Both halves were
+observed in the log; the rule was read from the binary.
+
+**Nothing in this repository can draw a row it never receives**, so the answer
+is the setting, and it is a user's to choose: turning teams off gives up
+teammates you can keep messaging. The site carries the instruction; the readme
+points at it.
+
+Read from one release. Claude Code's label code already has a branch for
+teammates that the filter makes unreachable — if a later release sends them, the
+panel draws them with no change here, and this entry is history.
+
 ---
 
 ## 4. Configuration

@@ -126,6 +126,37 @@ segment" and it is working correctly; see [Configure](@/configure.md).
 rate limits and cost are fixed values, not your live session. The git facts and
 the project name in it are real, because those come from where you are standing.
 
+## Agent teams and the subagent panel
+
+The subagent panel is drawn a row at a time: Claude Code hands
+`claude-status --subagent` the rows it wants drawn and draws every other row
+itself. It only hands over **subagents** — never **teammates**.
+
+With agent teams on — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` set, or
+`--agent-teams` — an agent started with a `name` becomes a teammate rather than
+a subagent. Its row reaches `claude-status` at no point, so it keeps Claude
+Code's own look whatever your config says, and `--doctor` has nothing to report
+about it.
+
+**To have every agent drawn, turn agent teams off.** Remove the key from the
+`env` block of `~/.claude/settings.json`, or set it to `"0"`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0"
+  }
+}
+```
+
+Then start a new session. The cost is the teams themselves: without them, a
+named agent is an ordinary subagent that finishes its task and reports back,
+rather than a teammate you can keep sending work to.
+
+This is Claude Code's choice, observed in 2.1.290, not something `claude-status`
+can change — if a later release starts handing teammate rows over, they will be
+drawn like any other.
+
 ## Common answers
 
 | Symptom                          | Usually                                                                                                                                  |
@@ -137,6 +168,7 @@ the project name in it are real, because those come from where you are standing.
 | Wrong project name or glyph      | `projectName` is set somewhere — see [Per-repo](@/repo-config.md) — or `origin` is not where you expect; GIT's `project:` row says which |
 | No `spend` segment               | gate 4 on a Pro or Max seat, which is intended                                                                                           |
 | A segment silently absent        | typo in its id — the note is on stderr                                                                                                   |
+| Some subagent rows look plain    | they are teammates — agent teams is on; see [above](#agent-teams-and-the-subagent-panel)                                                 |
 
 ## Reporting something
 
