@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 400 600;
+        src: url(ibm-plex-sans-var.woff2);
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-weight: 400;
+        src: url(ibm-plex-mono-400.woff2);
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-weight: 500;
+        src: url(ibm-plex-mono-500.woff2);
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-weight: 600;
+        src: url(ibm-plex-mono-600.woff2);
+      }
+      @font-face {
+        font-family: "glyphs";
+        src: url(claude-status-glyphs.woff2);
+        unicode-range:
+          U+E0A0,
+          U+E0B0-E0B1,
+          U+E0B6,
+          U+E702,
+          U+F007,
+          U+F00C-F00D,
+          U+F013,
+          U+F017,
+          U+F02B,
+          U+F04B,
+          U+F06E,
+          U+F073,
+          U+F07B,
+          U+F09B,
+          U+F09D,
+          U+F0AE,
+          U+F0C2-F0C3,
+          U+F109,
+          U+F1B2,
+          U+F1C0,
+          U+F1E6,
+          U+F252,
+          U+F401,
+          U+F51E,
+          U+F0BA0;
+      }
+      :root {
+        --ink-900: #0f1115;
+        --ink-800: #16181d;
+        --ink-700: #1b1e24;
+        --ink-600: #22262e;
+        --ink-500: #2c313a;
+        --ink-400: #3a404b;
+        --slate-100: #7c828d;
+        --slate-200: #b9c0cb;
+        --slate-300: #e7e9ed;
+        --amber-300: #f7dca0;
+        --amber-500: #e8b33a;
+        --amber-900: #3d2f10;
+        --mono:
+          "glyphs",
+          "IBM Plex Mono",
+          Menlo,
+          "Apple Color Emoji",
+          monospace;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--ink-800);
+      }
+      #stage {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(
+            1200px 700px at 50% 62%,
+            rgba(232, 179, 58, 0.07),
+            transparent 70%
+          ),
+          var(--ink-800);
+      }
+      .abs {
+        position: absolute;
+      }
+      .cap {
+        left: 0;
+        right: 0;
+        text-align: center;
+        font: 600 58px/1.15 "IBM Plex Mono";
+        letter-spacing: -0.03em;
+        color: var(--slate-300);
+      }
+      .cap em {
+        font-style: normal;
+        color: var(--amber-500);
+      }
+      #term {
+        left: 210px;
+        top: 250px;
+        width: 1500px;
+        height: 720px;
+        border-radius: 14px;
+        background: #1d1f27;
+        border: 1px solid #2a2e37;
+        box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.8);
+        overflow: hidden;
+      }
+      #tbar {
+        height: 44px;
+        background: var(--ink-700);
+        border-bottom: 1px solid #262a31;
+        display: flex;
+        align-items: center;
+        padding-left: 18px;
+        gap: 9px;
+      }
+      #tbar i {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--ink-400);
+        display: block;
+      }
+      #tbar span {
+        margin-left: auto;
+        margin-right: auto;
+        transform: translateX(-30px);
+        font: 500 16px "IBM Plex Mono";
+        color: var(--slate-100);
+      }
+      #tbody {
+        position: absolute;
+        left: 36px;
+        top: 70px;
+        right: 36px;
+        font: 400 24px/1.5 var(--mono);
+        color: var(--slate-200);
+      }
+      .user {
+        color: var(--slate-300);
+      }
+      .dot {
+        color: #8ec07c;
+      }
+      .dim {
+        color: var(--slate-100);
+      }
+      .ok {
+        color: #b8bb26;
+      }
+      #prompt {
+        position: absolute;
+        left: 36px;
+        right: 36px;
+        border: 1.5px solid var(--ink-400);
+        border-radius: 8px;
+        height: 58px;
+        font: 400 24px/55px var(--mono);
+        color: var(--slate-100);
+        padding-left: 18px;
+      }
+      .bar {
+        font: 400 26px/1 var(--mono);
+        white-space: pre;
+      }
+      .bar .line {
+        height: 38px;
+        display: flex;
+        align-items: stretch;
+      }
+      .bar .r {
+        display: inline-flex;
+        align-items: center;
+        white-space: pre;
+      }
+      .bar .sep {
+        font-size: 38px;
+        line-height: 38px;
+        margin-right: -1px;
+      }
+      .bar .line + .line {
+        margin-top: 4px;
+      }
+      .seg {
+        display: inline-flex;
+        align-items: stretch;
+        will-change: transform, opacity;
+      }
+      #hook {
+        position: absolute;
+        left: 36px;
+        right: 36px;
+        border-left: 4px solid var(--amber-500);
+        background: rgba(232, 179, 58, 0.08);
+        border-radius: 0 8px 8px 0;
+        padding: 16px 22px;
+        font: 400 21px/1.5 var(--mono);
+        color: var(--amber-300);
+      }
+      #hook b {
+        color: var(--amber-500);
+        font-weight: 600;
+      }
+      #ring {
+        position: absolute;
+        border: 3px solid var(--amber-500);
+        border-radius: 10px;
+        box-shadow: 0 0 30px rgba(232, 179, 58, 0.55);
+      }
+      #big {
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
+      }
+      .lbl {
+        font: 500 26px "IBM Plex Mono";
+        color: var(--slate-200);
+        text-align: center;
+        white-space: nowrap;
+      }
+      .lbl.up::before {
+        display: none;
+      }
+      .lbl.up::after {
+        content: "";
+        display: block;
+        width: 2px;
+        height: 26px;
+        background: var(--ink-400);
+        margin: 10px auto 0;
+      }
+      .lbl::before {
+        content: "";
+        display: block;
+        width: 2px;
+        height: 26px;
+        background: var(--ink-400);
+        margin: 0 auto 10px;
+      }
+      #outro {
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      #lock {
+        display: flex;
+        align-items: center;
+        gap: 34px;
+      }
+      #pill {
+        width: 250px;
+        height: 84px;
+        border-radius: 999px;
+        background: var(--amber-500);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #word {
+        font: 600 92px "IBM Plex Mono";
+        letter-spacing: -0.035em;
+        color: var(--slate-200);
+      }
+      #word span {
+        color: var(--amber-500);
+      }
+      #tag {
+        font: 500 50px "IBM Plex Mono";
+        letter-spacing: -0.02em;
+        color: var(--slate-300);
+        margin-top: 56px;
+      }
+      #url {
+        font: 600 44px "IBM Plex Mono";
+        color: var(--amber-500);
+        margin-top: 34px;
+      }
+      #routes {
+        font: 400 28px "IBM Plex Mono";
+        color: var(--slate-100);
+        margin-top: 22px;
+        letter-spacing: 0.06em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="c1" class="abs cap" style="top: 110px">
+        Know what your <em>Claude Code</em> session is up to.
+      </div>
+      <div id="c3" class="abs cap" style="top: 110px">
+        Updates as the session <em>burns</em>.
+      </div>
+      <div id="c4" class="abs cap" style="top: 80px; font-size: 54px">
+        Cross a cap, and it tells Claude<br />to <em>hand off and stop</em>.
+      </div>
+      <div id="c5" class="abs cap" style="top: 110px">
+        A row for every <em>subagent</em>.
+      </div>
+      <div id="term" class="abs">
+        <div id="tbar">
+          <i></i><i></i><i></i><span>~/code/claude-status — claude</span>
+        </div>
+        <div id="tbody">
+          <div class="user">&gt; tidy up the auth middleware and add tests</div>
+          <div style="height: 14px"></div>
+          <div><span class="dot">●</span> Read(src/auth/middleware.rs)</div>
+          <div>
+            <span class="dot">●</span> Update(src/auth/middleware.rs) <span
+              class="dim"
+            >+42 −17</span>
+          </div>
+          <div>
+            <span class="dot">●</span> Bash(cargo test auth) <span class="ok"
+            >✓ 18 passed</span>
+          </div>
+          <div id="l4">
+            <span class="dot">●</span> Update(src/auth/session.rs) <span
+              class="dim"
+            >+9 −3</span>
+          </div>
+        </div>
+        <div id="hook"></div>
+        <div id="prompt">
+          &gt; <span
+            id="cur"
+            style="display: inline-block; width: 13px; height: 26px; background: var(--slate-200); vertical-align: -4px"></span>
+        </div>
+        <div id="tbarwrap" class="abs" style="left: 36px"></div>
+        <div id="subwrap" class="abs" style="left: 36px"></div>
+        <div id="ring"></div>
+      </div>
+      <div id="big" class="abs">
+        <div id="c2" class="abs cap" style="top: 290px">
+          One bar. Everything you <em>keep checking</em>.
+        </div>
+        <div id="bigbar" class="abs"></div>
+        <div id="lbls"></div>
+      </div>
+      <div id="outro" class="abs">
+        <div id="lock">
+          <div id="pill">
+            <svg width="170" height="54" viewBox="0 0 170 54">
+              <polyline
+                points="4,27 62,27 74,8 90,48 102,27 166,27"
+                fill="none"
+                stroke="#16181d"
+                stroke-width="8"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <div id="word">claude<span>status</span></div>
+        </div>
+        <div id="tag">One Rust binary. No runtime.</div>
+        <div id="url">claude-status.virajp.dev</div>
+        <div id="routes">brew · mise · npx</div>
+      </div>
+    </div>
+    <script src="bars.js"></script>
+    <script>
+      const $ = id => document.getElementById(id);
+      const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+      const lin = (t, a, b) => clamp((t - a) / (b - a));
+      const eo = x => 1 - Math.pow(1 - x, 3);
+      const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+      const back = x => {
+        const c = 1.5;
+        return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2);
+      };
+      function fade(t, a, b, d = .35) {
+        return eo(lin(t, a, a + d)) * (1 - eo(lin(t, b - d, b)));
+      }
+
+      function buildBar(lines) {
+        const root = document.createElement("div");
+        root.className = "bar";
+        const segs = [];
+        lines.forEach((runs, li) => {
+          const line = document.createElement("div");
+          line.className = "line";
+          let cur = null, idx = -1;
+          runs.forEach(r => {
+            if (r.seg !== idx) {
+              idx = r.seg;
+              cur = document.createElement("span");
+              cur.className = "seg";
+              line.appendChild(cur);
+              segs.push({ el: cur, line: li, i: idx });
+            }
+            const s = document.createElement("span");
+            const isSep = r.t === "" || r.t === "";
+            s.className = "r" + (isSep ? " sep" : "");
+            s.textContent = r.t;
+            if (r.fg) {
+              s.style.color = r.fg;
+            }
+            if (r.bg) {
+              s.style.background = r.bg;
+            }
+            if (r.b) {
+              s.style.fontWeight = 600;
+            }
+            cur.appendChild(s);
+          });
+          root.appendChild(line);
+        });
+        return { root, segs };
+      }
+      const stateKeys = ["s0", "s1", "s2", "s3", "s4", "s5", "s6"];
+      const termBars = {};
+      for (const k of stateKeys) {
+        const b = buildBar(BARS[k]);
+        b.root.style.position = "absolute";
+        b.root.style.left = "0";
+        b.root.style.top = "0";
+        $("tbarwrap").appendChild(b.root);
+        termBars[k] = b;
+      }
+      const big = buildBar(BARS.s0);
+      $("bigbar").appendChild(big.root);
+      const sub = buildBar(BARS.sub);
+      sub.root.querySelectorAll(".line").forEach(l =>
+        l.style.marginBottom = "10px"
+      );
+      $("subwrap").appendChild(sub.root);
+
+      const LBL = [
+        [0, 0, "model"],
+        [0, 1, "context"],
+        [0, 2, "5-hour limit"],
+        [0, 3, "7-day limit"],
+        [1, 0, "repository"],
+        [1, 1, "branch"],
+        [1, 2, "session cost"],
+      ];
+      const lblEls = LBL.map(([l, i, txt]) => {
+        const d = document.createElement("div");
+        d.className = "abs lbl";
+        d.textContent = txt;
+        $("lbls").appendChild(d);
+        return d;
+      });
+
+      let layoutDone = false;
+      const T = {};
+      function layout() {
+        // terminal geometry, measured once
+        const body = $("tbody");
+        const bodyH = body.offsetHeight;
+        T.promptTop = 70 + bodyH + 30;
+        $("prompt").style.top = T.promptTop + "px";
+        T.barTop = T.promptTop + 58 + 14;
+        $("tbarwrap").style.top = T.barTop + "px";
+        $("subwrap").style.top = (T.barTop + 38 * 2 + 26) + "px";
+        $("hook").style.top = (70 + bodyH + 8) + "px";
+        // big bar: scale to fit
+        const w = big.root.offsetWidth;
+        T.bigS = Math.min(1.55, 1720 / w);
+        T.bigW = w;
+        const bb = $("bigbar");
+        bb.style.left = ((1920 - w * T.bigS) / 2) + "px";
+        bb.style.top = "560px";
+        bb.style.transformOrigin = "0 0";
+        bb.style.transform = `scale(${T.bigS})`;
+        LBL.forEach(([l, i], k) => {
+          const s = big.segs.find(s => s.line === l && s.i === i).el;
+          const x = s.offsetLeft + s.offsetWidth / 2 - 12;
+          const d = lblEls[k];
+          const cx = (1920 - w * T.bigS) / 2 + x * T.bigS;
+          d.style.left = (cx - d.offsetWidth / 2) + "px";
+          if (l === 0) {
+            d.classList.add("up");
+            d.style.top = (560 - 82) + "px";
+          }
+          else {
+            d.style.top = (560 + (38 * 2 + 4) * T.bigS + 14) + "px";
+          }
+        });
+        // ring over context segment of the terminal bar
+        const cs = termBars.s6.segs.find(s => s.line === 0 && s.i === 1).el;
+        T.ring = {
+          l: 36 + cs.offsetLeft - 8,
+          t: T.barTop - 6,
+          w: cs.offsetWidth + 4,
+          h: 50,
+        };
+        layoutDone = true;
+      }
+
+      function segIn(segs, t, t0, step, dur = .32) {
+        segs.forEach((s, k) => {
+          const order = s.line * 4 + s.i;
+          const p = lin(t, t0 + order * step, t0 + order * step + dur);
+          s.el.style.opacity = clamp(p * 2.5);
+          s.el.style.transform = `translateX(${(1 - eo(p)) * -26}px) scale(${
+            .92 + .08 * back(p)
+          })`;
+          s.el.style.transformOrigin = "left center";
+        });
+      }
+      function setAll(segs, o) {
+        segs.forEach(s => {
+          s.el.style.opacity = o;
+          s.el.style.transform = "none";
+        });
+      }
+
+      window.render = function(t) {
+        if (!layoutDone) {
+          layout();
+        }
+        // captions
+        $("c1").style.opacity = fade(t, .15, 3.0, .35);
+        $("c1").style.transform = `translateY(${
+          (1 - eo(lin(t, .15, .5))) * 18
+        }px)`;
+        $("c3").style.opacity = fade(t, 7.35, 11.15, .3);
+        $("c4").style.opacity = fade(t, 11.45, 15.35, .3);
+        $("c5").style.opacity = fade(t, 15.55, 17.95, .3);
+        // terminal visibility: scenes 1,3,4,5
+        const termO = Math.max(fade(t, -1, 3.25, .3), fade(t, 7.0, 17.95, .35));
+        const termS = t < 7
+          ? 1 - .04 * eo(lin(t, 2.9, 3.25))
+          : .96 + .04 * eo(lin(t, 7.0, 7.45));
+        $("term").style.opacity = termO;
+        $("term").style.transform = `scale(${termS})`;
+        // term content per scene
+        $("l4").style.opacity = eo(lin(t, 11.3, 11.6));
+        $("cur").style.opacity = (Math.floor(t * 2) % 2 === 0) ? 1 : .15;
+        // which bar state
+        let key = "s2";
+        if (t >= 7.5) {
+          key = stateKeys[clamp(Math.floor((t - 7.5) / 0.55), 0, 6)];
+        }
+        else {
+          key = "s0";
+        }
+        for (const k of stateKeys) {
+          termBars[k].root.style.display = (k === key) ? "block" : "none";
+        }
+        if (t < 3.5) {
+          segIn(termBars.s0.segs, t, .45, .16);
+        }
+        else {
+          setAll(termBars[key].segs, 1);
+        }
+        // live tick pulse on state change
+        if (t >= 7.5 && t < 11.3) {
+          const ph = ((t - 7.5) % 0.55) / 0.55;
+          termBars[key].segs.forEach(s => {
+            if (
+              s.line === 0 && (s.i === 1 || s.i === 2)
+              || s.line === 1 && s.i === 2
+            ) {
+              s.el.style.transform = `scale(${
+                1 + .035 * (1 - eo(clamp(ph * 4)))
+              })`;
+              s.el.style.transformOrigin = "center";
+            }
+          });
+        }
+        // hook box + ring
+        const hookP = lin(t, 11.8, 13.6);
+        const txt = HOOK;
+        const n = Math.floor(eo(hookP) * txt.length);
+        const head = "⚠ CONTEXT CAP — context window at 66% (cap 65%).";
+        const shown = txt.slice(0, n);
+        $("hook").innerHTML = shown.length <= head.length
+          ? `<b>${shown}</b>`
+          : `<b>${head}</b>${shown.slice(head.length).replace(/`/g, "")}`;
+        $("hook").style.opacity = t < 15.5
+          ? eo(lin(t, 11.7, 11.95))
+          : 1 - eo(lin(t, 15.4, 15.7));
+        $("hook").style.transform = `translateY(${
+          (1 - eo(lin(t, 11.7, 12.0))) * 12
+        }px)`;
+        const push = eo(lin(t, 11.6, 12.0)) * (1 - eo(lin(t, 15.4, 15.8)));
+        const hookH = $("hook").offsetHeight;
+        $("prompt").style.transform =
+          $("tbarwrap").style.transform =
+          $(
+            "subwrap",
+          )
+            .style
+            .transform =
+            `translateY(${push * (hookH + 14)}px)`;
+        const r = T.ring;
+        const ringO = fade(t, 11.3, 15.3, .25) * (.75 + .25 * Math.sin(t * 9));
+        Object.assign($("ring").style, {
+          left: r.l + "px",
+          top: (r.t + push * (hookH + 14)) + "px",
+          width: r.w + "px",
+          height: r.h + "px",
+          opacity: ringO,
+        });
+        // subagents
+        const subs = sub.root.querySelectorAll(".line");
+        subs.forEach((l, k) => {
+          const p = lin(t, 15.75 + k * .22, 16.15 + k * .22);
+          l.style.opacity = eo(p) * (1 - eo(lin(t, 17.7, 17.95)));
+          l.style.transform = `translateX(${(1 - eo(p)) * -40}px)`;
+        });
+        // big reveal
+        const bigO = fade(t, 3.3, 7.05, .4);
+        $("big").style.opacity = bigO;
+        $("bigbar").style.transform = `translateY(${
+          (1 - eo(lin(t, 3.3, 3.8))) * 40
+        }px) scale(${T.bigS})`;
+        $("c2").style.opacity = eo(lin(t, 3.45, 3.8));
+        if (t > 3 && t < 7.2) {
+          setAll(big.segs, 1);
+        }
+        lblEls.forEach((d, k) => {
+          const p = lin(t, 4.0 + k * .12, 4.35 + k * .12);
+          d.style.opacity = eo(p);
+          d.style.transform = `translateY(${(1 - eo(p)) * -14}px)`;
+        });
+        // outro
+        const oo = eo(lin(t, 18.1, 18.5));
+        $("outro").style.opacity = oo;
+        $("lock").style.transform = `scale(${
+          .9 + .1 * back(lin(t, 18.1, 18.6))
+        })`;
+        $("tag").style.opacity = eo(lin(t, 18.55, 18.9));
+        $("tag").style.transform = `translateY(${
+          (1 - eo(lin(t, 18.55, 18.9))) * 16
+        }px)`;
+        $("url").style.opacity = eo(lin(t, 18.85, 19.2));
+        $("routes").style.opacity = eo(lin(t, 19.1, 19.45));
+      };
+    </script>
+  </body>
+</html>

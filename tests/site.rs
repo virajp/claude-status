@@ -78,96 +78,47 @@ fn tracked_under(dir: &str, ext: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Criterion 1 — the site builds with no JavaScript toolchain in the tree
+// Criterion 1 — no installed dependencies are tracked
 // ---------------------------------------------------------------------------
 
-/// **Criterion 1, restated.** As written it is "no `node_modules` and no
-/// lockfile anywhere in the tree", and read literally that fails on
-/// `Cargo.lock` — which is a Rust lockfile, is tracked deliberately, and is
-/// nothing the criterion was about.
+/// **No `node_modules` is tracked, anywhere.** An install directory is
+/// machine-local output — re-creatable from its manifest, often platform-
+/// specific, and routinely hundreds of megabytes — and that holds for every
+/// repository, not just this one.
 ///
-/// What it was about is that adding a documentation site must not put the
-/// JavaScript toolchain back that `distribution/01` removed. So: **no JS
-/// lockfile and no `node_modules` among TRACKED files.** Zola is a single
-/// static Rust binary (`aqua:getzola/zola`; `otool -L` shows system libraries
-/// and nothing else), and `cloudflare/wrangler-action@v4` keeps wrangler's Node
-/// on the runner rather than in this repository — that is the whole design, and
-/// this is what holds it.
-///
-/// # Why a manifest was banned too, and why exactly one is now allowed
-///
-/// A `package.json` is the first thing anyone would add to run
-/// `generator.test.mjs` under a test runner, and **that is precisely how the
-/// npm ecosystem comes back**: a manifest invites a dev dependency, a dev
-/// dependency requires a lockfile, and a lockfile puts a second package manager
-/// and a second `test` command in a tree that ships one Rust binary. That
-/// reasoning has not changed and still governs every path but one.
-///
-/// The one is `npm/package.json`, the manifest of the npx install channel. It
-/// is permitted because it is the opposite of what the ban is about: **zero
-/// dependencies, no build, and nothing to lock** — the published file is the
-/// tracked file, and `tests/npm.rs` runs it inside this suite rather than
-/// beside it. The allowance is written as a **path** and not as a name, which
-/// is the whole of the narrowing: a `package.json` anywhere else is still the
-/// ecosystem coming back, and every lockfile is still refused outright,
-/// including one that would sit next to the permitted manifest.
+/// This test used to ban JavaScript manifests and lockfiles as well, to keep a
+/// second toolchain out of a Rust tree. That half was dropped on 2026-09-27;
+/// `docs/decisions.md` (§12, "A JavaScript manifest or lockfile is no longer
+/// refused") records why.
 #[test]
-fn no_javascript_lockfile_or_node_modules_is_tracked() {
-    /// The npx installer's manifest, and nothing else in the tree.
-    const PERMITTED_MANIFEST: &str = "npm/package.json";
-    const JS_MANIFESTS: &[&str] = &["package.json"];
-    const JS_LOCKFILES: &[&str] = &[
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "bun.lockb",
-        "bun.lock",
-        "deno.lock",
-    ];
-
+fn no_node_modules_is_tracked() {
     let offending = |paths: Vec<String>| -> Vec<String> {
-        let mut offenders = Vec::new();
-        for rel in paths {
-            let name = rel.rsplit('/').next().unwrap_or(&rel);
-            if JS_LOCKFILES.contains(&name) {
-                offenders.push(format!("{rel} (JS lockfile)"));
-            }
-            if JS_MANIFESTS.contains(&name) && rel != PERMITTED_MANIFEST {
-                offenders.push(format!("{rel} (JS manifest)"));
-            }
-            if rel.split('/').any(|c| c == "node_modules") {
-                offenders.push(format!("{rel} (under node_modules/)"));
-            }
-        }
-        offenders
+        paths
+            .into_iter()
+            .filter(|rel| rel.split('/').any(|c| c == "node_modules"))
+            .collect()
     };
 
     assert_eq!(
         offending(tracked_files()),
         Vec::<String>::new(),
-        "a JavaScript toolchain is tracked again — the site was supposed to be built by a Rust binary, and the npx installer was supposed to arrive with nothing but a manifest"
+        "an installed node_modules is tracked — it belongs in .gitignore, not in git"
     );
 
-    // **The control, and it is what makes the allowance a path.** Written as a
-    // name — `rel.ends_with("package.json")`, or the name check simply dropped
-    // — the scan above passes just as well while permitting a manifest
-    // anywhere in the tree, which is the ban gone rather than narrowed. These
-    // four must all still offend.
+    // **The control.** The scan matches a whole path component, so a nested
+    // install offends and a name that merely contains the word does not.
     assert_eq!(
         offending(vec![
-            "site/package.json".to_string(),
-            "tests/js/package.json".to_string(),
-            "npm/package-lock.json".to_string(),
             "npm/node_modules/left-pad/index.js".to_string(),
+            "node_modules/x.js".to_string(),
+            "docs/node_modules_notes.md".to_string(),
+            "npm/package.json".to_string(),
         ]),
         vec![
-            "site/package.json (JS manifest)".to_string(),
-            "tests/js/package.json (JS manifest)".to_string(),
-            "npm/package-lock.json (JS lockfile)".to_string(),
-            "npm/node_modules/left-pad/index.js (under node_modules/)".to_string(),
+            "npm/node_modules/left-pad/index.js".to_string(),
+            "node_modules/x.js".to_string(),
         ],
-        "the allowance is not scoped to `{PERMITTED_MANIFEST}` — it lets a manifest, a lockfile or a node_modules through somewhere it should not"
+        "the scan no longer matches node_modules as a path component"
     );
 }
 
@@ -733,7 +684,8 @@ fn every_doc_that_sends_a_user_to_the_site_names_the_same_address() {
 
 /// **Criterion 8, restated.** "Readable on a phone and the nav works" needs a
 /// headless browser, and adding one is a JavaScript toolchain — which
-/// criterion 1 forbids. The two criteria cannot both be satisfied literally.
+/// criterion 1 forbade when this was written (it no longer does; see
+/// `no_node_modules_is_tracked`).
 ///
 /// So this is a **static proxy** for the three things that actually break a
 /// docs page on a phone, and the real check is a human one at the gate:
@@ -1860,8 +1812,8 @@ fn string_literals(source: &str) -> Vec<String> {
 
 /// **Criterion 8, restated.** "Degrades to readable documentation rather than a
 /// blank area" needs a browser with JavaScript switched off, and there is no
-/// headless browser here — adding one is the toolchain `website/01-site`'s
-/// criterion 1 forbids, and the same trade is recorded above
+/// headless browser here — adding one was the toolchain `website/01-site`'s
+/// criterion 1 forbade when this was written, and the same trade is recorded above
 /// `the_layout_carries_the_static_marks_of_a_readable_phone_page`.
 ///
 /// So the page is built the way that makes the criterion true by construction,
@@ -1933,9 +1885,7 @@ fn the_generator_page_reads_as_documentation_without_its_script() {
 /// when either moves in a way the page cannot render.
 ///
 /// **No toolchain is added by this.** No `package.json`, no lockfile, no
-/// `node_modules` — `no_javascript_lockfile_or_node_modules_is_tracked` still
-/// holds (it scans for a manifest as well as a lockfile), and `code:sec`'s
-/// grype scan still sees no npm ecosystem. `node` is invoked as a bare binary
+/// `node_modules`, and `code:sec`'s grype scan still sees no npm ecosystem. `node` is invoked as a bare binary
 /// the way this suite already invokes `git`, `mise` and `dprint`, following
 /// `tests/schema.rs::the_generated_schema_is_already_dprint_formatted`.
 ///

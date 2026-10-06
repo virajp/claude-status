@@ -11,9 +11,7 @@
  * and rejected as a module.
  *
  * NOTHING IS INSTALLED TO RUN THIS. No package.json, no lockfile, no
- * node_modules — `tests/site.rs::no_javascript_lockfile_or_node_modules_is_
- * tracked` still passes, and `code:sec`'s grype scan still sees no npm
- * ecosystem. It is `node` invoked as a bare binary, the same way the suite
+ * node_modules, and `code:sec`'s grype scan still sees no npm ecosystem. It is `node` invoked as a bare binary, the same way the suite
  * already invokes `git`, `mise` and `dprint`. When `node` is absent the Rust
  * side skips loudly and says so, following
  * `tests/schema.rs::the_generated_schema_is_already_dprint_formatted`.

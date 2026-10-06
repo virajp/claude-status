@@ -11,6 +11,7 @@
     "**/*-lock.json",
     "**/*-lock.yaml",
     "**/graphify-out/",
+    "brag-output/",
     "site/public/",
     "site/templates/",
     "assets/claude-status.defaults.json",

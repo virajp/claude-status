@@ -1,0 +1,1 @@
+claude-status puts model, context, both rate-limit windows, session cost and your branch in one powerline bar under Claude Code — and when you cross a cap, its hook tells Claude to hand off and stop. One Rust binary, no runtime: https://claude-status.virajp.dev

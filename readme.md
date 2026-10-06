@@ -66,6 +66,12 @@ Install claude-status by following https://claude-status.virajp.dev/install.md
 `~/.claude/settings.json` to the binary. Restart Claude Code and the bar is
 there.
 
+**Using agent teams?** With `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` on, named
+agents become teammates, and Claude Code draws those rows itself — the subagent
+panel only gets the rest. Turn it off to have every agent drawn;
+[Diagnosing](https://claude-status.virajp.dev/diagnosing/#agent-teams-and-the-subagent-panel)
+explains.
+
 **[claude-status.virajp.dev](https://claude-status.virajp.dev)** has the rest:
 all four routes in full, what `--configure` writes and what it replaces, and the
 platforms that are and aren't served.

@@ -255,6 +255,30 @@ Neither `model` nor `effort` is a documented per-task field. A per-task value is
 read if present — a future build may add one — else the panel-wide value, else
 the segment omits.
 
+### Teammate rows are documented around, not worked around
+
+**Recorded 2026-10-06** (`docs-agent-teams-note`). Users saw some subagent rows
+in Claude Code's own rendering instead of the panel's. A logged session of
+`subagentStatusLine`'s stdin and stdout showed `claude-status` drawing every row
+it was given — 72 of 72 across five agents. The missing rows were never sent.
+
+Claude Code 2.1.290 hands the command only `local_agent` tasks — its filter is
+`type === "local_agent"`, not the main session, not a fork worker. Teammates
+(`in_process_teammate`) sit in the same panel and are skipped. With agent teams
+on (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, or `--agent-teams`), an Agent call
+that passes a `name` spawns a teammate; with them off, the same call spawns a
+`local_agent` that keeps its `name` and is drawn normally. Both halves were
+observed in the log; the rule was read from the binary.
+
+**Nothing in this repository can draw a row it never receives**, so the answer
+is the setting, and it is a user's to choose: turning teams off gives up
+teammates you can keep messaging. The site carries the instruction; the readme
+points at it.
+
+Read from one release. Claude Code's label code already has a branch for
+teammates that the filter makes unreachable — if a later release sends them, the
+panel draws them with no change here, and this entry is history.
+
 ---
 
 ## 4. Configuration
@@ -2442,6 +2466,25 @@ The keychain half of this hazard is invariant 5's; see
 `extra_usage`, 200 with neither, 401, 429, and a connection refusal — **against
 a stub HTTP server, not the real endpoint.** Then one real `--doctor` to confirm
 the credential path works on a live machine.
+
+### A JavaScript manifest or lockfile is no longer refused
+
+**Was** (`website/01-site`, narrowed by `npm-installer` on 2026-08-27):
+`tests/site.rs` refused any tracked JavaScript lockfile, and any `package.json`
+except `npm/package.json`. The argument was that a manifest invites a
+dependency, a dependency brings a lockfile, and a lockfile puts a second package
+manager and a second `test` command in a tree that ships one Rust binary.
+
+**Reversed 2026-09-27.** The test failed CI when the brag launch video's
+sources, a throwaway Playwright capture script, were committed with their
+`package.json` and `package-lock.json`. **Nobody intends to move the project off
+Rust, so the test was guarding against a risk nobody was taking, and the only
+thing it caught was tooling that has nothing to do with the product.** The Rust
+core stays Rust by choice, and a test isn't needed to hold that.
+
+**The `node_modules` ban stays**, now as `no_node_modules_is_tracked`: an
+installed dependency tree is machine-local output in any repository, whatever
+the project is written in.
 
 ---
 
