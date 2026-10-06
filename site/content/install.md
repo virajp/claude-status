@@ -166,6 +166,12 @@ from your `PATH`:
 Every other key in that file is left as it was, and another tool's `PostToolUse`
 hooks are kept alongside this one.
 
+> **Running agent teams?** With `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` on, a
+> named agent becomes a teammate, and Claude Code draws teammate rows itself —
+> `subagentStatusLine` never sees them. Turn it off to have every agent drawn;
+> [Diagnosing](@/diagnosing.md#agent-teams-and-the-subagent-panel) has the
+> detail.
+
 It also creates `~/.config/claude-status/config.json` if you have none, holding
 a `$schema` pointer and nothing else. An existing one is never touched.
 
