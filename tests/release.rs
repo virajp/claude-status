@@ -571,9 +571,18 @@ fn the_render_produces_a_whole_formula_with_the_new_url_and_digest() {
         "def caveats",
         "--configure",
         "OVERWRITES",
+        "strategy :github_latest",
     ] {
         assert!(after.contains(kept), "the rendered formula is missing `{kept}`");
     }
+
+    // The `livecheck` block carries a `url` line of its own. Only the top-level
+    // one is the tarball; overwriting the nested one would point livecheck at
+    // the archive instead of at the formula's stable url.
+    assert!(
+        after.contains("    url :stable"),
+        "the render overwrote the `livecheck` block's `url :stable` with the tarball url"
+    );
 
     assert_eq!(
         after.lines().count(),
@@ -846,6 +855,25 @@ fn the_formula_template_carries_the_whole_contract() {
     assert!(
         !template.lines().any(|l| l.trim_start().starts_with("version ")),
         "the template carries a `version` line beside a version-bearing url, which is a hard `brew audit` failure"
+    );
+
+    // **The newest version is the latest GitHub release, never the newest tag.**
+    // Without a `livecheck` block brew falls back to its `Git` strategy, which
+    // reads every tag — and `site-v9` scans as version `9`, above `1.3.0`. The
+    // tap's autobump then asked for `releases/download/v9/…` and got a 404
+    // every day from 2026-08-27 to 2026-10-17.
+    let livecheck = template
+        .split("livecheck do")
+        .nth(1)
+        .and_then(|s| s.split("\n  end").next())
+        .expect("no livecheck block");
+    assert!(
+        livecheck.contains("strategy :github_latest"),
+        "the livecheck block does not read the latest GitHub release, so a `site-v*` tag can pass for a release"
+    );
+    assert!(
+        livecheck.contains("url :stable"),
+        "the livecheck block has no `url`, which brew requires in every livecheck block"
     );
 }
 

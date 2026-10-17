@@ -216,6 +216,10 @@ digest_for() {
 # out of the url. Measured: adding one took `brew audit` from exit 0 to exit 1,
 # "redundant with version scanned from URL".
 #
+# **Top-level stanzas only — two spaces of indent, no more.** The `livecheck`
+# block carries a `url :stable` of its own, nested one level deeper; matching
+# any indent counted it as a second `url` and refused the template.
+#
 # **Both must be found exactly once, or nothing is written.** `awk` exits 0
 # whether or not a pattern ever matched, so a template that changed shape would
 # sail through a render that silently emitted the template's own values —
@@ -228,7 +232,7 @@ render_formula() {
   out="$4"
 
   for field in url sha256; do
-    n="$(grep -c "^[[:space:]]*$field " "$template" || true)"
+    n="$(grep -c "^  $field " "$template" || true)"
     if [ "$n" != "1" ]; then
       echo "expected exactly one \`$field\` line in $template, found $n" >&2
       return 1
@@ -237,8 +241,8 @@ render_formula() {
 
   mkdir -p "$(dirname "$out")"
   awk -v url="$url" -v digest="$digest" '
-    /^[[:space:]]*url / { printf "  url \"%s\"\n", url; next }
-    /^[[:space:]]*sha256 / { printf "  sha256 \"%s\"\n", digest; next }
+    /^  url / { printf "  url \"%s\"\n", url; next }
+    /^  sha256 / { printf "  sha256 \"%s\"\n", digest; next }
     { print }
   ' "$template" > "$out.new"
   mv "$out.new" "$out"
