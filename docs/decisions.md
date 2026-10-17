@@ -2074,6 +2074,40 @@ and nothing here tracks mise. A field mise starts requiring will fail as a
 resolution error on a user's machine, as the version did — the fix is the same
 one, in `render_formula_api`.
 
+### The tap only checks; each source repo writes its own formula
+
+**Decided 2026-10-17.** `virajp/homebrew-tap` changes no formula. Each
+repository that has a formula in the tap writes that formula from its own
+release CI, and pushes it. For this repository, that is `bump-tap` in
+`release.yml`. The tap keeps only workflows that examine what it holds:
+`brew test-bot`.
+
+**The failure that caused it.** The tap still had the `brew bump` workflow that
+`brew tap-new` generates. It ran every day and found the newest version with
+brew's default `Git` strategy. That strategy reads every tag of this repository,
+and `site-v2` scanned as version `2`, above `1.1.9`. From 2026-08-27, the
+workflow asked for `releases/download/v2/…` and got a 404. Each new `site-v*`
+tag moved the number up. On 2026-10-17 it asked for `v9`. The workflow failed
+every day for 51 days, and nothing in this repository showed it.
+
+**Why one writer.** `bump-tap` already wrote the whole formula and the mise
+metadata at each release. The tap's `brew bump` was a second writer that knew
+less: it changes only `url` and `sha256`, through a pull request, and does not
+write `api/formula/claude-status.json`. Two writers with different knowledge can
+only disagree. The repository that cuts the release knows the version, the asset
+and the digest at the moment they exist, so it is the writer.
+
+**Removed from the tap:** `autobump.yml` (`brew bump`, daily) and `publish.yml`
+(`brew pr-pull`, which pushes bottle commits). No formula in the tap has
+bottles, so `publish.yml` had no work.
+
+**The formula also got a `livecheck` block**, with `strategy :github_latest`.
+Nothing in the tap reads it now, but `brew livecheck` and any future check do.
+The latest GitHub release is the source of truth for the version, and a
+`site-v*` tag is never a release. `render_formula` now substitutes only
+top-level `url` and `sha256` lines, because the block has a nested `url :stable`
+of its own. Both are pinned in `tests/release.rs`.
+
 ### The standing credential is a GitHub App, and what that does and does not buy
 
 **Decided 2026-08-25** (`distribution/02`). `distribution/01` had removed the

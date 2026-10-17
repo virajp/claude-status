@@ -20,6 +20,16 @@ class ClaudeStatus < Formula
   sha256 "af64e2a6ed8c0b27d6d9a0473ab5b8c9b7ce1cf123d720f4612c68ae58a9a044"
   license "MIT"
 
+  # The latest GitHub release, not the newest tag. brew's default `Git`
+  # strategy reads every tag, and the site's `site-v*` line scans as a bare
+  # version — `site-v9` beat `1.3.0`. Pinned by
+  # `the_formula_template_carries_the_whole_contract` in tests/release.rs.
+  # `url :stable` is nested, so `render_formula` does not substitute it.
+  livecheck do
+    url :stable
+    strategy :github_latest
+  end
+
   # No `version`. Homebrew scans it out of the url, and a `version` line beside
   # a version-bearing url is a hard `brew audit` failure. mise's own formula
   # shim cannot scan it — it reads the basename only — which is why the tap
