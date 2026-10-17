@@ -153,6 +153,12 @@ one seeded by hand.
 The url and name come from the release GitHub just published rather than being
 rebuilt from the version, so there is nothing to keep in step there either.
 
+**`bump-tap` is the only writer.** The tap runs checks on what it holds, and it
+changes nothing. It has no `brew bump` and no `brew pr-pull` workflow. If the
+tap's formula is wrong, fix it here and release, or use the manual procedure
+below. See
+[the decision](docs/decisions.md#the-tap-only-checks-each-source-repo-writes-its-own-formula).
+
 The template carries a real released `url`/`sha256` pair rather than
 placeholders, which is what lets the brew gates check it at all.
 
